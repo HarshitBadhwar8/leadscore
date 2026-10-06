@@ -93,7 +93,7 @@ var commands = []*command{
 		minArgs: 2,
 		maxArgs: 2,
 		help:    "replace, remove, or undo a manual status in Overrides",
-		slice:   "S6",
+		run:     runSetStatus,
 	},
 	{
 		path:    []string{"merge"},
@@ -101,7 +101,7 @@ var commands = []*command{
 		minArgs: 2,
 		maxArgs: 2,
 		help:    "mark two persons as the same lead in Overrides",
-		slice:   "S6",
+		run:     runMerge,
 	},
 	{
 		path:    []string{"mark-distinct"},
@@ -109,7 +109,7 @@ var commands = []*command{
 		minArgs: 2,
 		maxArgs: 2,
 		help:    "mark two namesakes as different leads in Overrides",
-		slice:   "S6",
+		run:     runMarkDistinct,
 	},
 	{
 		path:    []string{"retry"},
@@ -117,7 +117,7 @@ var commands = []*command{
 		args:    "[--lane X] [<person>]",
 		maxArgs: 1,
 		help:    "write a retry row in Overrides",
-		slice:   "S6",
+		run:     runRetry,
 	},
 	{
 		path:  []string{"config", "push"},

@@ -14,13 +14,14 @@ the task breakdown); the contracts doc is the source of truth for every shape.
 | `cmd/leadscore/` | the CLI binary |
 | `internal/api` | the public types (re-exported by the root), the built-in header aliases |
 | `internal/config` | loading `leadscore.yml`, `config get`, `config set-hosting` |
-| `internal/check` | the `doctor` check framework and the `secrets`, `store` and `rubric` checks |
+| `internal/check` | the `doctor` check framework and the `secrets`, `store`, `rubric`, `overrides` and `duplicates` checks |
 | `internal/model` | the in-memory model of the store's tables |
 | `internal/store/codec` | maps the model to table writes; loads a store and checks its schema version |
 | `internal/store/sqlite` | the built-in SQLite store (WAL, lease row, event log) |
 | `internal/store/sheets` | the built-in Google Sheets store (one batchUpdate per commit, monthly `Events` tabs, Cloud Storage lease file) and `setup sheet` |
 | `internal/fakes/sheets`, `internal/fakes/gcs` | in-memory fakes of Google Sheets, Drive and Cloud Storage for tests |
 | `internal/rules` | the rubric compiler and evaluator: YAML rules compiled to CEL |
+| `internal/merge` | turns input rows into one lead per person: header aliases, identities, `same_as` merges, the Overrides tab |
 | `internal/logredact` | log redaction: logs carry ids, never emails |
 | `adapters/csv` | the CSV file source (`type: csv`): lead rows, or event rows with `events: true` |
 | `adapters/sheetsource` | the Google Sheet tab source (`type: sheetsource`): tabs of the team's spreadsheet |
@@ -41,9 +42,28 @@ spreadsheet and loads them within a minute. Without it the check is skipped.
 
 ## Commands
 
-`leadscore help` lists every command. Only `config get`, `config set-hosting`,
-`rules check` and `setup sheet` work so far; every other command prints
+`leadscore help` lists every command. So far `config get`, `config set-hosting`,
+`rules check`, `setup sheet` and the Overrides writers work; every other command prints
 `not built yet (slice S<n>)` and exits 2.
+
+The Overrides writers edit the `Overrides` table the same way on every store.
+A person is an email, a LinkedIn URL or a lead id; a row for someone not yet
+imported waits until they appear.
+
+- `leadscore set-status <person> <status|none|resubscribe>`: replace the
+  person's manual status (`replied_*`, `unsubscribed`, `blocked`), remove it, or
+  undo a manual `unsubscribed`.
+- `leadscore merge <person> <person>`: the two are one person; the next run
+  merges them for good.
+- `leadscore mark-distinct <person> <person>`: two people who share a company
+  and a name are different people.
+- `leadscore retry [--lane <id>] [<person>]`: retry failed pushes, for one
+  person or everyone, in one lane or all.
+
+`leadscore setup sheet` creates the Sheets store's spreadsheet with your own Google
+login (`gcloud auth login --enable-gdrive-access` first), shares it with the run and
+receiver accounts, and writes `store.spreadsheet`; `--view` makes a SQLite store's
+read-only view; `--repair` puts an existing spreadsheet's settings back.
 
 Without `--config`, commands read `/config/bundle.yaml`, else
 `/config/leadscore.yml`, else `./leadscore.yml`.

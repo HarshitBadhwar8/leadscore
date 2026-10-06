@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/google/cel-go v0.31.0
+	github.com/google/uuid v1.6.0
 	golang.org/x/text v0.41.0
 	google.golang.org/api v0.298.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -22,7 +23,6 @@ require (
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.20 // indirect
 	github.com/googleapis/gax-go/v2 v2.24.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect

@@ -144,3 +144,32 @@ func TestDetectorEventPrefix(t *testing.T) {
 		t.Errorf("got %v", got)
 	}
 }
+
+// Company facts that do not parse warn in a fixed order (sorted by fact
+// name), whatever order the map gives them.
+func TestCompanyFactWarningsAreOrdered(t *testing.T) {
+	r := mustCompile(t, `version: 1
+lanes: []
+fields:
+  alpha: { type: number, level: company }
+  beta: { type: number, level: company }
+  gamma: { type: date, level: company }
+derive:
+  x:
+    level: company
+    rules:
+      - { when: { all: [ { field: company.alpha, present: true }, { field: company.beta, present: true }, { field: company.gamma, present: true } ] }, then: 1 }
+`)
+	in := Input{
+		Leads:     []api.LeadRef{lead("a", "d.example", 0, nil)},
+		Companies: map[string]api.CompanyFacts{"d.example": {Domain: "d.example", Extra: map[string]string{"gamma": "soon", "beta": "many", "alpha": "lots"}}},
+	}
+	want := []string{
+		"field alpha: a value is not a number, so it is treated as missing (reported once per run)",
+		"field beta: a value is not a number, so it is treated as missing (reported once per run)",
+		"field gamma: a value is not a date, so it is treated as missing (reported once per run)",
+	}
+	if w := r.Evaluate(in).Warnings; !reflect.DeepEqual(w, want) {
+		t.Errorf("warnings:\n%q\nwant\n%q", w, want)
+	}
+}
