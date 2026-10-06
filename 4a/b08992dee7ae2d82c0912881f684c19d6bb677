@@ -1,0 +1,21 @@
+internal/config/get.go
+  s_28e5c721690f52::t_c1c2602ceb0747 10,212-214,224-228
+internal/config/review_test.go
+  s_28e5c721690f52::t_55f400b39627e9 129-137
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4ab08992dee7ae2d82c0912881f684c19d6bb677",
+  "prompts": {},
+  "sessions": {
+    "s_28e5c721690f52": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "da9242c6-61ec-4654-be3b-55ff7ec11668",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
