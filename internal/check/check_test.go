@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/config"
+	"github.com/HarshitBadhwar8/leadscore/internal/logredact"
 )
 
 type named string
@@ -114,5 +115,18 @@ sinks: { apollo: { mailbox_id: m }, hubspot: { pipeline: Sales, stage: New } }
 				}
 			}
 		})
+	}
+}
+
+// Every key the secrets check asks for must also be masked in logs.
+func TestKeyVariablesAreMaskedInLogs(t *testing.T) {
+	masked := map[string]bool{}
+	for _, v := range logredact.SecretVariables {
+		masked[v] = true
+	}
+	for typ, v := range adapterKeyVariables {
+		if !masked[v] {
+			t.Errorf("%s's key variable %s is not in logredact.SecretVariables", typ, v)
+		}
 	}
 }
