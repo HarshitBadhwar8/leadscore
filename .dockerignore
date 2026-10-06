@@ -6,3 +6,7 @@ docs
 *.db-*
 .env
 /out
+.claude
+.env.*
+*.pem
+gha-creds-*.json
