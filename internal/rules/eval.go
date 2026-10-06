@@ -195,7 +195,8 @@ func (r *Rubric) run(w *evalRun, in Input) Result {
 // with a warning once per field.
 func (r *Rubric) leadValues(l *api.LeadRef, w *evalRun) map[string]any {
 	m := map[string]any{}
-	for name, raw := range l.Fields {
+	for _, name := range slices.Sorted(maps.Keys(l.Fields)) { // sorted, so warnings come in a fixed order
+		raw := l.Fields[name]
 		if strings.HasPrefix(name, "company.") {
 			continue // company facts reach the company map through CompanyFacts
 		}
@@ -229,7 +230,8 @@ func (r *Rubric) companyValues(domain string, in Input, w *evalRun) map[string]a
 	m := map[string]any{"domain": domain}
 	f, ok := in.Companies[domain]
 	if ok {
-		for key, raw := range f.Extra {
+		for _, key := range slices.Sorted(maps.Keys(f.Extra)) { // sorted, so warnings come in a fixed order
+			raw := f.Extra[key]
 			name, exact := strings.CutPrefix(key, "company.")
 			if _, both := f.Extra["company."+name]; !exact && both {
 				continue // an exact company.<name> key wins over <name>
