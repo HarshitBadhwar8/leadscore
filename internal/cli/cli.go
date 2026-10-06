@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/config"
-	"github.com/HarshitBadhwar8/leadscore/internal/logredact"
 )
 
 // Exit codes.
@@ -43,38 +42,127 @@ type command struct {
 
 func (c *command) name() string { return strings.Join(c.path, " ") }
 
-// commands is RFC 6.13's table, in its order.
+// commands is RFC 6.13's table, in its order. A slice that builds a command
+// replaces its `slice:` field with `run:` on its own line only; do not reorder
+// or reformat the table, so parallel slices touching it merge cleanly.
 var commands = []*command{
-	{path: []string{"run"}, flags: map[string]flagKind{"dry-run": boolFlag}, args: "[--dry-run]",
-		help: "one full run", slice: "S10a"},
-	{path: []string{"explain"}, args: "<person>", minArgs: 1, maxArgs: 1,
-		help: "a lead's verdict and reasons", slice: "S10a"},
-	{path: []string{"doctor"}, help: "one pass/fail line per check", slice: "S16"},
-	{path: []string{"ranked"}, flags: map[string]flagKind{"csv": boolFlag}, args: "[--csv]",
-		help: "print every lead's verdict, or write it as CSV", slice: "S10a"},
-	{path: []string{"serve"}, flags: map[string]flagKind{"every": optValueFlag}, args: "[--every [interval]]",
-		help: "the receiver and /healthz; with --every, also runs the loop", slice: "S14a"},
-	{path: []string{"status"}, help: "print the Health table", slice: "S10a"},
-	{path: []string{"set-status"}, args: "<person> <status|none|resubscribe>", minArgs: 2, maxArgs: 2,
-		help: "replace, remove, or undo a manual status in Overrides", slice: "S6"},
-	{path: []string{"merge"}, args: "<person> <person>", minArgs: 2, maxArgs: 2,
-		help: "mark two persons as the same lead in Overrides", slice: "S6"},
-	{path: []string{"mark-distinct"}, args: "<person> <person>", minArgs: 2, maxArgs: 2,
-		help: "mark two namesakes as different leads in Overrides", slice: "S6"},
-	{path: []string{"retry"}, flags: map[string]flagKind{"lane": valueFlag}, args: "[--lane X] [<person>]", maxArgs: 1,
-		help: "write a retry row in Overrides", slice: "S6"},
-	{path: []string{"config", "push"}, help: "upload leadscore.yml and the rubric as one Secret Manager version",
-		slice: "S14b"},
-	{path: []string{"setup", "hubspot"}, help: "create custom properties, resolve pipeline and stage", slice: "S11"},
-	{path: []string{"rules", "check"}, args: "<file>", minArgs: 1, maxArgs: 1,
-		help: "compile a rubric and report errors", slice: "S2"},
-	{path: []string{"config", "get"}, args: "<key>", minArgs: 1, maxArgs: 1,
-		help: "print a configuration value", run: runConfigGet},
-	{path: []string{"config", "set-hosting"}, args: "<key>=<value>...", minArgs: 1, maxArgs: -1,
-		help: "write the hosting block, keeping comments", run: runConfigSetHosting},
-	{path: []string{"setup", "sheet"}, flags: map[string]flagKind{"view": boolFlag, "repair": boolFlag},
-		args: "[--view] [--repair]", help: "create the spreadsheet, the SQLite view, or repair its settings", slice: "S5"},
-	{path: []string{"healthz"}, help: "call the local /healthz", slice: "S14a"},
+	{
+		path:  []string{"run"},
+		flags: map[string]flagKind{"dry-run": boolFlag},
+		args:  "[--dry-run]",
+		help:  "one full run",
+		slice: "S10a",
+	},
+	{
+		path:    []string{"explain"},
+		args:    "<person>",
+		minArgs: 1,
+		maxArgs: 1,
+		help:    "a lead's verdict and reasons",
+		slice:   "S10a",
+	},
+	{
+		path:  []string{"doctor"},
+		help:  "one pass/fail line per check",
+		slice: "S16",
+	},
+	{
+		path:  []string{"ranked"},
+		flags: map[string]flagKind{"csv": boolFlag},
+		args:  "[--csv]",
+		help:  "print every lead's verdict, or write it as CSV",
+		slice: "S10a",
+	},
+	{
+		path:  []string{"serve"},
+		flags: map[string]flagKind{"every": optValueFlag},
+		args:  "[--every [interval]]",
+		help:  "the receiver and /healthz; with --every, also runs the loop",
+		slice: "S14a",
+	},
+	{
+		path:  []string{"status"},
+		help:  "print the Health table",
+		slice: "S10a",
+	},
+	{
+		path:    []string{"set-status"},
+		args:    "<person> <status|none|resubscribe>",
+		minArgs: 2,
+		maxArgs: 2,
+		help:    "replace, remove, or undo a manual status in Overrides",
+		slice:   "S6",
+	},
+	{
+		path:    []string{"merge"},
+		args:    "<person> <person>",
+		minArgs: 2,
+		maxArgs: 2,
+		help:    "mark two persons as the same lead in Overrides",
+		slice:   "S6",
+	},
+	{
+		path:    []string{"mark-distinct"},
+		args:    "<person> <person>",
+		minArgs: 2,
+		maxArgs: 2,
+		help:    "mark two namesakes as different leads in Overrides",
+		slice:   "S6",
+	},
+	{
+		path:    []string{"retry"},
+		flags:   map[string]flagKind{"lane": valueFlag},
+		args:    "[--lane X] [<person>]",
+		maxArgs: 1,
+		help:    "write a retry row in Overrides",
+		slice:   "S6",
+	},
+	{
+		path:  []string{"config", "push"},
+		help:  "upload leadscore.yml and the rubric as one Secret Manager version",
+		slice: "S14b",
+	},
+	{
+		path:  []string{"setup", "hubspot"},
+		help:  "create custom properties, resolve pipeline and stage",
+		slice: "S11",
+	},
+	{
+		path:    []string{"rules", "check"},
+		args:    "<file>",
+		minArgs: 1,
+		maxArgs: 1,
+		help:    "compile a rubric and report errors",
+		slice:   "S2",
+	},
+	{
+		path:    []string{"config", "get"},
+		args:    "<key>",
+		minArgs: 1,
+		maxArgs: 1,
+		help:    "print a configuration value",
+		run:     runConfigGet,
+	},
+	{
+		path:    []string{"config", "set-hosting"},
+		args:    "<key>=<value>...",
+		minArgs: 1,
+		maxArgs: -1,
+		help:    "write the hosting block, keeping comments",
+		run:     runConfigSetHosting,
+	},
+	{
+		path:  []string{"setup", "sheet"},
+		flags: map[string]flagKind{"view": boolFlag, "repair": boolFlag},
+		args:  "[--view] [--repair]",
+		help:  "create the spreadsheet, the SQLite view, or repair its settings",
+		slice: "S5",
+	},
+	{
+		path:  []string{"healthz"},
+		help:  "call the local /healthz",
+		slice: "S14a",
+	},
 }
 
 // invocation is one parsed command line.
@@ -89,9 +177,12 @@ func (inv *invocation) configOptions() config.Options {
 	return config.Options{ConfigPath: inv.flags["config"], RubricPath: inv.flags["rubric"]}
 }
 
+// fail prints a local command's error as is. These errors name the operator's
+// own files and keys, which they need to see to fix them; vendor response text
+// is reduced with logredact.VendorErrorDetail where it is read, before it can
+// reach an error. Logs (not this terminal output) go through logredact.Redact.
 func (inv *invocation) fail(err error) int {
-	// Errors can quote paths and values; redact before printing.
-	fmt.Fprintf(inv.stderr, "leadscore %s: %s\n", inv.cmd.name(), logredact.Redact(err.Error()))
+	fmt.Fprintf(inv.stderr, "leadscore %s: %s\n", inv.cmd.name(), err)
 	return exitFail
 }
 
@@ -151,17 +242,26 @@ func parse(args []string) (*invocation, error) {
 				}
 			case valueFlag:
 				if !hasValue {
-					if i+1 >= len(args) {
+					// A following "-x" is more likely a forgotten value than a
+					// file name; such a value must be given as --flag=-x.
+					if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 						return nil, fmt.Errorf("flag --%s needs a value", name)
 					}
 					i++
 					value = args[i]
 				}
+				if value == "" {
+					return nil, fmt.Errorf("flag --%s needs a non-empty value", name)
+				}
 			case optValueFlag:
 				if !hasValue && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-					if _, err := config.ParseDuration(args[i+1]); err == nil {
-						i++
-						value = args[i]
+					i++
+					value = args[i]
+					hasValue = true
+				}
+				if hasValue {
+					if d, err := config.ParseDuration(value); err != nil || d <= 0 {
+						return nil, fmt.Errorf("flag --%s: %q is not a duration longer than zero", name, value)
 					}
 				}
 			}

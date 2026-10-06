@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -14,41 +15,100 @@ func run(args ...string) (code int, stdout, stderr string) {
 	return code, out.String(), errb.String()
 }
 
-// Every command in RFC 6.13 exists; each not yet built says which slice builds it.
+// Every command whose slice has not landed says which slice builds it.
 func TestUnbuiltCommandsSayWhichSlice(t *testing.T) {
+	for _, c := range commands {
+		if c.run != nil {
+			continue
+		}
+		args := append([]string{}, c.path...)
+		for i := 0; i < c.minArgs; i++ {
+			args = append(args, "x")
+		}
+		code, _, stderr := run(args...)
+		if code != exitUsage {
+			t.Errorf("%v: exit %d, want 2", args, code)
+		}
+		if want := "leadscore " + c.name() + ": not built yet (slice " + c.slice + ")\n"; stderr != want {
+			t.Errorf("%v: stderr %q, want %q", args, stderr, want)
+		}
+	}
+}
+
+func TestParse(t *testing.T) {
 	tests := []struct {
+		name  string
 		args  []string
-		slice string
+		cmd   string
+		pos   []string
+		flags map[string]string
 	}{
-		{[]string{"run"}, "S10a"},
-		{[]string{"run", "--dry-run"}, "S10a"},
-		{[]string{"explain", "a@example.com"}, "S10a"},
-		{[]string{"doctor"}, "S16"},
-		{[]string{"ranked", "--csv"}, "S10a"},
-		{[]string{"serve"}, "S14a"},
-		{[]string{"serve", "--every"}, "S14a"},
-		{[]string{"serve", "--every", "5m"}, "S14a"},
-		{[]string{"status"}, "S10a"},
-		{[]string{"set-status", "a@example.com", "none"}, "S6"},
-		{[]string{"merge", "a@example.com", "b@example.com"}, "S6"},
-		{[]string{"mark-distinct", "a@example.com", "b@example.com"}, "S6"},
-		{[]string{"retry"}, "S6"},
-		{[]string{"retry", "--lane", "warm", "a@example.com"}, "S6"},
-		{[]string{"config", "push"}, "S14b"},
-		{[]string{"setup", "hubspot"}, "S11"},
-		{[]string{"rules", "check", "rubric.yml"}, "S2"},
-		{[]string{"setup", "sheet", "--view", "--repair"}, "S5"},
-		{[]string{"healthz"}, "S14a"},
-		{[]string{"--config", "x.yml", "--rubric", "r.yml", "doctor"}, "S16"},
-		{[]string{"doctor", "--config=x.yml", "--rubric=r.yml"}, "S16"},
+		{"global flags before", []string{"--config", "a.yml", "--rubric", "r.yml", "doctor"}, "doctor", nil,
+			map[string]string{"config": "a.yml", "rubric": "r.yml"}},
+		{"global flags after", []string{"doctor", "--config", "a.yml", "-rubric", "r.yml"}, "doctor", nil,
+			map[string]string{"config": "a.yml", "rubric": "r.yml"}},
+		{"equals form", []string{"config", "get", "--config=a.yml", "store.type"}, "config get", []string{"store.type"},
+			map[string]string{"config": "a.yml"}},
+		{"value starting with dash via equals", []string{"run", "--config=-odd.yml"}, "run", nil,
+			map[string]string{"config": "-odd.yml"}},
+		{"between command words", []string{"config", "--config", "a.yml", "set-hosting", "project=p"}, "config set-hosting",
+			[]string{"project=p"}, map[string]string{"config": "a.yml"}},
+		{"bool flag", []string{"run", "--dry-run"}, "run", nil, map[string]string{"dry-run": ""}},
+		{"flags among positionals", []string{"retry", "a@example.com", "--lane", "warm"}, "retry", []string{"a@example.com"},
+			map[string]string{"lane": "warm"}},
+		{"every without a value", []string{"serve", "--every"}, "serve", nil, map[string]string{"every": ""}},
+		{"every with a value", []string{"serve", "--every", "5m"}, "serve", nil, map[string]string{"every": "5m"}},
+		{"every with equals", []string{"serve", "--every=1d"}, "serve", nil, map[string]string{"every": "1d"}},
+		{"every then a flag", []string{"serve", "--every", "--config", "a.yml"}, "serve", nil,
+			map[string]string{"every": "", "config": "a.yml"}},
+		{"double dash ends flags", []string{"explain", "--", "--odd"}, "explain", []string{"--odd"}, map[string]string{}},
 	}
 	for _, tt := range tests {
-		code, _, stderr := run(tt.args...)
-		if code != exitUsage {
-			t.Errorf("%v: exit %d, want 2", tt.args, code)
-		}
-		if want := "not built yet (slice " + tt.slice + ")"; !strings.Contains(stderr, want) {
-			t.Errorf("%v: stderr %q, want %q", tt.args, stderr, want)
+		t.Run(tt.name, func(t *testing.T) {
+			inv, err := parse(tt.args)
+			if err != nil {
+				t.Fatalf("parse(%q): %v", tt.args, err)
+			}
+			if inv.cmd.name() != tt.cmd {
+				t.Errorf("command = %q, want %q", inv.cmd.name(), tt.cmd)
+			}
+			if len(inv.args) != len(tt.pos) || (len(tt.pos) > 0 && !reflect.DeepEqual(inv.args, tt.pos)) {
+				t.Errorf("args = %q, want %q", inv.args, tt.pos)
+			}
+			if !reflect.DeepEqual(inv.flags, tt.flags) {
+				t.Errorf("flags = %v, want %v", inv.flags, tt.flags)
+			}
+		})
+	}
+}
+
+func TestParseErrors(t *testing.T) {
+	tests := []struct {
+		args []string
+		want string
+	}{
+		{[]string{}, "no command"},
+		{[]string{"nope"}, "unknown command"},
+		{[]string{"config"}, "incomplete command"},
+		{[]string{"config", "nope"}, "unknown command"},
+		{[]string{"--dry-run", "run"}, "before the command"},
+		{[]string{"run", "--csv"}, "unknown flag"},
+		{[]string{"run", "--dry-run=yes"}, "takes no value"},
+		{[]string{"run", "--config"}, "needs a value"},
+		{[]string{"run", "--config", "--dry-run"}, "needs a value"},
+		{[]string{"run", "--config="}, "non-empty"},
+		{[]string{"run", "--rubric", ""}, "non-empty"},
+		{[]string{"serve", "--every", "soon"}, "not a duration"},
+		{[]string{"serve", "--every=0s"}, "longer than zero"},
+		{[]string{"serve", "extra"}, "usage"},
+		{[]string{"explain"}, "usage"},
+		{[]string{"merge", "a", "b", "c"}, "usage"},
+		{[]string{"config", "set-hosting"}, "usage"},
+	}
+	for _, tt := range tests {
+		_, err := parse(tt.args)
+		if err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Errorf("parse(%q) err = %v, want it to contain %q", tt.args, err, tt.want)
 		}
 	}
 }
