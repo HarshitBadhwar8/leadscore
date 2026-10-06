@@ -16,6 +16,7 @@ the task breakdown); the contracts doc is the source of truth for every shape.
 | `internal/config` | loading `leadscore.yml`, `config get`, `config set-hosting` |
 | `internal/check` | the `doctor` check framework and the `secrets` check |
 | `internal/logredact` | log redaction: logs carry ids, never emails |
+| `adapters/csv` | the CSV file source (`type: csv`): lead rows, or event rows with `events: true` |
 | `storetest/`, `sinktest/` | conformance suites for plug-in stores and sinks |
 
 ## Build and test
