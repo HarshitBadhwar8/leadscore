@@ -44,8 +44,10 @@ var Schema = func() []Table {
 // append, ordering, a slow append interleaved with a read, crash between phases,
 // added columns and unknown columns kept, many callers racing Lease with exactly
 // one winner (also on an expired lease), release by a non-owner refused, OpTrim,
-// DeleteProcessed dropping a partition, and ErrEventsShrank (a cursor saved from
-// one store read against a fresh store).
+// DeleteProcessed dropping a partition, ErrEventsShrank (a cursor saved from
+// one store read against a fresh store), and a commit that fails while applying
+// (its last write an OpAppend of a key a keyed table already holds) leaving
+// nothing applied.
 //
 // open returns a new, empty store each time it is called. Events are appended
 // with ReceivedAt set as a receiver sets it, so a store that partitions events
@@ -61,6 +63,7 @@ func Run(t *testing.T, open func(t *testing.T) (api.Backend, api.EventLog)) {
 		{"RoundTripEveryTable", roundTripEveryTable},
 		{"RoundTripModel", roundTripModel},
 		{"CommitAllOrNothing", commitAllOrNothing},
+		{"CommitRollsBack", commitRollsBack},
 		{"BatchAppend", batchAppend},
 		{"Ordering", ordering},
 		{"SlowAppendInterleavedWithRead", slowAppendInterleavedWithRead},
@@ -191,9 +194,9 @@ func commitAll(t *testing.T, b api.Backend, m *model.Model, tables ...string) {
 	m.Committed(w)
 }
 
-func load(t *testing.T, b api.Backend, lanes ...string) *model.Model {
+func load(t *testing.T, b api.Backend) *model.Model {
 	t.Helper()
-	m, err := codec.Load(t.Context(), b, lanes...)
+	m, err := codec.Load(t.Context(), b)
 	if err != nil {
 		t.Fatalf("codec.Load: %v", err)
 	}
@@ -208,13 +211,17 @@ func roundTripModel(t *testing.T, open func(t *testing.T) (api.Backend, api.Even
 	if w := codec.Encode(m); len(w) != 0 {
 		t.Errorf("after Committed, Encode must return nothing; got %d writes", len(w))
 	}
-	got := load(t, b, "warm")
-	for _, f := range []string{"Overrides", "AppliedOverrides", "People", "Identities", "CompanyFacts", "WindowEvents",
-		"AppliedRows", "SeenEvents", "Outcomes", "Ranked", "Pushes", "Health", "State", "Exports"} {
-		want := reflect.ValueOf(m).Elem().FieldByName(f).Interface()
-		have := reflect.ValueOf(got).Elem().FieldByName(f).Interface()
+	// The export table is found through State's export_lane:warm.
+	got := load(t, b)
+	mv, gv := reflect.ValueOf(m).Elem(), reflect.ValueOf(got).Elem()
+	for i := range mv.NumField() {
+		f := mv.Type().Field(i)
+		if !f.IsExported() || f.Name == "Log" { // runs do not load Log; checked below
+			continue
+		}
+		want, have := mv.Field(i).Interface(), gv.Field(i).Interface()
 		if !reflect.DeepEqual(have, want) {
-			t.Errorf("%s did not round-trip:\n got %+v\nwant %+v", f, have, want)
+			t.Errorf("%s did not round-trip:\n got %+v\nwant %+v", f.Name, have, want)
 		}
 	}
 	logRows, err := b.ReadTable(t.Context(), model.TableLog)
@@ -282,6 +289,36 @@ func commitAllOrNothing(t *testing.T, open func(t *testing.T) (api.Backend, api.
 			t.Error("an OpDelete with no Key must be rejected")
 		}
 	})
+}
+
+// commitRollsBack fails a commit in its last write, at apply time rather than
+// in validation: an OpAppend to a keyed table of a key the store already
+// holds. Nothing from that commit may remain.
+func commitRollsBack(t *testing.T, open func(t *testing.T) (api.Backend, api.EventLog)) {
+	b, _ := open(t)
+	ctx := t.Context()
+	seed := []api.Row{{"event_key": "e1", "first_received_at": "2026-01-01T00:00:00.000Z"}}
+	if err := b.Commit(ctx, []api.TableWrite{{Table: model.TableSeenEvents, Op: api.OpAppend, Rows: seed}}); err != nil {
+		t.Fatal(err)
+	}
+	err := b.Commit(ctx, []api.TableWrite{
+		{Table: model.TablePeople, Op: api.OpUpsert, Key: []string{"lead_id"}, Rows: []api.Row{{"lead_id": "L1"}}},
+		{Table: model.TableState, Op: api.OpReplace, Rows: []api.Row{{"key": "k", "value": "v"}}},
+		{Table: model.TableSeenEvents, Op: api.OpAppend, Rows: []api.Row{{"event_key": "e2"}, {"event_key": "e1"}}},
+	})
+	if err == nil {
+		t.Fatal("appending a key the store already holds must fail the commit")
+	}
+	for _, name := range []string{model.TablePeople, model.TableState} {
+		if rows, err := b.ReadTable(ctx, name); err != nil || len(rows) != 0 {
+			t.Errorf("%s after a rolled-back commit = %v, %v; want nothing", name, rows, err)
+		}
+	}
+	got, err := b.ReadTable(ctx, model.TableSeenEvents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sameRows(t, "Seen events after a rolled-back commit", got, seed, []string{"event_key"})
 }
 
 func event(i int, at time.Time) api.RawEvent {
@@ -529,8 +566,9 @@ func addedColumns(t *testing.T, open func(t *testing.T) (api.Backend, api.EventL
 			Rows: []api.Row{{"lead_id": "L2", "created_at": "2026-01-02T00:00:00.000Z", "added_col": "v2"}}},
 		// A write naming a missing table creates it.
 		{Table: "Storetest new", Op: api.OpAppend, Rows: []api.Row{{"a": "1", "b": "=2"}}},
-		// A trim naming a missing column is a no-op, not an error.
+		// A trim on a missing table, or on a column the table lacks, is a no-op.
 		{Table: model.TableLog, Op: api.OpTrim, Column: "at", Before: t0},
+		{Table: model.TablePeople, Op: api.OpTrim, Column: "gone_at", Before: t0},
 	})
 	if err != nil {
 		t.Fatal(err)

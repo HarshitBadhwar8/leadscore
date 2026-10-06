@@ -3,8 +3,8 @@
 // primary key, keyless tables (Overrides, Log) as ordered slices.
 //
 // Every change goes through Put, Delete or Trim, which record what changed;
-// codec.Encode turns the record into table writes, Committed clears what a
-// successful Commit wrote, and Discard drops everything uncommitted. The maps
+// Writes (codec.Encode) turns the record into table writes, Committed marks
+// what a successful Commit wrote, and Discard drops everything uncommitted. The maps
 // are for reading: no slice writes a table any other way.
 package model
 
@@ -154,26 +154,36 @@ func (m *Model) Load(table string, rows []api.Row) error {
 
 // Put records a new or changed row. The row's type must match the table
 // (Person for People, ExportRow for "Export <lane id>", ...). On a keyless
-// table it appends.
+// table it appends. The model keeps the row as the store will return it: times
+// in UTC cut to milliseconds, JSON numbers as float64, empty unknown columns
+// dropped. The first row put in an export table records its lane in State
+// (export_lane:<lane id>), so codec.Load finds the table after the lane is gone.
 func (m *Model) Put(table string, row Row) {
 	tr := m.track(table)
 	if row == nil || row.table() != tr.def.Name {
 		panic(fmt.Sprintf("model: Put(%q) with a %T", table, row))
 	}
-	enc := row.encode()
+	norm, err := decode(tr.def, row.encode())
+	if err != nil {
+		panic(fmt.Sprintf("model: Put(%q): %v", table, err)) // encode always writes what decode reads
+	}
+	enc := norm.encode()
 	if tr.def.Key == nil {
-		m.appendTyped(tr, row)
+		m.appendTyped(tr, norm)
 		tr.added = append(tr.added, enc)
 		return
 	}
 	k := keyOf(tr.def, enc)
-	m.setTyped(tr, k, row)
-	if b, ok := tr.base[k]; ok && rowsEqual(b, enc) {
-		delete(tr.pending, k)
-	} else {
-		tr.pending[k] = change{row: enc}
+	m.setTyped(tr, k, norm)
+	tr.rederive(k, enc, true)
+	if lane, ok := strings.CutPrefix(table, ExportPrefix); ok && m.StateValue(ExportLaneKey+lane) == "" {
+		m.SetState(ExportLaneKey+lane, "yes")
 	}
 }
+
+// ExportLaneKey prefixes the State key that records an export table's lane:
+// export_lane:<lane id> = yes.
+const ExportLaneKey = "export_lane:"
 
 // Delete records a deleted row, by its key in section 4 key order. Overrides
 // rows are deleted by all four columns (person, action, value, note), which
@@ -192,25 +202,13 @@ func (m *Model) Delete(table string, key []string) {
 			want[c] = key[i]
 		}
 		var kept []Override
-		matched := false
 		for _, o := range m.Overrides {
-			if matchesKey(o.encode(), want, tr.def.Columns) {
-				matched = true
-				continue
+			if !matchesKey(o.encode(), want, tr.def.Columns) {
+				kept = append(kept, o)
 			}
-			kept = append(kept, o)
 		}
 		m.Overrides = kept
-		inBase := false
-		for _, r := range tr.baseList {
-			if matchesKey(r, want, tr.def.Columns) {
-				inBase = true
-			}
-		}
-		tr.added = removeMatching(tr.added, want, tr.def.Columns)
-		if matched && inBase {
-			tr.removed = append(tr.removed, want)
-		}
+		m.rediffList(tr)
 		return
 	}
 	if len(key) != len(tr.def.Key) {
@@ -218,10 +216,62 @@ func (m *Model) Delete(table string, key []string) {
 	}
 	k := K(key...)
 	m.delTyped(tr, k)
-	if _, ok := tr.base[k]; ok {
-		tr.pending[k] = change{deleted: true}
-	} else {
+	tr.rederive(k, nil, false)
+}
+
+// rederive sets a keyed row's pending change from its current value (present
+// false: deleted) against the committed one.
+func (tr *tracked) rederive(k Key, cur api.Row, present bool) {
+	b, inBase := tr.base[k]
+	switch {
+	case !present && !inBase, present && inBase && rowsEqual(b, cur):
 		delete(tr.pending, k)
+	case !present:
+		tr.pending[k] = change{deleted: true}
+	default:
+		tr.pending[k] = change{row: cur}
+	}
+}
+
+// rediffList sets a keyless table's pending appends (and, for Overrides,
+// deletes) from its current rows against the committed ones.
+func (m *Model) rediffList(tr *tracked) {
+	base := map[string]int{}
+	for _, r := range tr.baseList {
+		base[rowSig(r)]++
+	}
+	tr.added = nil
+	cur := map[string]int{}
+	for _, r := range m.currentList(tr) {
+		s := rowSig(r)
+		cur[s]++
+		if base[s] > 0 {
+			base[s]--
+			continue
+		}
+		tr.added = append(tr.added, r)
+	}
+	if tr.name != TableOverrides {
+		return // Log rows are never deleted, only trimmed
+	}
+	tr.removed = nil
+	for _, r := range tr.baseList {
+		s := rowSig(r)
+		if cur[s] > 0 {
+			cur[s]--
+			continue
+		}
+		want := api.Row{}
+		for _, c := range tr.def.Columns {
+			want[c] = r[c]
+		}
+		dup := false
+		for _, x := range tr.removed {
+			dup = dup || matchesKey(x, want, tr.def.Columns)
+		}
+		if !dup {
+			tr.removed = append(tr.removed, want)
+		}
 	}
 }
 
@@ -259,8 +309,18 @@ func (m *Model) Trim(table, column string, before time.Time) {
 }
 
 // Writes returns the recorded changes of the named tables as table writes, in
-// model order (all tables when none is named). codec.Encode is the entry point;
-// see it for the op each change becomes.
+// model order (all tables when none is named); codec.Encode is the public name.
+// Each change becomes:
+//
+//   - OpAppend for new rows of Seen events, Window events, Log and Identities,
+//     and for new Overrides rows;
+//   - OpUpsert for new or changed keyed rows (Applied rows included);
+//   - OpDelete for deleted rows, by key (Overrides: by all four columns);
+//   - OpReplace for Ranked, the whole table (codec.Chunk splits it);
+//   - OpTrim for retention trims, first among the table's writes.
+//
+// A State name may carry a key prefix ("State:cursor:") to encode only those
+// keys. A row put back unchanged produces no write.
 func (m *Model) Writes(tables ...string) []api.TableWrite {
 	if len(tables) == 0 {
 		tables = m.trackedNames()
@@ -344,29 +404,37 @@ func (tr *tracked) writes(m *Model, prefix string, hasPrefix bool) []api.TableWr
 	return out
 }
 
-// Committed clears the changes these writes carried, after Commit succeeded
-// with them. A change made after the writes were encoded stays recorded.
+// Committed records that Commit succeeded with these writes: the store now
+// holds what they wrote. Every row they touched is compared again with the
+// model, so a change made after the writes were encoded (even one back to the
+// old value, or a delete of a row the write added) stays recorded.
 func (m *Model) Committed(writes []api.TableWrite) {
 	for _, w := range writes {
 		tr, ok := m.tables[w.Table]
 		if !ok {
 			continue
 		}
-		tr.applyToBase(w)
-		if tr.def.Key != nil {
-			for k, p := range tr.pending {
-				b, inBase := tr.base[k]
-				if (p.deleted && !inBase) || (!p.deleted && inBase && rowsEqual(b, p.row)) {
-					delete(tr.pending, k)
-				}
+		touched := tr.applyToBase(w)
+		if tr.def.Key == nil {
+			m.rediffList(tr)
+			continue
+		}
+		for k := range touched {
+			cur, ok := m.rowAt(tr, k)
+			if ok {
+				tr.rederive(k, cur.encode(), true)
+			} else {
+				tr.rederive(k, nil, false)
 			}
 		}
 	}
 }
 
-// applyToBase mirrors a committed write onto the committed rows.
-func (tr *tracked) applyToBase(w api.TableWrite) {
+// applyToBase mirrors a committed write onto the committed rows and returns
+// the keys it touched (keyed tables).
+func (tr *tracked) applyToBase(w api.TableWrite) map[Key]bool {
 	keyed := tr.def.Key != nil
+	touched := map[Key]bool{}
 	switch w.Op {
 	case api.OpTrim:
 		cut := FormatTime(w.Before)
@@ -375,6 +443,7 @@ func (tr *tracked) applyToBase(w api.TableWrite) {
 			for k, r := range tr.base {
 				if old(r) {
 					delete(tr.base, k)
+					touched[k] = true
 				}
 			}
 		} else {
@@ -395,37 +464,39 @@ func (tr *tracked) applyToBase(w api.TableWrite) {
 	case api.OpDelete:
 		for _, r := range w.Rows {
 			if keyed {
-				delete(tr.base, keyOf(tr.def, r))
+				k := keyOf(tr.def, r)
+				delete(tr.base, k)
+				touched[k] = true
 				continue
 			}
 			tr.baseList = removeMatching(tr.baseList, r, w.Key)
-			tr.removed = removeMatching(tr.removed, r, w.Key)
 		}
 	case api.OpAppend, api.OpUpsert:
 		for _, r := range w.Rows {
 			if keyed {
-				tr.base[keyOf(tr.def, r)] = copyRow(r)
+				k := keyOf(tr.def, r)
+				tr.base[k] = copyRow(r)
+				touched[k] = true
 				continue
 			}
 			tr.baseList = append(tr.baseList, copyRow(r))
-			for i, a := range tr.added {
-				if rowsEqual(a, r) {
-					tr.added = append(tr.added[:i:i], tr.added[i+1:]...)
-					break
-				}
-			}
 		}
 	case api.OpReplace:
 		if keyed {
+			for k := range tr.base {
+				touched[k] = true
+			}
 			tr.base = map[Key]api.Row{}
 			for _, r := range w.Rows {
-				tr.base[keyOf(tr.def, r)] = copyRow(r)
+				k := keyOf(tr.def, r)
+				tr.base[k] = copyRow(r)
+				touched[k] = true
 			}
 		} else {
 			tr.baseList = copyRows(w.Rows)
-			tr.added = nil
 		}
 	}
+	return touched
 }
 
 // Discard drops every uncommitted change: the model returns to what was last
@@ -447,16 +518,6 @@ func (m *Model) Discard() {
 			m.setTyped(tr, k, row)
 		}
 	}
-}
-
-// Pending reports whether any change is recorded and not yet committed.
-func (m *Model) Pending() bool {
-	for _, tr := range m.tables {
-		if len(tr.pending)+len(tr.added)+len(tr.removed)+len(tr.trims) > 0 {
-			return true
-		}
-	}
-	return false
 }
 
 // StateValue returns a State value, or empty.
@@ -704,6 +765,41 @@ func (m *Model) current(tr *tracked) map[Key]api.Row {
 	return out
 }
 
+// rowAt returns a keyed table's typed row at k.
+func (m *Model) rowAt(tr *tracked, k Key) (Row, bool) {
+	var r Row
+	var ok bool
+	switch tr.name {
+	case TableAppliedOverrides:
+		r, ok = m.AppliedOverrides[k]
+	case TablePeople:
+		r, ok = m.People[k]
+	case TableIdentities:
+		r, ok = m.Identities[k]
+	case TableCompanyFacts:
+		r, ok = m.CompanyFacts[k]
+	case TableWindowEvents:
+		r, ok = m.WindowEvents[k]
+	case TableAppliedRows:
+		r, ok = m.AppliedRows[k]
+	case TableSeenEvents:
+		r, ok = m.SeenEvents[k]
+	case TableOutcomes:
+		r, ok = m.Outcomes[k]
+	case TableRanked:
+		r, ok = m.Ranked[k]
+	case TablePushes:
+		r, ok = m.Pushes[k]
+	case TableHealth:
+		r, ok = m.Health[k]
+	case TableState:
+		r, ok = m.State[k]
+	default:
+		r, ok = m.Exports[strings.TrimPrefix(tr.name, ExportPrefix)][k]
+	}
+	return r, ok
+}
+
 // currentList returns a keyless table's typed rows, encoded, in order.
 func (m *Model) currentList(tr *tracked) []api.Row {
 	var out []api.Row
@@ -743,6 +839,18 @@ func rowsEqual(a, b api.Row) bool {
 		}
 	}
 	return true
+}
+
+// rowSig is a row's identity for multiset comparison: its non-empty columns.
+func rowSig(r api.Row) string {
+	cols := make([]string, 0, len(r))
+	for c, v := range r {
+		if v != "" {
+			cols = append(cols, c+"\x00"+v)
+		}
+	}
+	sort.Strings(cols)
+	return strings.Join(cols, "\x1e")
 }
 
 func matchesKey(r, want api.Row, cols []string) bool {

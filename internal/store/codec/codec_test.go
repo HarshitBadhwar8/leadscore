@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,12 +27,12 @@ func (memStore) Commit(context.Context, []api.TableWrite) error { return nil }
 
 // loadFrom loads s; a store with no State gets the current schema version, so
 // the load records no version change.
-func loadFrom(t *testing.T, s memStore, lanes ...string) *model.Model {
+func loadFrom(t *testing.T, s memStore) *model.Model {
 	t.Helper()
 	if s["State"] == nil {
 		s["State"] = []api.Row{{"key": "schema_version", "value": model.SchemaVersion}}
 	}
-	m, err := codec.Load(context.Background(), s, lanes...)
+	m, err := codec.Load(context.Background(), s)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,6 +83,7 @@ func TestEncodeChoosesTheOp(t *testing.T) {
 		"Seen events:1:1",
 		"Ranked:0:2",
 		"Log:4:0", "Log:1:1",
+		"State:2:1", // export_lane:warm, recorded by the first export row
 		"Export warm:2:1",
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -136,12 +138,12 @@ func TestCommittedKeepsLaterChanges(t *testing.T) {
 		t.Fatalf("after Committed, People = %+v; want the two later changes", got)
 	}
 	m.Committed(got)
-	if m.Pending() {
+	if pending(m) {
 		t.Error("everything was committed")
 	}
 	// Putting the committed value back is no change.
 	m.Put(model.TablePeople, model.Person{LeadID: "L2", CreatedAt: t0})
-	if m.Pending() {
+	if pending(m) {
 		t.Error("an unchanged row must not be recorded")
 	}
 }
@@ -159,7 +161,7 @@ func TestDiscard(t *testing.T) {
 	m.Put(model.TableLog, model.LogEntry{At: t0})
 	m.Trim(model.TablePeople, "created_at", t0.Add(24*time.Hour))
 	m.Discard()
-	if m.Pending() || len(codec.Encode(m)) != 0 {
+	if pending(m) || len(codec.Encode(m)) != 0 {
 		t.Errorf("Discard left changes: %v", summary(codec.Encode(m)))
 	}
 	if len(m.People) != 1 || !m.People["L1"].CreatedAt.Equal(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)) {
@@ -187,7 +189,7 @@ func TestTrim(t *testing.T) {
 		t.Fatalf("Encode = %+v; want one OpTrim and no append of a trimmed row", w)
 	}
 	m.Committed(w)
-	if m.Pending() {
+	if pending(m) {
 		t.Error("the trim was committed")
 	}
 }
@@ -209,7 +211,7 @@ func TestRankedRewritesAndChunks(t *testing.T) {
 	for _, c := range chunks {
 		m.Committed([]api.TableWrite{c})
 	}
-	if m.Pending() {
+	if pending(m) {
 		t.Errorf("after every chunk committed, still pending: %v", summary(codec.Encode(m)))
 	}
 	if got := codec.Chunk(api.TableWrite{Op: api.OpUpsert, Rows: make([]api.Row, 3)}, 0); len(got) != 1 {
@@ -248,17 +250,117 @@ func TestLoadSchemaVersion(t *testing.T) {
 
 func TestLoadReadsCompaniesAndExports(t *testing.T) {
 	m := loadFrom(t, memStore{
+		"State":       {{"key": "schema_version", "value": "1.0"}, {"key": "export_lane:warm", "value": "yes"}},
 		"Companies":   {{"domain": "x.example", "Employees": "12"}},
 		"Export warm": {{"lead_id": "L1", "do_not_contact": "yes"}},
+		"Export cold": {{"lead_id": "L2"}}, // never recorded: not loaded
 		"Log":         {{"at": "2026-01-01T00:00:00.000Z"}},
-	}, "warm")
+	})
 	if len(m.Companies) != 1 || m.Companies[0]["Employees"] != "12" {
 		t.Errorf("Companies = %v", m.Companies)
 	}
-	if !m.Exports["warm"]["L1"].DoNotContact {
-		t.Errorf("Exports = %v", m.Exports)
+	if !m.Exports["warm"]["L1"].DoNotContact || m.Exports["cold"] != nil {
+		t.Errorf("Exports = %v; want warm (recorded in State) only", m.Exports)
 	}
 	if len(m.Log) != 0 {
 		t.Error("runs do not load Log")
+	}
+}
+
+func pending(m *model.Model) bool { return len(codec.Encode(m)) > 0 }
+
+// A change back to the stored value, made between Encode and Committed, must
+// stay recorded: the store now holds the encoded value.
+func TestCommittedChangeBackToStoredValue(t *testing.T) {
+	m := loadFrom(t, memStore{"People": {{"lead_id": "L1", "merged_into": "v1"}}})
+	m.Put(model.TablePeople, model.Person{LeadID: "L1", MergedInto: "v2"})
+	w := codec.Encode(m, model.TablePeople)
+	m.Put(model.TablePeople, model.Person{LeadID: "L1", MergedInto: "v1"})
+	m.Committed(w) // the store now holds v2
+	got := codec.Encode(m, model.TablePeople)
+	if len(got) != 1 || got[0].Op != api.OpUpsert || got[0].Rows[0]["merged_into"] != "v1" {
+		t.Errorf("after Committed, People = %+v; want an upsert back to v1", got)
+	}
+}
+
+// Deleting a new row between Encode and Committed must record its delete: the
+// store now holds the row.
+func TestCommittedDeleteOfNewRow(t *testing.T) {
+	m := loadFrom(t, memStore{})
+	m.Put(model.TablePeople, model.Person{LeadID: "L9"})
+	w := codec.Encode(m, model.TablePeople)
+	m.Delete(model.TablePeople, []string{"L9"})
+	m.Committed(w)
+	got := codec.Encode(m, model.TablePeople)
+	if len(got) != 1 || got[0].Op != api.OpDelete || got[0].Rows[0]["lead_id"] != "L9" {
+		t.Errorf("after Committed, People = %+v; want a delete of L9", got)
+	}
+	// The same for a keyless row: an Overrides row put, encoded, then deleted.
+	m = loadFrom(t, memStore{})
+	m.Put(model.TableOverrides, model.Override{Person: "a", Action: "retry"})
+	w = codec.Encode(m, model.TableOverrides)
+	m.Delete(model.TableOverrides, []string{"a", "retry", "", ""})
+	m.Committed(w)
+	got = codec.Encode(m, model.TableOverrides)
+	if len(got) != 1 || got[0].Op != api.OpDelete || got[0].Rows[0]["person"] != "a" {
+		t.Errorf("after Committed, Overrides = %+v; want a delete of the row", got)
+	}
+}
+
+// A 2.0 store whose tables a 1.x binary cannot read is refused for its version,
+// not for the cell.
+func TestNewerMajorRefusedBeforeDecoding(t *testing.T) {
+	_, err := codec.Load(context.Background(), memStore{
+		"State":  {{"key": "schema_version", "value": "2.0"}},
+		"People": {{"lead_id": "L1", "created_at": "a new format"}},
+	})
+	if !errors.Is(err, codec.ErrNewerSchema) {
+		t.Errorf("Load = %v, want ErrNewerSchema", err)
+	}
+}
+
+func TestBadVersion(t *testing.T) {
+	for _, v := range []string{"one", "+1.0", "1.-0", " 1.0", "1", "1.0.1", "1.x"} {
+		if _, err := codec.CheckVersion(v); !errors.Is(err, codec.ErrBadVersion) {
+			t.Errorf("CheckVersion(%q) = %v, want ErrBadVersion", v, err)
+		}
+	}
+}
+
+// Load errors name the table, row and column, never the cell value (a cell
+// may hold an email).
+func TestLoadErrorsHideTheValue(t *testing.T) {
+	for _, tt := range []struct {
+		table string
+		row   api.Row
+	}{
+		{"People", api.Row{"lead_id": "L1", "created_at": "ann@x.example"}},
+		{"People", api.Row{"lead_id": "L1", "fields": "ann@x.example"}},
+		{"People", api.Row{"lead_id": "L1", "first_seen": `{"visit":"ann@x.example"}`}},
+		{"Pushes", api.Row{"lead_id": "L1", "attempts": "ann@x.example"}},
+		{"Ranked", api.Row{"lead_id": "L1", "score": "ann@x.example"}},
+	} {
+		_, err := codec.Load(context.Background(), memStore{
+			"State": {{"key": "schema_version", "value": "1.0"}}, tt.table: {tt.row}})
+		if err == nil || strings.Contains(err.Error(), "ann@") || !strings.Contains(err.Error(), tt.table+" row 1") {
+			t.Errorf("Load error = %v; want table and row named, value hidden", err)
+		}
+	}
+}
+
+// The model keeps what the store will return: times in UTC to the millisecond.
+func TestPutNormalizes(t *testing.T) {
+	m := loadFrom(t, memStore{})
+	at := time.Date(2026, 1, 2, 3, 4, 5, 123_456_789, time.FixedZone("IST", 19800))
+	m.Put(model.TablePeople, model.Person{LeadID: "L1", CreatedAt: at,
+		FirstSeen: map[string]time.Time{"visit": at}})
+	p := m.People["L1"]
+	want := at.UTC().Truncate(time.Millisecond)
+	if p.CreatedAt != want || p.FirstSeen["visit"] != want {
+		t.Errorf("CreatedAt %v, FirstSeen %v; want %v", p.CreatedAt, p.FirstSeen["visit"], want)
+	}
+	m.Put(model.TableCompanyFacts, model.CompanyFact{Domain: "x", Rollups: map[string]any{"n": 3}})
+	if v := m.CompanyFacts["x"].Rollups["n"]; v != float64(3) {
+		t.Errorf("rollup = %#v, want float64 3 as Load would return", v)
 	}
 }

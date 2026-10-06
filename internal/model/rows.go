@@ -2,6 +2,7 @@ package model
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -72,7 +73,7 @@ type CompanyFact struct {
 	Domain     string
 	Facts      map[string]Fact // the resolved winner per fact
 	Previous   map[string]Fact // the value a change replaced
-	Rollups    map[string]any  // JSON values; numbers are float64
+	Rollups    map[string]any  // JSON values; numbers are float64, exact only up to 2^53
 	FirstSeen  map[string]time.Time
 	EnrichedAt time.Time
 	NotFoundAt time.Time
@@ -424,7 +425,7 @@ func decode(def TableDef, r api.Row) (Row, error) {
 	case ExportPrefix:
 		dnc := d.s("do_not_contact")
 		if dnc != "" && dnc != "yes" && dnc != "no" && d.err == nil {
-			d.err = fmt.Errorf("do_not_contact: %q is not yes or no", dnc)
+			d.err = errors.New("do_not_contact: not yes or no")
 		}
 		out = ExportRow{LeadID: api.LeadID(d.s("lead_id")), Email: d.s("email"), LinkedInURL: d.s("linkedin_url"),
 			FullName: d.s("full_name"), CompanyDomain: d.s("company_domain"), Score: d.f("score"),
@@ -457,7 +458,8 @@ func ParseTime(s string) (time.Time, error) {
 	}
 	t, err := time.Parse(time.RFC3339Nano, s)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("%q is not a time in the form %s", s, TimeFormat)
+		// The value stays out of the error: a cell may hold an email.
+		return time.Time{}, fmt.Errorf("not a time in the form %s", TimeFormat)
 	}
 	return t.UTC(), nil
 }
@@ -492,7 +494,7 @@ func (d *decoder) f(col string) float64 {
 	}
 	f, err := strconv.ParseFloat(d.r[col], 64)
 	if err != nil {
-		d.fail(col, err)
+		d.fail(col, errors.New("not a number"))
 	}
 	return f
 }
@@ -503,7 +505,7 @@ func (d *decoder) i(col string) int {
 	}
 	n, err := strconv.Atoi(d.r[col])
 	if err != nil {
-		d.fail(col, err)
+		d.fail(col, errors.New("not a whole number"))
 	}
 	return n
 }
@@ -515,7 +517,7 @@ func (d *decoder) json(col string, v any) {
 		return
 	}
 	if err := json.Unmarshal([]byte(s), v); err != nil {
-		d.fail(col, err)
+		d.fail(col, errors.New("not a JSON object of the expected shape"))
 	}
 }
 

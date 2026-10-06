@@ -26,6 +26,9 @@ func (s *Store) Lease(ctx context.Context, owner string, ttl time.Duration) (api
 	if owner == "" {
 		return nil, errors.New("a lease needs an owner")
 	}
+	if ttl <= 0 {
+		return nil, errors.New("a lease needs a positive length")
+	}
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
 		cur, expires, err := readLease(ctx, tx)
 		if err != nil {

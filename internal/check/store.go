@@ -16,7 +16,6 @@ import (
 func init() {
 	Register(storeCheck{
 		inContainer: func() bool { _, err := os.Stat("/.dockerenv"); return err == nil },
-		hostname:    os.Hostname,
 		mountType:   func(path string) (string, bool) { return mountType("/proc/self/mountinfo", path) },
 	})
 }
@@ -25,7 +24,6 @@ func init() {
 // version and SQLite cases; S5 adds the Sheets cases and S10b the ledger case.
 type storeCheck struct {
 	inContainer func() bool
-	hostname    func() (string, error)
 	// mountType returns the filesystem type of the mount holding path, and
 	// false when it cannot tell (any system without /proc/self/mountinfo).
 	mountType func(path string) (string, bool)
@@ -53,10 +51,16 @@ func (c storeCheck) Run(ctx context.Context, env Env) []Problem {
 
 	var out []Problem
 	if v := state["schema_version"]; v != "" {
-		if _, err := codec.CheckVersion(v); errors.Is(err, codec.ErrNewerSchema) {
+		_, err := codec.CheckVersion(v)
+		switch {
+		case errors.Is(err, codec.ErrNewerSchema):
 			out = append(out, Problem{Key: "store:newer_schema",
 				Message: "the store was written by a newer version (schema " + v + "; this binary writes " + model.SchemaVersion + ")",
 				Fix:     "install a matching version"})
+		case errors.Is(err, codec.ErrBadVersion):
+			out = append(out, Problem{Key: "store:bad_schema_version",
+				Message: "State.schema_version is " + strconv.Quote(v) + ", not a major.minor version",
+				Fix:     "restore the State row from a backup, or set it to the version that wrote the store"})
 		}
 	}
 	if env.Config == nil || env.Config.Store.Type != "sqlite" {
@@ -68,15 +72,13 @@ func (c storeCheck) Run(ctx context.Context, env Env) []Problem {
 			Message: "the SQLite file " + path + " is on a disk that is not kept (" + fs + "): it is lost when the container goes",
 			Fix:     "put store.path on a named volume"})
 	}
-	// opened_by names the host of the `serve` that last opened the file. A
-	// different name, seen from outside a container, means a container uses the
-	// file; WAL locking is not safe across that boundary.
+	// serve writes opened_by only when it runs in a container (and clears it
+	// otherwise), so a set value seen from outside a container means a
+	// container uses the file; WAL locking is not safe across that boundary.
 	if by := state["opened_by"]; by != "" && !c.inContainer() {
-		if host, err := c.hostname(); err == nil && host != by {
-			out = append(out, Problem{Key: "store:opened_outside_container",
-				Message: "this command runs outside a container, but the SQLite file is used by the container " + by,
-				Fix:     "run it inside the container: docker compose exec leadscore leadscore ..."})
-		}
+		out = append(out, Problem{Key: "store:opened_outside_container",
+			Message: "this command runs outside a container, but the SQLite file is used by the container " + by,
+			Fix:     "run it inside the container: docker compose exec leadscore leadscore ..."})
 	}
 	return out
 }

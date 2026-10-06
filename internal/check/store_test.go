@@ -46,14 +46,15 @@ func TestStoreCheck(t *testing.T) {
 		{"overlay disk", sqliteCfg, stateStore{}, true, "overlay", []string{"store:disk_not_kept"}},
 		{"tmpfs disk", sqliteCfg, stateStore{}, true, "tmpfs", []string{"store:disk_not_kept"}},
 		{"outside the container that opened it", sqliteCfg, stateStore{"opened_by": "c0ffee"}, false, "", []string{"store:opened_outside_container"}},
-		{"outside, opened by this same host", sqliteCfg, stateStore{"opened_by": "laptop"}, false, "", nil},
+		{"outside, serve also ran outside (opened_by cleared)", sqliteCfg, stateStore{"opened_by": ""}, false, "", nil},
 		{"outside, never opened by serve", sqliteCfg, stateStore{}, false, "", nil},
+		{"malformed version", sheetsCfg, stateStore{"schema_version": "+1.0"}, false, "", []string{"store:bad_schema_version"}},
+		{"version with no minor", sheetsCfg, stateStore{"schema_version": "1"}, false, "", []string{"store:bad_schema_version"}},
 		{"sheets ignores the SQLite cases", sheetsCfg, stateStore{"opened_by": "c0ffee"}, false, "tmpfs", nil},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			c := storeCheck{
 				inContainer: func() bool { return tt.inContainer },
-				hostname:    func() (string, error) { return "laptop", nil },
 				mountType:   func(string) (string, bool) { return tt.mount, tt.mount != "" },
 			}
 			var got []string

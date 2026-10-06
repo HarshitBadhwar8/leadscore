@@ -43,9 +43,8 @@ const busyTimeout = 10 * time.Second
 
 // Store is a SQLite Backend, EventLog and LeaseInspector.
 type Store struct {
-	db   *sql.DB
-	path string
-	now  func() time.Time
+	db  *sql.DB
+	now func() time.Time // the lease clock
 }
 
 var (
@@ -57,6 +56,18 @@ var (
 // Open opens (creating when missing) the database file at path. The folder
 // must exist. Tables are created by the first write that names them.
 func Open(path string) (*Store, error) {
+	// The path goes into the driver's DSN, where "?" starts options and
+	// "file:" makes a URI; refuse both rather than misread them.
+	if path == "" || strings.Contains(path, "?") || strings.HasPrefix(strings.ToLower(path), "file:") {
+		return nil, fmt.Errorf("sqlite store: %q is not a plain file path (no \"?\", no \"file:\")", path)
+	}
+	// Create the file owner-only before SQLite opens it; SQLite gives the -wal
+	// and -shm files the same mode.
+	if f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600); err == nil {
+		f.Close()
+	} else if !errors.Is(err, os.ErrExist) {
+		return nil, fmt.Errorf("sqlite store %s: %w", path, err)
+	}
 	// _txlock=immediate takes the write lock when a transaction begins, so two
 	// writers queue on the busy timeout instead of failing to upgrade a lock.
 	// synchronous(FULL) makes a commit durable before it returns (AppendEvents).
@@ -71,14 +82,11 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("sqlite store %s: %w", path, err)
 	}
-	return &Store{db: db, path: path, now: time.Now}, nil
+	return &Store{db: db, now: time.Now}, nil
 }
 
 // Close closes the database.
 func (s *Store) Close() error { return s.db.Close() }
-
-// Path is the database file.
-func (s *Store) Path() string { return s.path }
 
 // TableName maps a section 4 table name to its SQLite name: lower snake case
 // ("Company facts" is company_facts, "Export warm" is export_warm).
@@ -183,8 +191,44 @@ func validate(w api.TableWrite) error {
 	if w.Table == "" {
 		return errors.New("a table write names no table")
 	}
+	if strings.ContainsRune(w.Table, 0) {
+		return errors.New("a table name holds a NUL character")
+	}
 	if TableName(w.Table) == "events" {
 		return errors.New("Events is written only through AppendEvents")
+	}
+	// Column names: SQLite ignores case, so one write may not name two columns
+	// that differ only by case; rowid and its aliases are SQLite's own.
+	seen := map[string]string{}
+	check := func(c string) error {
+		switch {
+		case c == "" || strings.ContainsRune(c, 0):
+			return fmt.Errorf("%s: a column name is empty or holds a NUL character", w.Table)
+		case reservedColumn(c):
+			return fmt.Errorf("%s: %q is SQLite's own column name", w.Table, c)
+		}
+		if prev, ok := seen[strings.ToLower(c)]; ok && prev != c {
+			return fmt.Errorf("%s: columns %q and %q differ only by case", w.Table, prev, c)
+		}
+		seen[strings.ToLower(c)] = c
+		return nil
+	}
+	for _, r := range w.Rows {
+		for c := range r {
+			if err := check(c); err != nil {
+				return err
+			}
+		}
+	}
+	for _, c := range w.Key {
+		if err := check(c); err != nil {
+			return err
+		}
+	}
+	if w.Column != "" {
+		if err := check(w.Column); err != nil {
+			return err
+		}
 	}
 	switch w.Op {
 	case api.OpReplace, api.OpAppend:
@@ -215,8 +259,21 @@ func (s *Store) inTx(ctx context.Context, f func(*sql.Tx) error) error {
 	return tx.Commit()
 }
 
+func reservedColumn(c string) bool {
+	switch strings.ToLower(c) {
+	case "rowid", "oid", "_rowid_":
+		return true
+	}
+	return false
+}
+
 func apply(ctx context.Context, tx *sql.Tx, w api.TableWrite) error {
 	table := TableName(w.Table)
+	existing, err := columns(ctx, tx, table)
+	if err != nil {
+		return err
+	}
+	w = canonical(w, existing)
 	named := map[string]bool{}
 	for _, r := range w.Rows {
 		for c := range r {
@@ -228,10 +285,6 @@ func apply(ctx context.Context, tx *sql.Tx, w api.TableWrite) error {
 	}
 	if w.Column != "" {
 		named[w.Column] = true
-	}
-	existing, err := columns(ctx, tx, table)
-	if err != nil {
-		return err
 	}
 	if len(existing) == 0 && (w.Op == api.OpDelete || w.Op == api.OpTrim) {
 		return nil // nothing to delete from a table that does not exist
@@ -264,6 +317,44 @@ func apply(ctx context.Context, tx *sql.Tx, w api.TableWrite) error {
 		return err
 	}
 	return nil
+}
+
+// canonical respells a write's columns as the table already spells them (or,
+// for a table not yet created, as section 4 does), since SQLite column names
+// ignore case: "Score" in a row writes the existing "score" column.
+func canonical(w api.TableWrite, existing []string) api.TableWrite {
+	spell := map[string]string{}
+	if def, ok := model.Def(w.Table); ok && len(existing) == 0 {
+		for _, c := range def.Columns {
+			spell[strings.ToLower(c)] = c
+		}
+	}
+	for _, c := range existing {
+		spell[strings.ToLower(c)] = c
+	}
+	name := func(c string) string {
+		if s, ok := spell[strings.ToLower(c)]; ok {
+			return s
+		}
+		return c
+	}
+	out := w
+	out.Rows = make([]api.Row, len(w.Rows))
+	for i, r := range w.Rows {
+		nr := make(api.Row, len(r))
+		for c, v := range r {
+			nr[name(c)] = v
+		}
+		out.Rows[i] = nr
+	}
+	out.Key = make([]string, len(w.Key))
+	for i, c := range w.Key {
+		out.Key[i] = name(c)
+	}
+	if w.Column != "" {
+		out.Column = name(w.Column)
+	}
+	return out
 }
 
 // ensureTable creates the table when missing, with the section 4 columns of a
@@ -440,13 +531,25 @@ func isBusy(err error) bool {
 	return false
 }
 
-// MarkOpenedBy records this host's name in State.opened_by. `serve` calls it
+// InContainer reports whether this process runs in a container (/.dockerenv
+// exists). A variable, so tests can replace it.
+var InContainer = func() bool {
+	_, err := os.Stat("/.dockerenv")
+	return err == nil
+}
+
+// MarkOpenedBy records in State.opened_by the hostname of a `serve` running in
+// a container, and clears it when `serve` runs outside one. `serve` calls it
 // when it opens the store, so the `store` check can tell when a binary outside
 // the container opens a file the container uses. Other stores are left alone.
 func MarkOpenedBy(ctx context.Context, b api.Backend) error {
-	host, err := os.Hostname()
-	if err != nil {
-		return fmt.Errorf("reading the hostname: %w", err)
+	host := ""
+	if InContainer() {
+		h, err := os.Hostname()
+		if err != nil {
+			return fmt.Errorf("reading the hostname: %w", err)
+		}
+		host = h
 	}
 	return markOpenedBy(ctx, b, host)
 }

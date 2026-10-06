@@ -5,7 +5,9 @@ package main
 import (
 	"github.com/HarshitBadhwar8/leadscore"
 
-	// Built-in adapters register here with blank imports as their slices land.
+	// Built-in adapters in public packages (adapters/...) register here with
+	// blank imports as their slices land. The built-in stores are internal, so
+	// they register through the root package instead.
 	_ "github.com/HarshitBadhwar8/leadscore/adapters/csv"
 )
 

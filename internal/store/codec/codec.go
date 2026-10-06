@@ -1,13 +1,14 @@
 // Package codec maps the in-memory model to store tables (contracts section
 // 12.2): Encode turns recorded changes into table writes, Load reads a store
-// into a model and checks its schema version. Backends only move rows; this is
-// the one place that knows which op each change becomes.
+// into a model and checks its schema version. Backends only move rows; which
+// op each change becomes is decided by model.Model.Writes, behind Encode.
 package codec
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -20,17 +21,9 @@ import (
 var ErrNewerSchema = errors.New("store is from a newer major schema version")
 
 // Encode turns the model's recorded changes for the named tables (all when none
-// is named) into writes:
-//
-//   - OpAppend for new rows of Seen events, Window events, Log and Identities,
-//     and for new Overrides rows;
-//   - OpUpsert for new or changed keyed rows (Applied rows included);
-//   - OpDelete for deleted rows, by key (Overrides: by all four columns);
-//   - OpReplace for Ranked, the whole table (Chunk splits it);
-//   - OpTrim for retention trims, first in the table's writes.
-//
-// A State name may carry a key prefix ("State:cursor:") to encode only those
-// keys. A row put back unchanged produces no write.
+// is named) into writes. It is the public name for model.Model.Writes, which
+// holds the rules for which op each change becomes. A State name may carry a
+// key prefix ("State:cursor:").
 func Encode(m *model.Model, tables ...string) []api.TableWrite {
 	return m.Writes(tables...)
 }
@@ -54,13 +47,13 @@ func Chunk(w api.TableWrite, size int) []api.TableWrite {
 	return out
 }
 
-// loaded is every table a run loads: every section 4 table except Log (only
-// appended and trimmed) and Events (read through the EventLog), plus the
-// people-owned Companies tab.
+// loaded is every table a run loads besides State: every section 4 table
+// except Log (only appended and trimmed) and Events (read through the
+// EventLog), plus the people-owned Companies tab.
 func loaded() []string {
 	var out []string
 	for _, d := range model.Tables {
-		if d.Pattern || d.Name == model.TableLog {
+		if d.Pattern || d.Name == model.TableLog || d.Name == model.TableState {
 			continue
 		}
 		out = append(out, d.Name)
@@ -68,29 +61,39 @@ func loaded() []string {
 	return append(out, model.TableCompanies)
 }
 
-// Load reads the store into a new model: every table except Log and Events,
-// plus the export table of each lane id given. It refuses a store from a newer
-// major schema version (ErrNewerSchema), and records a schema_version raise
-// when the store's is missing or older; a newer minor is kept, never lowered.
-func Load(ctx context.Context, b api.Backend, exportLanes ...string) (*model.Model, error) {
+// Load reads the store into a new model. It reads State first and refuses a
+// store from a newer major schema version (ErrNewerSchema) before decoding
+// anything else. It then reads every table except Log and Events, plus the
+// export table of every lane recorded in State (export_lane:<lane id>), so a
+// lane removed from the rubric keeps its table loaded. It records a
+// schema_version raise when the store's is missing or older; a newer minor is
+// kept, never lowered.
+func Load(ctx context.Context, b api.Backend) (*model.Model, error) {
 	m := model.New()
-	names := loaded()
-	for _, lane := range exportLanes {
-		names = append(names, model.ExportTable(lane))
-	}
-	for _, name := range names {
+	read := func(name string) error {
 		rows, err := b.ReadTable(ctx, name)
 		if err != nil {
-			return nil, fmt.Errorf("reading %s: %w", name, err)
+			return fmt.Errorf("reading %s: %w", name, err)
 		}
-		if err := m.Load(name, rows); err != nil {
-			return nil, err
-		}
+		return m.Load(name, rows)
 	}
-	stored := m.StateValue("schema_version")
-	raise, err := CheckVersion(stored)
+	if err := read(model.TableState); err != nil {
+		return nil, err
+	}
+	raise, err := CheckVersion(m.StateValue("schema_version"))
 	if err != nil {
 		return nil, err
+	}
+	names := loaded()
+	for k := range m.State {
+		if lane, ok := strings.CutPrefix(string(k), model.ExportLaneKey); ok && lane != "" {
+			names = append(names, model.ExportTable(lane))
+		}
+	}
+	for _, name := range names {
+		if err := read(name); err != nil {
+			return nil, err
+		}
 	}
 	if raise {
 		m.SetState("schema_version", model.SchemaVersion)
@@ -99,18 +102,18 @@ func Load(ctx context.Context, b api.Backend, exportLanes ...string) (*model.Mod
 }
 
 // CheckVersion compares a stored schema_version with this binary's. It returns
-// ErrNewerSchema for a newer major, and raise=true when the stored version is
-// missing or lower (so the caller writes this binary's). A newer minor of the
-// same major is fine and is kept.
+// ErrNewerSchema for a newer major, ErrBadVersion for a value that is not
+// major.minor, and raise=true when the stored version is missing or lower (so
+// the caller writes this binary's). A newer minor of the same major is kept.
 func CheckVersion(stored string) (raise bool, err error) {
 	if stored == "" {
 		return true, nil
 	}
-	sMaj, sMin, err := ParseVersion(stored)
+	sMaj, sMin, err := parseVersion(stored)
 	if err != nil {
-		return false, fmt.Errorf("State.schema_version: %w", err)
+		return false, err
 	}
-	oMaj, oMin, _ := ParseVersion(model.SchemaVersion)
+	oMaj, oMin, _ := parseVersion(model.SchemaVersion)
 	switch {
 	case sMaj > oMaj:
 		return false, fmt.Errorf("%w: the store is %s, this binary writes %s", ErrNewerSchema, stored, model.SchemaVersion)
@@ -120,17 +123,23 @@ func CheckVersion(stored string) (raise bool, err error) {
 	return false, nil
 }
 
-// ParseVersion reads a `major.minor` version.
-func ParseVersion(v string) (major, minor int, err error) {
-	a, b, ok := strings.Cut(strings.TrimSpace(v), ".")
-	if ok {
-		major, err = strconv.Atoi(a)
-		if err == nil {
-			minor, err = strconv.Atoi(b)
-		}
+// ErrBadVersion means State.schema_version is not major.minor.
+var ErrBadVersion = errors.New("State.schema_version is not a major.minor version")
+
+var versionForm = regexp.MustCompile(`^[0-9]+\.[0-9]+$`)
+
+// parseVersion reads a `major.minor` version: digits only.
+func parseVersion(v string) (major, minor int, err error) {
+	if !versionForm.MatchString(v) {
+		return 0, 0, fmt.Errorf("%w: %q", ErrBadVersion, v)
 	}
-	if !ok || err != nil || major < 0 || minor < 0 {
-		return 0, 0, fmt.Errorf("%q is not a major.minor version", v)
+	a, b, _ := strings.Cut(v, ".")
+	major, err = strconv.Atoi(a)
+	if err == nil {
+		minor, err = strconv.Atoi(b)
+	}
+	if err != nil {
+		return 0, 0, fmt.Errorf("%w: %q", ErrBadVersion, v)
 	}
 	return major, minor, nil
 }

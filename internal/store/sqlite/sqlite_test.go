@@ -2,7 +2,9 @@ package sqlite
 
 import (
 	"context"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -199,11 +201,137 @@ func TestMarkOpenedBy(t *testing.T) {
 	if len(rows) != 1 || rows[0]["key"] != "opened_by" || rows[0]["value"] != "beef" {
 		t.Errorf("State = %v", rows)
 	}
+	// Outside a container, serve clears opened_by; inside, it writes its hostname.
+	defer func(f func() bool) { InContainer = f }(InContainer)
+	InContainer = func() bool { return false }
 	if err := MarkOpenedBy(ctx, s); err != nil {
-		t.Errorf("MarkOpenedBy: %v", err)
+		t.Fatal(err)
+	}
+	if rows, _ := s.ReadTable(ctx, model.TableState); rows[0]["value"] != "" {
+		t.Errorf("outside a container opened_by = %q, want cleared", rows[0]["value"])
+	}
+	InContainer = func() bool { return true }
+	if err := MarkOpenedBy(ctx, s); err != nil {
+		t.Fatal(err)
+	}
+	host, _ := os.Hostname()
+	if rows, _ := s.ReadTable(ctx, model.TableState); rows[0]["value"] != host {
+		t.Errorf("inside a container opened_by = %q, want %q", rows[0]["value"], host)
 	}
 	if err := markOpenedBy(ctx, otherBackend{}, "x"); err != nil {
 		t.Errorf("another store is left alone: %v", err)
+	}
+}
+
+// SQLite column names ignore case: a row naming "Score" writes the existing
+// "score" column instead of failing every commit.
+func TestColumnCase(t *testing.T) {
+	s := open(t)
+	ctx := context.Background()
+	err := s.Commit(ctx, []api.TableWrite{{Table: "Export warm", Op: api.OpAppend, Rows: []api.Row{{"lead_id": "L1", "Score": "1"}}}})
+	if err != nil {
+		t.Fatalf("a known column in another case: %v", err)
+	}
+	err = s.Commit(ctx, []api.TableWrite{
+		{Table: "Export warm", Op: api.OpUpsert, Key: []string{"LEAD_ID"}, Rows: []api.Row{{"LEAD_ID": "L1", "score": "2", "Extra": "x"}}},
+		{Table: "Export warm", Op: api.OpUpsert, Key: []string{"lead_id"}, Rows: []api.Row{{"lead_id": "L1", "EXTRA": "y"}}},
+	})
+	if err != nil {
+		t.Fatalf("columns in another case than stored: %v", err)
+	}
+	rows, _ := s.ReadTable(ctx, "Export warm")
+	if len(rows) != 1 || rows[0]["score"] != "2" || rows[0]["Extra"] != "y" || rows[0]["lead_id"] != "L1" {
+		t.Errorf("rows = %v", rows)
+	}
+	err = s.Commit(ctx, []api.TableWrite{{Table: model.TableLog, Op: api.OpAppend, Rows: []api.Row{{"Note": "a"}, {"note": "b"}}}})
+	if err == nil || !strings.Contains(err.Error(), "differ only by case") {
+		t.Errorf("one write naming Note and note = %v, want refused", err)
+	}
+}
+
+func TestRefusedNames(t *testing.T) {
+	s := open(t)
+	for name, w := range map[string]api.TableWrite{
+		"rowid":        {Table: model.TableLog, Op: api.OpAppend, Rows: []api.Row{{"rowid": "1"}}},
+		"OID":          {Table: model.TableLog, Op: api.OpAppend, Rows: []api.Row{{"OID": "1"}}},
+		"_rowid_ key":  {Table: model.TablePeople, Op: api.OpDelete, Key: []string{"_RowID_"}, Rows: []api.Row{{}}},
+		"empty column": {Table: model.TableLog, Op: api.OpAppend, Rows: []api.Row{{"": "1"}}},
+		"NUL column":   {Table: model.TableLog, Op: api.OpAppend, Rows: []api.Row{{"a\x00b": "1"}}},
+		"NUL table":    {Table: "Log\x00", Op: api.OpAppend, Rows: []api.Row{{"a": "1"}}},
+		"empty table":  {Table: "", Op: api.OpAppend, Rows: []api.Row{{"a": "1"}}},
+		"oid trim":     {Table: model.TableLog, Op: api.OpTrim, Column: "oid", Before: time.Now()},
+	} {
+		if err := s.Commit(context.Background(), []api.TableWrite{w}); err == nil {
+			t.Errorf("%s: Commit must refuse it", name)
+		}
+	}
+}
+
+// Lane ids may hold letters, digits, "-" and "_"; distinct ids map to
+// distinct SQLite tables (ids differing only by case are refused by the rubric).
+func TestTableNameOneToOne(t *testing.T) {
+	seen := map[string]string{}
+	for _, lane := range []string{"a-b", "a_b", "ab", "a__b", "a--b", "a-_b", "a_-b", "facts", "applied"} {
+		got := TableName(model.ExportTable(lane))
+		if prev, dup := seen[got]; dup {
+			t.Errorf("lanes %q and %q both map to %s", prev, lane, got)
+		}
+		seen[got] = lane
+	}
+	for _, d := range model.Tables {
+		if prev, dup := seen[TableName(d.Name)]; dup && !d.Pattern {
+			t.Errorf("table %s and lane %q share %s", d.Name, prev, TableName(d.Name))
+		}
+	}
+}
+
+func TestOpenRefusesDSNPaths(t *testing.T) {
+	dir := t.TempDir()
+	for _, p := range []string{filepath.Join(dir, "a?mode=ro"), "file:" + filepath.Join(dir, "a.db"), "FILE:x.db", ""} {
+		if s, err := Open(p); err == nil {
+			s.Close()
+			t.Errorf("Open(%q) must be refused", p)
+		}
+	}
+}
+
+func TestFileMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no Unix file modes")
+	}
+	path := filepath.Join(t.TempDir(), "leadscore.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.AppendEvents(context.Background(), []api.RawEvent{{Kind: "apollo_visit", ReceivedAt: time.Now()}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{path, path + "-wal"} {
+		fi, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if mode := fi.Mode().Perm(); mode != 0o600 {
+			t.Errorf("%s mode = %o, want 600", filepath.Base(p), mode)
+		}
+	}
+}
+
+func TestRefusedArguments(t *testing.T) {
+	s := open(t)
+	ctx := context.Background()
+	if err := s.AppendEvents(ctx, []api.RawEvent{{Kind: "apollo_visit", ReceivedAt: time.Now()}, {Kind: "apollo_reply"}}); err == nil {
+		t.Error("an event with no received time must be refused")
+	}
+	if evs, _, _ := s.ReadEvents(ctx, ""); len(evs) != 0 {
+		t.Error("a refused batch must store nothing")
+	}
+	for _, ttl := range []time.Duration{0, -time.Second} {
+		if _, err := s.Lease(ctx, "run", ttl); err == nil {
+			t.Errorf("Lease with ttl %v must be refused", ttl)
+		}
 	}
 }
 

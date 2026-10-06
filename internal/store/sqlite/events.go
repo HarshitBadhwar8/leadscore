@@ -29,6 +29,11 @@ func (s *Store) AppendEvents(ctx context.Context, events []api.RawEvent) error {
 	if len(events) == 0 {
 		return nil
 	}
+	for i, e := range events {
+		if e.ReceivedAt.IsZero() {
+			return fmt.Errorf("appending events: event %d has no received time", i)
+		}
+	}
 	wait := 20 * time.Millisecond
 	for {
 		err := s.inTx(ctx, func(tx *sql.Tx) error {
