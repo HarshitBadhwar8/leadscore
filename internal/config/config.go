@@ -7,6 +7,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -72,9 +73,11 @@ type Config struct {
 	Dir    string // the folder relative paths resolve against
 	Bundle bool   // loaded from a hosted bundle (section 3)
 
-	Version    int
-	RubricPath string // resolved rubric file; empty for a bundle, which carries the text
-	RubricText []byte // the bundle's rubric; nil when RubricPath is used
+	Version int
+	// RubricPath is the resolved rubric file; empty for a bundle, which carries
+	// the text. Read the rubric with Rubric(), which handles both.
+	RubricPath string
+	rubricText []byte // the bundle's rubric
 
 	Store            Store
 	Sources          []Source
@@ -91,7 +94,9 @@ type Config struct {
 	IngestChunkRows  int
 	SilenceThreshold time.Duration
 	LogRetention     time.Duration
-	Hosting          *Hosting // nil when no hosting block
+	// Hosting is nil when the block is absent, null or empty. An install is
+	// "hosted" (Google Cloud) when Hosted() is true: Hosting.Project is set.
+	Hosting *Hosting
 
 	eff map[string]any // the effective document, for Get
 }
@@ -143,6 +148,9 @@ type Hosting struct {
 	Project, Region, RunAccount, ReceiverAccount, Image string
 }
 
+// Hosted reports whether this is a Google Cloud install: hosting.project is set.
+func (c *Config) Hosted() bool { return c.Hosting != nil && c.Hosting.Project != "" }
+
 // Options says where to load from. Empty paths mean the section 3 defaults.
 type Options struct {
 	ConfigPath string // --config
@@ -158,8 +166,14 @@ func Locate(configFlag string) (path string, err error) {
 		return filepath.Abs(configFlag)
 	}
 	for _, p := range []string{defaultBundlePath, defaultConfigPath} {
-		if _, err := os.Stat(p); err == nil {
+		_, err := os.Stat(p)
+		if err == nil {
 			return p, nil
+		}
+		// Fall through only when the file is not there; a permission or I/O
+		// error must not silently pick a different config.
+		if !errors.Is(err, fs.ErrNotExist) {
+			return "", fmt.Errorf("checking %s: %w", p, err)
 		}
 	}
 	return filepath.Abs(localConfigPath)
@@ -181,7 +195,7 @@ func Load(opts Options) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	c, err := parse(text, dir, opts.Getenv)
+	c, err := Parse(text, dir, opts.Getenv)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
@@ -190,7 +204,7 @@ func Load(opts Options) (*Config, error) {
 	switch {
 	case isBundle:
 		c.RubricPath = ""
-		c.RubricText = rubric
+		c.rubricText = rubric
 		delete(c.eff, "rubric")
 	case opts.RubricPath != "":
 		abs, err := filepath.Abs(opts.RubricPath)
@@ -203,15 +217,10 @@ func Load(opts Options) (*Config, error) {
 	return c, nil
 }
 
-// Parse reads leadscore.yml text, resolving relative paths against dir.
-func Parse(data []byte, dir string, getenv func(string) string) (*Config, error) {
-	return parse(data, dir, getenv)
-}
-
 // Rubric returns the rubric text: the bundle's, or the file at RubricPath.
 func (c *Config) Rubric() ([]byte, error) {
 	if c.Bundle {
-		return c.RubricText, nil
+		return c.rubricText, nil
 	}
 	b, err := os.ReadFile(c.RubricPath)
 	if err != nil {
@@ -247,12 +256,18 @@ func splitBundle(data []byte, path string) (cfg, rubric []byte, isBundle bool, e
 	return []byte(c), []byte(r), true, nil
 }
 
-func parse(data []byte, dir string, getenv func(string) string) (*Config, error) {
+// Parse reads leadscore.yml text, resolving relative paths against dir.
+// getenv reads $PORT; nil means os.Getenv.
+func Parse(data []byte, dir string, getenv func(string) string) (*Config, error) {
 	if getenv == nil {
 		getenv = os.Getenv
 	}
 	var raw map[string]any
 	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	lits, err := scalarLiterals(data)
+	if err != nil {
 		return nil, err
 	}
 	if raw == nil {
@@ -261,7 +276,7 @@ func parse(data []byte, dir string, getenv func(string) string) (*Config, error)
 	if err := unknownKeys(raw, topLevelKeys, ""); err != nil {
 		return nil, err
 	}
-	p := &parser{dir: dir}
+	p := &parser{dir: dir, lits: lits}
 	c := &Config{Dir: dir, eff: raw}
 
 	// version: required, 1.
@@ -270,7 +285,7 @@ func parse(data []byte, dir string, getenv func(string) string) (*Config, error)
 		return nil, errors.New("`version` is required (use 1)")
 	}
 	if n, isInt := v.(int); !isInt || n != 1 {
-		return nil, fmt.Errorf("`version` must be 1, got %v", v)
+		return nil, fmt.Errorf("`version` must be the number 1, got %v (%T)", v, v)
 	}
 	c.Version = 1
 
@@ -296,6 +311,9 @@ func parse(data []byte, dir string, getenv func(string) string) (*Config, error)
 
 	polling := p.block(raw, "polling", pollingKeys)
 	c.Polling.SequenceLength = p.duration(polling, "sequence_length", "polling.sequence_length", DefaultSequenceLength)
+	if c.Polling.SequenceLength <= 0 {
+		p.fail("`polling.sequence_length` must be longer than zero")
+	}
 	c.Polling.WindowMargin = p.duration(polling, "window_margin", "polling.window_margin", DefaultWindowMargin)
 
 	if err := p.receiver(c, raw, getenv); err != nil {
@@ -330,9 +348,14 @@ func parse(data []byte, dir string, getenv func(string) string) (*Config, error)
 			p.fail("`%s` must be longer than zero", d.name)
 		}
 	}
+	// A shorter interval would start a run before the last one could save.
+	if c.Schedule > 0 && c.Schedule < time.Minute {
+		p.fail("`schedule` must be at least 1m")
+	}
 
-	if _, has := raw["hosting"]; has {
-		h := p.block(raw, "hosting", hostingKeys)
+	if h := p.block(raw, "hosting", hostingKeys); len(h) == 0 {
+		delete(raw, "hosting") // absent, null or empty: not hosted
+	} else {
 		c.Hosting = &Hosting{
 			Project:         p.str(h, "project", "hosting.project", ""),
 			Region:          p.str(h, "region", "hosting.region", ""),
@@ -398,6 +421,9 @@ func (p *parser) sources(c *Config, raw map[string]any) error {
 		if s.ID == "" && p.err == nil {
 			return fmt.Errorf("`%s.id` is required", name)
 		}
+		if s.Type == "" && p.err == nil {
+			return fmt.Errorf("`%s.type` is required", name)
+		}
 		if seen[s.ID] {
 			return fmt.Errorf("`%s.id` %q is used by another source", name, s.ID)
 		}
@@ -432,7 +458,8 @@ func (p *parser) sources(c *Config, raw map[string]any) error {
 
 func (p *parser) enrich(c *Config, raw map[string]any) error {
 	v, has := raw["enrich"]
-	if !has {
+	if !has || v == nil {
+		delete(raw, "enrich")
 		return nil
 	}
 	e, ok := v.(map[string]any)
@@ -444,6 +471,12 @@ func (p *parser) enrich(c *Config, raw map[string]any) error {
 		MaxAge:           p.duration(e, "max_age", "enrich.max_age", DefaultEnrichMaxAge),
 		MaxLookupsPerRun: p.nonNegativeInt(e, "max_lookups_per_run", "enrich.max_lookups_per_run", DefaultLookupsPerRun),
 		MaxLookupsPerDay: p.nonNegativeInt(e, "max_lookups_per_day", "enrich.max_lookups_per_day", DefaultLookupsPerDay),
+	}
+	if c.Enrich.Type == "" && p.err == nil {
+		return errors.New("`enrich.type` is required")
+	}
+	if c.Enrich.MaxAge <= 0 {
+		p.fail("`enrich.max_age` must be longer than zero")
 	}
 	c.Enrich.Block = deepCopy(e).(map[string]any)
 	return p.err
@@ -530,8 +563,9 @@ func (p *parser) replyLabels(c *Config, raw map[string]any) {
 
 // parser keeps the first error so the field readers stay one line each.
 type parser struct {
-	dir string
-	err error
+	dir  string
+	lits map[string]string // scalar literals by key name, as written in the file
+	err  error
 }
 
 func (p *parser) fail(format string, args ...any) {
@@ -582,12 +616,18 @@ func (p *parser) str(m map[string]any, key, name, def string) string {
 	switch s := v.(type) {
 	case string:
 		return s
-	case int, float64, bool:
-		// A plain YAML scalar like a numeric spreadsheet id is still text here.
-		return fmt.Sprint(s)
+	case map[string]any, []any:
+		p.fail("`%s` must be text", name)
+		return def
 	}
-	p.fail("`%s` must be text", name)
-	return def
+	// A plain scalar such as a numeric spreadsheet id (0123, or one too long for
+	// an int) is still text: take it exactly as written, not as YAML read it.
+	lit, ok := p.lits[name]
+	if !ok {
+		lit = fmt.Sprint(v)
+	}
+	m[key] = lit
+	return lit
 }
 
 func (p *parser) boolean(m map[string]any, key, name string) bool {
@@ -669,14 +709,52 @@ func unknownKeys(m map[string]any, allowed map[string]bool, prefix string) error
 	var bad []string
 	for k := range m {
 		if !allowed[k] {
-			bad = append(bad, prefix+k)
+			bad = append(bad, strconv.Quote(prefix+k))
 		}
 	}
 	if len(bad) == 0 {
 		return nil
 	}
 	sort.Strings(bad)
-	return fmt.Errorf("unknown key %q", strings.Join(bad, `", "`))
+	if len(bad) == 1 {
+		return fmt.Errorf("unknown key %s", bad[0])
+	}
+	return fmt.Errorf("unknown keys %s", strings.Join(bad, ", "))
+}
+
+// scalarLiterals records every scalar's text as written, keyed by the names the
+// parser uses in errors: "store.spreadsheet", "sources[0].id".
+func scalarLiterals(data []byte) (map[string]string, error) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	var walk func(n *yaml.Node, name string)
+	walk = func(n *yaml.Node, name string) {
+		switch n.Kind {
+		case yaml.DocumentNode:
+			for _, c := range n.Content {
+				walk(c, name)
+			}
+		case yaml.MappingNode:
+			for i := 0; i+1 < len(n.Content); i += 2 {
+				k := n.Content[i].Value
+				if name != "" {
+					k = name + "." + k
+				}
+				walk(n.Content[i+1], k)
+			}
+		case yaml.SequenceNode:
+			for i, c := range n.Content {
+				walk(c, fmt.Sprintf("%s[%d]", name, i))
+			}
+		case yaml.ScalarNode:
+			out[name] = n.Value
+		}
+	}
+	walk(&doc, "")
+	return out, nil
 }
 
 func set(keys ...string) map[string]bool {

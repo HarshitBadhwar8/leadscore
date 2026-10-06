@@ -1,8 +1,10 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -93,9 +95,16 @@ func SetHosting(path string, pairs []string) error {
 		return fmt.Errorf("%s is a hosted bundle; set hosting in leadscore.yml and run `leadscore config push`", path)
 	}
 
+	// Refuse a multi-document file: yaml.v3 would read and rewrite only the
+	// first document, silently dropping the rest.
+	dec := yaml.NewDecoder(bytes.NewReader(data))
 	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
+	if err := dec.Decode(&doc); err != nil {
 		return fmt.Errorf("%s: %w", path, err)
+	}
+	var extra yaml.Node
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		return fmt.Errorf("%s holds more than one YAML document; edit it by hand", path)
 	}
 	if doc.Kind != yaml.DocumentNode || len(doc.Content) != 1 || doc.Content[0].Kind != yaml.MappingNode {
 		return fmt.Errorf("%s: expected a YAML mapping at the top", path)
@@ -103,6 +112,11 @@ func SetHosting(path string, pairs []string) error {
 	root := doc.Content[0]
 
 	hosting := mappingValue(root, "hosting")
+	// An alias or anchor would make the change reach other keys, or not land
+	// where the reader looks; refuse rather than guess.
+	if hosting != nil && (hosting.Kind == yaml.AliasNode || hosting.Anchor != "" || hasAnchors(hosting)) {
+		return fmt.Errorf("%s: `hosting` uses a YAML anchor or alias; edit it by hand", path)
+	}
 	if hosting == nil {
 		hosting = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 		root.Content = append(root.Content,
@@ -133,10 +147,22 @@ func SetHosting(path string, pairs []string) error {
 		return fmt.Errorf("writing YAML: %w", err)
 	}
 	out := []byte(buf.String())
-	if _, err := parse(out, filepath.Dir(path), func(string) string { return "" }); err != nil {
+	if bytes.Contains(data, []byte("\r\n")) {
+		out = bytes.ReplaceAll(out, []byte("\n"), []byte("\r\n")) // keep Windows line endings
+	}
+	if _, err := Parse(out, filepath.Dir(path), func(string) string { return "" }); err != nil {
 		return fmt.Errorf("%s would no longer load: %w", path, err)
 	}
 	return writeAtomic(path, out)
+}
+
+func hasAnchors(n *yaml.Node) bool {
+	for _, c := range n.Content {
+		if c.Kind == yaml.AliasNode || c.Anchor != "" || hasAnchors(c) {
+			return true
+		}
+	}
+	return false
 }
 
 // mappingValue returns the value node for key in a mapping node, or nil.
@@ -171,11 +197,23 @@ func writeAtomic(path string, data []byte) error {
 		tmp.Close()
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return fmt.Errorf("writing %s: %w", path, err)
+	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	if err := os.Rename(tmp.Name(), path); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
+	}
+	// Sync the folder so the rename itself survives a crash.
+	if d, err := os.Open(filepath.Dir(path)); err == nil {
+		syncErr := d.Sync()
+		d.Close()
+		if syncErr != nil {
+			return fmt.Errorf("syncing %s: %w", filepath.Dir(path), syncErr)
+		}
 	}
 	return nil
 }
