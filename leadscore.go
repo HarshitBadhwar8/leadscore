@@ -21,6 +21,7 @@ import (
 
 	// The built-in stores register here: their packages are internal, so a
 	// custom build cannot import them, and every build gets them this way.
+	_ "github.com/HarshitBadhwar8/leadscore/internal/store/sheets"
 	_ "github.com/HarshitBadhwar8/leadscore/internal/store/sqlite"
 )
 

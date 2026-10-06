@@ -158,7 +158,7 @@ var commands = []*command{
 		flags: map[string]flagKind{"view": boolFlag, "repair": boolFlag},
 		args:  "[--view] [--repair]",
 		help:  "create the spreadsheet, the SQLite view, or repair its settings",
-		slice: "S5",
+		run:   runSetupSheet,
 	},
 	{
 		path:  []string{"healthz"},

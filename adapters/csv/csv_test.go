@@ -432,7 +432,7 @@ func TestRaggedRowKeepsOnlyHeaderCells(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := recs[0].cells; len(got) != 2 || cap(got) != 2 || got[0] != "x" || got[1] != "y" {
+	if got := recs[0].Cells; len(got) != 2 || cap(got) != 2 || got[0] != "x" || got[1] != "y" {
 		t.Fatalf("cells = %q (cap %d), want [x y] in a slice of its own", got, cap(got))
 	}
 }
