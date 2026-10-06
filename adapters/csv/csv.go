@@ -65,15 +65,23 @@ func New(cfg api.Config) (api.Source, error) {
 
 func (s *Source) ID() string { return s.id }
 
+// Limits that keep one bad file from exhausting memory (contracts section
+// 12.5). Variables, not constants, so tests can lower them.
+var (
+	maxFileBytes int64 = 100 << 20  // 100 MB
+	maxColumns         = 1000       // header columns
+	maxCells           = 10_000_000 // data rows times header columns
+)
+
 // Fetch reads the whole file. A plain source returns rows; an events source
-// returns events. Any line the CSV reader cannot parse, or text that is not
-// UTF-8, fails the whole fetch with the line number, so a bad file is fixed
-// rather than half-read.
+// returns events. A file the source cannot read safely fails the whole fetch
+// with a message saying how to fix it, so a bad file is fixed rather than
+// half-read.
 func (s *Source) Fetch(ctx context.Context, _ api.Cursor) ([]api.InputRow, []api.Event, api.Cursor, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, "", err
 	}
-	data, err := os.ReadFile(s.path)
+	data, err := readFile(s.path)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("csv source %q: %w", s.id, err)
 	}
@@ -82,9 +90,30 @@ func (s *Source) Fetch(ctx context.Context, _ api.Cursor) ([]api.InputRow, []api
 		return nil, nil, "", fmt.Errorf("csv source %q: %s: %w", s.id, s.path, err)
 	}
 	if s.events {
-		return nil, s.toEvents(headers, records), "", nil
+		events, err := s.toEvents(headers, records)
+		if err != nil {
+			return nil, nil, "", fmt.Errorf("csv source %q: %s: %w", s.id, s.path, err)
+		}
+		return nil, events, "", nil
 	}
 	return s.toRows(headers, records), nil, "", nil
+}
+
+// readFile reads at most maxFileBytes, and fails rather than truncating.
+func readFile(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }() // read-only handle
+	data, err := io.ReadAll(io.LimitReader(f, maxFileBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxFileBytes {
+		return nil, fmt.Errorf("%s: the file is larger than %d MB, the most a csv source reads; split it", path, maxFileBytes>>20)
+	}
+	return data, nil
 }
 
 // record is one data line with its line number in the file, for reject reasons.
@@ -101,6 +130,8 @@ func parse(data []byte) ([]string, []record, error) {
 	data = bytes.TrimPrefix(data, bom)
 	r := stdcsv.NewReader(bytes.NewReader(data))
 	r.FieldsPerRecord = -1 // ragged rows: merge decides whether a row is usable
+	// Leading spaces are trimmed, as core does, so `a, "b"` reads; this is the
+	// one change to the text as written (contracts section 12.5).
 	r.TrimLeadingSpace = true
 
 	headers, err := r.Read()
@@ -108,10 +139,23 @@ func parse(data []byte) ([]string, []record, error) {
 		return nil, nil, errors.New("the file is empty; it needs at least a header row")
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, explain(err)
 	}
 	if err := checkUTF8(headers, 1); err != nil {
 		return nil, nil, err
+	}
+	for _, h := range headers {
+		// Go's reader splits lines on \n only, so a file saved with old Mac
+		// line endings reads as one long header row and no data.
+		if strings.ContainsAny(h, "\r\n") {
+			return nil, nil, errors.New("line endings are CR only; save the file as CSV UTF-8")
+		}
+	}
+	if blank(headers) {
+		return nil, nil, errors.New("the header row (line 1) is blank; the first line must name the columns")
+	}
+	if len(headers) > maxColumns {
+		return nil, nil, fmt.Errorf("the header row has %d columns, more than the %d a csv source reads", len(headers), maxColumns)
 	}
 	var out []record
 	for {
@@ -120,7 +164,7 @@ func parse(data []byte) ([]string, []record, error) {
 			return headers, out, nil
 		}
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, explain(err)
 		}
 		line, _ := r.FieldPos(0)
 		if err := checkUTF8(cells, line); err != nil {
@@ -129,8 +173,20 @@ func parse(data []byte) ([]string, []record, error) {
 		if blank(cells) {
 			continue
 		}
+		if (len(out)+1)*len(headers) > maxCells {
+			return nil, nil, fmt.Errorf("the file has more than %d cells (rows times columns), the most a csv source reads; split it", maxCells)
+		}
 		out = append(out, record{line: line, cells: cells})
 	}
+}
+
+// explain adds the fix to a quoting error, the one parse error a person
+// typing in a spreadsheet commonly makes.
+func explain(err error) error {
+	if errors.Is(err, stdcsv.ErrBareQuote) || errors.Is(err, stdcsv.ErrQuote) {
+		return fmt.Errorf("%w; put a field holding a quote in double quotes and double the quote inside (\"Acme \"\"Inc\"\"\")", err)
+	}
+	return err
 }
 
 func checkUTF8(cells []string, line int) error {
@@ -155,6 +211,7 @@ func blank(cells []string) bool {
 // when the row is short, so a ragged row and the same row padded with empty
 // cells hash alike in merge. Cells past the last header have no name and are
 // dropped. When a header is written twice, the first column's value is kept.
+// All rows share one Headers slice, which callers must not change.
 func (s *Source) toRows(headers []string, records []record) []api.InputRow {
 	rows := make([]api.InputRow, 0, len(records))
 	for _, rec := range records {
@@ -165,11 +222,7 @@ func (s *Source) toRows(headers []string, records []record) []api.InputRow {
 			}
 			cols[h] = cell(rec.cells, i)
 		}
-		rows = append(rows, api.InputRow{
-			SourceID: s.id,
-			Headers:  append([]string(nil), headers...),
-			Columns:  cols,
-		})
+		rows = append(rows, api.InputRow{SourceID: s.id, Headers: headers, Columns: cols})
 	}
 	return rows
 }
@@ -192,9 +245,13 @@ const (
 )
 
 // resolve names an event-row header: its built-in alias field, else its
-// squashed form ("event" and "at" squash to themselves).
+// squashed form ("event" and "at" squash to themselves). A header with no
+// a-z0-9 at all (`#`, `日本`) keeps its trimmed text as written.
 func resolve(aliases map[string]string, header string) string {
 	sq := api.SquashHeader(header)
+	if sq == "" {
+		return strings.TrimSpace(header)
+	}
 	if f, ok := aliases[sq]; ok {
 		return f
 	}
@@ -213,8 +270,9 @@ func attrKey(field string) string {
 // toEvents returns one event per record (contracts section 5.2). A row that
 // cannot be an event comes back with Kind empty and Attrs["reject"] saying why;
 // the engine logs it. Reasons carry the line number, never a cell's value, so
-// the log carries no email.
-func (s *Source) toEvents(headers []string, records []record) []api.Event {
+// the log carries no email. A file with no `at` column, or no person-key
+// column, fails as a whole, as core refused such files.
+func (s *Source) toEvents(headers []string, records []record) ([]api.Event, error) {
 	aliases := api.BuiltinAliases()
 	// The first header in file order that resolves to a name owns it.
 	index := map[string]int{}
@@ -226,6 +284,15 @@ func (s *Source) toEvents(headers []string, records []record) []api.Event {
 		if _, seen := index[name]; !seen {
 			index[name] = i
 		}
+	}
+	if _, ok := index[colAt]; !ok {
+		return nil, errors.New("an events file needs an `at` column (or visited at, visit date, last visited)")
+	}
+	_, hasEmail := index[colEmail]
+	_, hasLinked := index[colLinked]
+	_, hasDomain := index[colDomain]
+	if !hasEmail && !hasLinked && !hasDomain {
+		return nil, errors.New("an events file needs an email, linkedin_url or domain column")
 	}
 	_, hasEventCol := index[colEvent]
 	received := s.now().UTC()
@@ -262,14 +329,16 @@ func (s *Source) toEvents(headers []string, records []record) []api.Event {
 		// An Apollo visitor export has no event column: each row is a visit.
 		kind := "visit_" + s.id
 		if hasEventCol {
-			kind = get(colEvent)
+			kind = strings.ToLower(get(colEvent))
 		}
 		at, atErr := parseAt(get(colAt))
 		switch {
 		case kind == "":
 			e.Attrs["reject"] = fmt.Sprintf("line %d: no event kind", rec.line)
+		case hasEventCol && !plainKind(kind):
+			e.Attrs["reject"] = fmt.Sprintf("line %d: an event kind may use only a-z, 0-9 and _", rec.line)
 		case forbidden(kind):
-			e.Attrs["reject"] = fmt.Sprintf("line %d: event kind %q may not come from a file", rec.line, kind)
+			e.Attrs["reject"] = fmt.Sprintf("line %d: a sent, reply, opt-out or deal kind may not come from a file", rec.line)
 		case atErr != nil:
 			e.Attrs["reject"] = fmt.Sprintf("line %d: %v", rec.line, atErr)
 		case e.Email == "" && e.LinkedInURL == "" && e.Domain == "":
@@ -280,7 +349,19 @@ func (s *Source) toEvents(headers []string, records []record) []api.Event {
 		}
 		events = append(events, e)
 	}
-	return events
+	return events, nil
+}
+
+// plainKind reports a kind made only of a-z, 0-9 and _, so look-alike letters
+// (`ſent`) and invisible characters cannot slip a forbidden kind past forbidden.
+func plainKind(kind string) bool {
+	for i := 0; i < len(kind); i++ {
+		c := kind[i]
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 // forbidden reports a kind only a vendor may report (contracts section 5.2):

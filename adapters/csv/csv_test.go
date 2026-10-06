@@ -2,6 +2,7 @@ package csv
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -162,8 +163,9 @@ func TestApolloVisitorExport(t *testing.T) {
 	}
 	want := []api.Event{
 		{
-			Kind: "visit_site", Email: "priya@acme.example", LinkedInURL: "https://www.linkedin.com/in/priya-rao",
-			Domain: "acme.example", At: time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC),
+			Kind: "visit_site", Email: "priya@acme.example", LinkedInURL: "https://www.linkedin.com/in/example-priya",
+			// Passed through as written: merge reduces it to a host (contracts 12.5).
+			Domain: "https://www.Acme.example/", At: time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC),
 			ReceivedAt: fixedNow, Origin: "site",
 			Attrs: map[string]string{"firstname": "Priya", "lastname": "Rao", "title": "VP Engineering",
 				"company": "Acme", "page": "/pricing"},
@@ -188,6 +190,8 @@ func TestApolloVisitorExport(t *testing.T) {
 	}
 }
 
+const forbiddenReason = "a sent, reply, opt-out or deal kind may not come from a file"
+
 func TestEventRows(t *testing.T) {
 	_, events := fetch(t, newSource(t, api.Config{"id": "offline", "path": "testdata/events.csv", "events": true}))
 	type got struct {
@@ -198,9 +202,9 @@ func TestEventRows(t *testing.T) {
 	want := []got{
 		{kind: "visit_pricing", at: at},
 		{kind: "demo_request", at: time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)},
-		{reject: `line 4: event kind "sent" may not come from a file`},
-		{reject: `line 5: event kind "Replied_Positive" may not come from a file`},
-		{reject: `line 6: event kind "deal_won" may not come from a file`},
+		{reject: "line 4: " + forbiddenReason},
+		{reject: "line 5: " + forbiddenReason},
+		{reject: "line 6: " + forbiddenReason},
 		{reject: "line 7: no event kind"},
 		{reject: "line 8: no `at` time"},
 		{reject: "line 9: no email, linkedin_url or domain"},
@@ -222,7 +226,7 @@ func TestEventRows(t *testing.T) {
 		t.Errorf("first event = %+v", e)
 	}
 	// A column named reject must not mark a good row as rejected.
-	if e := events[1]; e.LinkedInURL != "https://www.linkedin.com/in/sam-lee" || e.Attrs["reject"] != "" {
+	if e := events[1]; e.LinkedInURL != "https://www.linkedin.com/in/example-sam" || e.Attrs["reject"] != "" {
 		t.Errorf("second event = %+v", e)
 	}
 	// Domain is filled from the domain column only; never derived from an email.
@@ -263,5 +267,147 @@ func TestForbiddenKinds(t *testing.T) {
 		if forbidden(k) {
 			t.Errorf("%q must be allowed", k)
 		}
+	}
+}
+
+// Reject reasons go to the row_rejected log, which must carry no email, so a
+// reason never echoes a cell, even a kind that holds an address.
+func TestRejectReasonsCarryNoCellValue(t *testing.T) {
+	body := "event,at,email\n" +
+		"replied a@x.io,2026-08-20,a@x.io\n" +
+		"deal_jane@acme.com,2026-08-20,a@x.io\n" +
+		"replied_jane@acme.com,2026-08-20,a@x.io\n" +
+		"visit_x,jane@acme.com,a@x.io\n"
+	_, events := fetch(t, newSource(t, api.Config{"id": "x", "path": writeFile(t, body), "events": true}))
+	_, fixture := fetch(t, newSource(t, api.Config{"id": "x", "path": "testdata/events.csv", "events": true}))
+	_, apollo := fetch(t, newSource(t, api.Config{"id": "x", "path": "testdata/apollo_visitors.csv", "events": true}))
+	for _, e := range append(append(events, fixture...), apollo...) {
+		if r := e.Attrs["reject"]; strings.Contains(r, "@") || strings.Contains(r, "jane") {
+			t.Errorf("reason %q echoes a cell", r)
+		}
+	}
+	for i, e := range events {
+		if e.Kind != "" || e.Attrs["reject"] == "" {
+			t.Errorf("event %d must be rejected: %+v", i, e)
+		}
+	}
+}
+
+func TestKindsAreLowercasedAndPlain(t *testing.T) {
+	body := "event,at,email\n" +
+		"Visit_Pricing,2026-08-20,a@x.example\n" +
+		"ſent,2026-08-20,a@x.example\n" + // long s: uppercases to S
+		"se​nt,2026-08-20,a@x.example\n" + // zero-width space
+		"demo-request,2026-08-20,a@x.example\n"
+	_, events := fetch(t, newSource(t, api.Config{"id": "x", "path": writeFile(t, body), "events": true}))
+	if events[0].Kind != "visit_pricing" {
+		t.Errorf("kind = %q, want it lowercased", events[0].Kind)
+	}
+	for i, e := range events[1:] {
+		want := fmt.Sprintf("line %d: an event kind may use only a-z, 0-9 and _", i+3)
+		if e.Kind != "" || e.Attrs["reject"] != want {
+			t.Errorf("line %d: kind %q reject %q, want %q", i+3, e.Kind, e.Attrs["reject"], want)
+		}
+	}
+}
+
+func TestEventsFileNeedsTimeAndPersonColumns(t *testing.T) {
+	for _, tc := range []struct{ name, body, want string }{
+		{"no at column", "event,email\nvisit_x,a@x.example\n", "`at` column"},
+		{"no person column", "event,at,page\nvisit_x,2026-08-20,/p\n", "email, linkedin_url or domain column"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newSource(t, api.Config{"id": "x", "path": writeFile(t, tc.body), "events": true})
+			_, _, _, err := s.Fetch(context.Background(), "")
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want it to name %s", err, tc.want)
+			}
+		})
+	}
+}
+
+// A header with no a-z0-9 keeps its text as the Attrs key instead of vanishing.
+func TestUnsquashableHeaderKeepsItsText(t *testing.T) {
+	body := "at,email,#,日本\n2026-08-20,a@x.example,7,東京\n"
+	_, events := fetch(t, newSource(t, api.Config{"id": "x", "path": writeFile(t, body), "events": true}))
+	want := map[string]string{"#": "7", "日本": "東京"}
+	if !reflect.DeepEqual(events[0].Attrs, want) {
+		t.Errorf("attrs = %v, want %v", events[0].Attrs, want)
+	}
+}
+
+func TestBadFilesFailWithAFix(t *testing.T) {
+	for _, tc := range []struct{ name, body, want string }{
+		{"CR-only line endings", "email,name\ra@x.example,A\rb@x.example,B\r", "line endings are CR only; save the file as CSV UTF-8"},
+		{"blank header row", ",,\na@x.example,A,\n", "header row (line 1) is blank"},
+		{"bare quote", "email,company\na@x.example,Acme \"Inc\"\n", `double the quote inside`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newSource(t, api.Config{"id": "x", "path": writeFile(t, tc.body)})
+			_, _, _, err := s.Fetch(context.Background(), "")
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want it to contain %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func setLimit[T any](t *testing.T, v *T, to T) {
+	t.Helper()
+	old := *v
+	*v = to
+	t.Cleanup(func() { *v = old })
+}
+
+func fetchErr(t *testing.T, body string) error {
+	t.Helper()
+	_, _, _, err := newSource(t, api.Config{"id": "x", "path": writeFile(t, body)}).Fetch(context.Background(), "")
+	return err
+}
+
+func TestFileSizeLimit(t *testing.T) {
+	setLimit(t, &maxFileBytes, 1<<20)
+	body := "email\n" + strings.Repeat("a@x.example\n", (1<<20)/12+1)
+	if err := fetchErr(t, body); err == nil || !strings.Contains(err.Error(), "larger than 1 MB") {
+		t.Fatalf("err = %v", err)
+	}
+	if err := fetchErr(t, body[:1<<20]); err != nil {
+		t.Fatalf("a file at the limit must read: %v", err)
+	}
+}
+
+func TestColumnLimit(t *testing.T) {
+	header := func(n int) string {
+		h := make([]string, n)
+		for i := range h {
+			h[i] = fmt.Sprintf("c%d", i)
+		}
+		return strings.Join(h, ",") + "\nx\n"
+	}
+	if err := fetchErr(t, header(1001)); err == nil || !strings.Contains(err.Error(), "1001 columns, more than the 1000") {
+		t.Fatalf("err = %v", err)
+	}
+	if err := fetchErr(t, header(1000)); err != nil {
+		t.Fatalf("1000 columns must read: %v", err)
+	}
+}
+
+// Rows times columns is capped, so many short rows under a wide header cannot
+// fan out into a map entry per padded cell without bound.
+func TestCellLimit(t *testing.T) {
+	setLimit(t, &maxCells, 100)
+	wide := "a,b,c,d,e,f,g,h,i,j\n"
+	if err := fetchErr(t, wide+strings.Repeat("x\n", 11)); err == nil || !strings.Contains(err.Error(), "more than 100 cells") {
+		t.Fatalf("err = %v", err)
+	}
+	if err := fetchErr(t, wide+strings.Repeat("x\n", 10)); err != nil {
+		t.Fatalf("100 cells must read: %v", err)
+	}
+}
+
+func TestRowsShareOneHeadersSlice(t *testing.T) {
+	rows, _ := fetch(t, newSource(t, api.Config{"id": "conf", "path": "testdata/leads_bom.csv"}))
+	if len(rows) < 2 || &rows[0].Headers[0] != &rows[1].Headers[0] {
+		t.Fatal("rows must share one Headers slice, not a copy each")
 	}
 }
