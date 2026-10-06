@@ -1,0 +1,23 @@
+.dockerignore
+  s_28e5c721690f52::t_58eba6bb76a032 9-12
+.github/workflows/ci.yml
+  s_28e5c721690f52::t_0b8a5e6de508f5 11,14,73,78-79
+.gitignore
+  s_28e5c721690f52::t_0d447dedead27a 14-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f03afd4fabd2b2111312e49e22fba870f140bb4c",
+  "prompts": {},
+  "sessions": {
+    "s_28e5c721690f52": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "da9242c6-61ec-4654-be3b-55ff7ec11668",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
