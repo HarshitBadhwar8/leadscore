@@ -4,7 +4,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -17,23 +16,65 @@ import (
 // variable so tests can make ids predictable.
 var newLeadID = func() api.LeadID { return api.LeadID(uuid.Must(uuid.NewV7()).String()) }
 
-// maxChain bounds a merged_into walk. Merges are written only by Apply, which
-// never makes a cycle, but a hand-edited store could; a bounded walk stops
-// there instead of hanging the run.
+// maxChain bounds a merged_into walk. Apply keeps every chain one step deep,
+// so only a hand-edited store gets near it.
 const maxChain = 64
 
 // Live follows merged_into from a lead to the lead that absorbed it, and
 // returns the lead itself when it was never merged. An unknown id is returned
-// unchanged.
+// unchanged. In a hand-edited cycle (A to B to A) it returns the lowest lead id
+// in the cycle, so every member resolves to one lead; Cycles names them so
+// they are blocked.
 func Live(m *model.Model, id api.LeadID) api.LeadID {
-	for i := 0; i < maxChain; i++ {
-		p, ok := m.People[model.Key(id)]
-		if !ok || p.MergedInto == "" || p.MergedInto == id {
-			return id
-		}
-		id = p.MergedInto
+	l, _ := live(m, id)
+	return l
+}
+
+// live is Live, also reporting whether the walk met a cycle.
+func live(m *model.Model, id api.LeadID) (api.LeadID, bool) {
+	p, ok := m.People[model.Key(id)]
+	if !ok || p.MergedInto == "" || p.MergedInto == id {
+		return id, false
 	}
-	return id
+	path := []api.LeadID{id}
+	for i := 0; i < maxChain; i++ {
+		id = p.MergedInto
+		for j, seen := range path {
+			if seen == id {
+				low := id
+				for _, c := range path[j:] {
+					if c < low {
+						low = c
+					}
+				}
+				return low, true
+			}
+		}
+		p, ok = m.People[model.Key(id)]
+		if !ok || p.MergedInto == "" || p.MergedInto == id {
+			return id, false
+		}
+		path = append(path, id)
+	}
+	return id, false
+}
+
+// Cycles returns every lead whose merged_into walk meets a cycle: the cycle's
+// members and any lead merged into one. Such a lead cannot be told apart from
+// the others in the cycle, so every lane skips it (Duplicates includes it)
+// and the `duplicates` check raises merge_cycle:<lead> until a person fixes
+// the merged_into cells.
+func Cycles(m *model.Model) map[api.LeadID]bool {
+	out := map[api.LeadID]bool{}
+	for _, p := range m.People {
+		if p.MergedInto == "" {
+			continue
+		}
+		if _, cyc := live(m, p.LeadID); cyc {
+			out[p.LeadID] = true
+		}
+	}
+	return out
 }
 
 // FindPerson matches an event's person, with no writes (contracts 12.5): first
@@ -41,15 +82,20 @@ func Live(m *model.Model, id api.LeadID) api.LeadID {
 // by email, then by LinkedIn URL, then follows merged_into to the live lead.
 // The event's keys must already be normalized (NormalizeEventKeys).
 //
-// An event that carries an email matches by that email only, never by its
-// LinkedIn URL: an unknown email whose LinkedIn URL belongs to someone else is
-// a new person (RFC 6.5), so one wrong URL can never pin a stranger's event,
-// such as an opt-out, on an existing lead.
+// An event that carries a well-formed email matches by that email only, never
+// by its LinkedIn URL: an unknown email whose LinkedIn URL belongs to someone
+// else is a new person (RFC 6.5), so one wrong URL can never pin a stranger's
+// event, such as an opt-out, on an existing lead. An email that fails
+// ValidateEmailShape can be no lead's key, so it counts as missing and the
+// LinkedIn URL decides.
 func FindPerson(m *model.Model, e api.Event) (api.LeadID, bool) {
 	if cid := strings.TrimSpace(e.Attrs[FieldContactID]); cid != "" {
 		if ar, ok := m.AppliedRows[model.K(ReceiverSource, cid)]; ok && ar.LeadID != "" {
 			return Live(m, ar.LeadID), true
 		}
+	}
+	if e.Email != "" && ValidateEmailShape(e.Email) != nil {
+		e.Email = ""
 	}
 	if e.Email != "" {
 		if id, ok := m.Identities[model.Key(e.Email)]; ok {
@@ -69,8 +115,9 @@ func FindPerson(m *model.Model, e api.Event) (api.LeadID, bool) {
 // lead matches, creates one under source `receiver` from the event's keys and
 // person attributes (contracts 12.5). It returns "" for an event that names
 // no usable person (a company-only event, or one whose only keys cannot be
-// written). A LinkedIn URL another lead already holds is not written and
-// counts as a key conflict, as for input rows.
+// written). A LinkedIn URL another lead already holds is not written; it
+// counts as a key conflict and is logged with the new lead's id, as for input
+// rows. The lead's times are the event's received time (else its time).
 func ApplyEventPerson(m *model.Model, e api.Event) api.LeadID {
 	if id, ok := FindPerson(m, e); ok {
 		return id
@@ -78,9 +125,6 @@ func ApplyEventPerson(m *model.Model, e api.Event) api.LeadID {
 	at := e.ReceivedAt
 	if at.IsZero() {
 		at = e.At
-	}
-	if at.IsZero() {
-		at = time.Now()
 	}
 	at = at.UTC()
 
@@ -134,6 +178,8 @@ func ApplyEventPerson(m *model.Model, e api.Event) api.LeadID {
 	}
 	if conflict {
 		countKeyConflict(m)
+		m.Put(model.TableLog, model.LogEntry{At: at, Level: "warn", LeadID: id, Kind: LogKeyConflict,
+			Message: "an event's LinkedIn URL belongs to another lead; the key was not written"})
 	}
 	return id
 }
@@ -155,10 +201,8 @@ func Resolve(m *model.Model, person string) (api.LeadID, bool) {
 	if p == "" || p == "*" {
 		return "", false
 	}
-	for _, cand := range []string{p, strings.ToLower(p)} {
-		if _, ok := m.People[model.Key(cand)]; ok {
-			return Live(m, api.LeadID(cand)), true
-		}
+	if _, ok := m.People[model.Key(p)]; ok {
+		return Live(m, api.LeadID(p)), true // lead ids are minted lowercase
 	}
 	if id, ok := m.Identities[model.Key(p)]; ok {
 		return Live(m, id.LeadID), true
@@ -171,13 +215,19 @@ func Resolve(m *model.Model, person string) (api.LeadID, bool) {
 // it after merging; it does not see later changes.
 type Index struct {
 	m        *model.Model
+	channel  map[string]string // source id -> channel
 	families map[api.LeadID][]api.LeadID
 	sources  map[api.LeadID]map[string]bool // live lead -> source ids
 }
 
-// NewIndex builds the view.
-func NewIndex(m *model.Model) *Index {
-	x := &Index{m: m, families: map[api.LeadID][]api.LeadID{}, sources: map[api.LeadID]map[string]bool{}}
+// NewIndex builds the view, with the configured sources for their channels.
+// Build it after the run's intake and fold, right before evaluation, and
+// build it again if the model changes.
+func NewIndex(m *model.Model, sources []config.Source) *Index {
+	x := &Index{m: m, channel: map[string]string{}, families: map[api.LeadID][]api.LeadID{}, sources: map[api.LeadID]map[string]bool{}}
+	for _, s := range sources {
+		x.channel[s.ID] = s.Channel
+	}
 	ids := make([]string, 0, len(m.People))
 	for k := range m.People {
 		ids = append(ids, string(k))
@@ -311,14 +361,10 @@ func (x *Index) PersonKey(id api.LeadID) string {
 // channels (contracts section 3, sources[].channel) that reported the live
 // lead or a lead it absorbed. A source no longer configured counts under its
 // id; the receiver is its own channel.
-func (x *Index) SourcesSeen(id api.LeadID, sources []config.Source) int {
-	channel := map[string]string{}
-	for _, s := range sources {
-		channel[s.ID] = s.Channel
-	}
+func (x *Index) SourcesSeen(id api.LeadID) int {
 	seen := map[string]bool{}
 	for src := range x.sources[id] {
-		c := channel[src]
+		c := x.channel[src]
 		if c == "" {
 			c = src
 		}

@@ -36,7 +36,7 @@ func sqliteInstall(t *testing.T) (string, *sqlite.Store) {
 			Columns: map[string]string{"Email": "ada@acme.io", "LinkedIn": "linkedin.com/in/ada"}},
 		{SourceID: "leads", Headers: []string{"LinkedIn"}, Columns: map[string]string{"LinkedIn": "linkedin.com/in/bo"}},
 	} {
-		n, _ := merge.Normalize(r, nil)
+		n := merge.Normalize(r, nil)
 		rows = append(rows, n)
 	}
 	merge.Apply(m, rows, merge.ApplyCtx{Now: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), RunID: "r1"})
@@ -68,8 +68,8 @@ func TestOverridesWriters(t *testing.T) {
 		{[]string{"set-status", "https://www.LinkedIn.com/in/ada/", "unsubscribed"}, "status unsubscribed for ada@acme.io"},
 		{[]string{"set-status", "ADA@acme.io", "unsubscribed"}, "nothing to change"},
 		{[]string{"set-status", "ada@acme.io", "resubscribe"}, "status resubscribe for ada@acme.io"},
-		{[]string{"merge", "linkedin.com/in/bo", "dee@acme.io"}, "linkedin.com/in/bo same_as dee@acme.io; the next run merges them for good (no lead matches yet"},
-		{[]string{"mark-distinct", "ada@acme.io", "linkedin.com/in/bo"}, "ada@acme.io distinct from linkedin.com/in/bo"},
+		{[]string{"merge", "linkedin.com/in/bo", "ADA@acme.io"}, "linkedin.com/in/bo same_as ada@acme.io; the next run merges them for good"},
+		{[]string{"mark-distinct", "ada@acme.io", "dee@acme.io"}, "ada@acme.io distinct from dee@acme.io (no lead matches yet"},
 		{[]string{"retry", "--lane", "warm"}, "retry warm for every lead"},
 		{[]string{"retry", "linkedin.com/in/bo"}, "retry every lane for linkedin.com/in/bo"},
 	}
@@ -83,8 +83,8 @@ func TestOverridesWriters(t *testing.T) {
 	got := overrideRows(t, s)
 	want := []model.Override{
 		{Person: "ada@acme.io", Action: "status", Value: "resubscribe", Note: "2026-10-07T12:00:00.000Z"},
-		{Person: "linkedin.com/in/bo", Action: "same_as", Value: "dee@acme.io"},
-		{Person: "ada@acme.io", Action: "distinct", Value: "linkedin.com/in/bo"},
+		{Person: "linkedin.com/in/bo", Action: "same_as", Value: "ada@acme.io"},
+		{Person: "ada@acme.io", Action: "distinct", Value: "dee@acme.io"},
 		{Person: "*", Action: "retry", Value: "warm", Note: "2026-10-07T12:00:00.000Z"},
 		{Person: "linkedin.com/in/bo", Action: "retry", Value: "", Note: "2026-10-07T12:00:00.000Z"},
 	}
@@ -105,6 +105,8 @@ func TestOverridesWritersRefuse(t *testing.T) {
 		{"set-status", "ada@acme.io", "deal"},
 		{"set-status", "not-a-lead", "unsubscribed"},
 		{"merge", "ada@acme.io", "linkedin.com/in/ada"},
+		{"merge", "ada@acme.io", "dee@acme.io"}, // a merge names two known leads
+		{"merge", "ada@acme.io", "N/A"},
 		{"retry", "{{contact.email}}"},
 	} {
 		code, _, errOut := run(append(args, "--config", cfg)...)

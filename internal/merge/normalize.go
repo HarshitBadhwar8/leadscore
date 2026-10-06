@@ -11,14 +11,14 @@ package merge
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
-	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
+	"github.com/HarshitBadhwar8/leadscore/internal/model"
 )
 
 // ReceiverSource is the source id (and channel) of rows the receiver derives
@@ -31,7 +31,7 @@ const (
 	FieldLinkedIn  = "linkedin_url"
 	FieldFullName  = "full_name"
 	FieldContactID = "contact_id"
-	FieldDomain    = "company.domain"
+	FieldDomain    = model.CompanyDomainField // "company.domain"
 )
 
 // Normalized is one input row with its headers resolved to field names.
@@ -50,20 +50,18 @@ type Normalized struct {
 	// lowercase host.
 	Fields map[string]string
 	// Reject is the reason the row cannot be applied, or empty. It never
-	// quotes a cell value, so it can be logged.
+	// quotes a cell value, so it can be logged. A rejected row is still passed
+	// to Apply, which records it once in Applied rows.
 	Reject string
 }
-
-// ErrRejected marks a row Normalize rejected. The Normalized value is still
-// filled; pass it to Apply, which records the reject once in Applied rows.
-var ErrRejected = errors.New("row rejected")
 
 // Normalize resolves a row's headers with the built-in alias table plus the
 // rubric's aliases (the rubric wins on a clash; the first header in
 // row.Headers order owns a field), computes the row id and hash, and checks the
-// email's shape and that the row has a key. On a reject it returns the row with
-// Reject set and an error wrapping ErrRejected.
-func Normalize(row api.InputRow, aliases map[string]string) (Normalized, error) {
+// email's shape and that the row has a key. It never fails: a rejected row
+// comes back with Reject set, and goes to Apply like any other row, so no
+// caller can drop a reject before it is recorded.
+func Normalize(row api.InputRow, aliases map[string]string) Normalized {
 	table := aliasTable(aliases)
 	n := Normalized{SourceID: row.SourceID, Fields: map[string]string{}, RowHash: rowHash(row, table)}
 	owned := map[string]bool{}
@@ -111,10 +109,61 @@ func Normalize(row api.InputRow, aliases map[string]string) (Normalized, error) 
 	if n.RowID == "" {
 		n.RowID = "row:" + n.RowHash[:16]
 	}
-	if n.Reject != "" {
-		return n, fmt.Errorf("%w: %s", ErrRejected, n.Reject)
+	return n
+}
+
+// RowGroup is every row of one source that shares a row id (a CSV with the
+// same email on two lines, say). A group applies as one unit: its rows in
+// order, under one hash, so a repeated row id settles instead of re-applying
+// every run.
+type RowGroup struct {
+	SourceID, RowID string
+	Hash            string // the row's hash for a one-row group; else the SHA-256 of the sorted row hashes
+	Rows            []Normalized
+}
+
+// Group splits rows into row groups, in order of each group's first row. The
+// run's chunking must never split a group across chunks.
+func Group(rows []Normalized) []RowGroup {
+	var out []RowGroup
+	at := map[model.Key]int{}
+	for _, r := range rows {
+		k := model.K(r.SourceID, r.RowID)
+		i, ok := at[k]
+		if !ok {
+			i = len(out)
+			at[k] = i
+			out = append(out, RowGroup{SourceID: r.SourceID, RowID: r.RowID})
+		}
+		out[i].Rows = append(out[i].Rows, r)
 	}
-	return n, nil
+	for i := range out {
+		g := &out[i]
+		if len(g.Rows) == 1 {
+			g.Hash = g.Rows[0].RowHash
+			continue
+		}
+		hs := make([]string, len(g.Rows))
+		for j, r := range g.Rows {
+			hs[j] = r.RowHash
+		}
+		sort.Strings(hs)
+		sum := sha256.Sum256([]byte(strings.Join(hs, "\x00")))
+		g.Hash = hex.EncodeToString(sum[:])
+	}
+	return out
+}
+
+// Pending returns the groups not yet applied at their current hash: the
+// run's backlog.
+func Pending(m *model.Model, rows []Normalized) []RowGroup {
+	var out []RowGroup
+	for _, g := range Group(rows) {
+		if ar, ok := m.AppliedRows[model.K(g.SourceID, g.RowID)]; !ok || ar.RowHash != g.Hash {
+			out = append(out, g)
+		}
+	}
+	return out
 }
 
 // headersOf returns the row's headers in order, followed by any column the
@@ -180,14 +229,45 @@ func rowHash(row api.InputRow, table map[string]string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// CanonicalLinkedIn reduces a profile URL to the form identities compare, so
-// the same person entered three ways resolves to one lead: lowercased, no
-// scheme, no `www.`, no trailing slash.
+// CanonicalLinkedIn reduces a LinkedIn profile URL to the one form
+// identities compare, so the same person entered many ways is one key:
+// `linkedin.com/in/<slug>` (or `linkedin.com/pub/<name>/<a>/<b>/<c>`),
+// lowercased. Any *.linkedin.com host counts (in., uk., m., www.), with or
+// without a scheme; the query, fragment, empty segments, and anything after
+// the slug (a locale such as /en) are dropped. Anything else, including a
+// placeholder such as "N/A" or "-", is not a LinkedIn key and returns "".
 func CanonicalLinkedIn(raw string) string {
-	u := strings.TrimSpace(strings.ToLower(raw))
-	u = strings.TrimPrefix(strings.TrimPrefix(u, "https://"), "http://")
-	u = strings.TrimPrefix(u, "www.")
-	return strings.TrimSuffix(u, "/")
+	s := strings.ToLower(strings.TrimSpace(raw))
+	if s == "" {
+		return ""
+	}
+	if !strings.Contains(s, "://") {
+		s = "https://" + strings.TrimPrefix(s, "//")
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		return ""
+	}
+	host := u.Hostname()
+	if host != "linkedin.com" && !strings.HasSuffix(host, ".linkedin.com") {
+		return ""
+	}
+	var segs []string
+	for _, p := range strings.Split(u.Path, "/") {
+		if p = strings.TrimSpace(p); p != "" {
+			segs = append(segs, p)
+		}
+	}
+	switch {
+	case len(segs) >= 2 && segs[0] == "in":
+		return "linkedin.com/in/" + segs[1]
+	case len(segs) >= 2 && segs[0] == "pub":
+		if len(segs) > 5 {
+			segs = segs[:5] // pub, name and the three id parts; a locale may follow
+		}
+		return "linkedin.com/" + strings.Join(segs, "/")
+	}
+	return ""
 }
 
 // NormalizeDomain reduces a domain or URL to its lowercase host: no scheme,
@@ -239,7 +319,7 @@ func NormalizePerson(raw string) string {
 	case strings.Contains(s, "@"):
 		return NormalizeEmail(s)
 	case strings.Contains(strings.ToLower(s), "linkedin."):
-		return CanonicalLinkedIn(s)
+		return CanonicalLinkedIn(s) // "" when it is not a profile URL: it names nobody
 	}
 	return s
 }

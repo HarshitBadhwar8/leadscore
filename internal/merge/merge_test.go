@@ -43,7 +43,7 @@ func (w *world) apply(rows ...api.InputRow) {
 	w.t.Helper()
 	var ns []Normalized
 	for _, r := range rows {
-		n, _ := Normalize(r, w.aliases)
+		n := Normalize(r, w.aliases)
 		ns = append(ns, n)
 	}
 	Apply(w.m, ns, ApplyCtx{Now: w.now, RunID: "run-" + w.now.Format("1504"), Sources: w.sources, Aliases: w.aliases})
@@ -248,7 +248,7 @@ func TestSameSourceCorrection(t *testing.T) {
 	if w.lead("dana@acme.io") != lead {
 		t.Fatal("the corrected email resolves to another lead")
 	}
-	x := NewIndex(w.m)
+	x := NewIndex(w.m, w.sources)
 	if got := x.PrimaryEmail(lead); got != "dana@acme.io" {
 		t.Errorf("primary = %q, want the source's own correction", got)
 	}
@@ -278,7 +278,7 @@ func TestCorrectionRefusedWhenAnotherSourceVouched(t *testing.T) {
 			}
 			w.apply(in("receiver", "contact_id", "c-9", "email", "other@acme.io"))
 			lead := w.lead("shared@acme.io")
-			if got := NewIndex(w.m).PrimaryEmail(lead); got != "shared@acme.io" {
+			if got := NewIndex(w.m, w.sources).PrimaryEmail(lead); got != "shared@acme.io" {
 				t.Errorf("primary = %q, want shared@acme.io: another source vouched for it", got)
 			}
 			if w.lead("other@acme.io") != lead {
@@ -333,6 +333,12 @@ func TestCompanyDomain(t *testing.T) {
 func TestRecordedConflict(t *testing.T) {
 	w := newWorld(t)
 	w.apply(in("a", "email", "ada@acme.io", "segment", "AI-native"))
+	// The same source changing its value: the row re-applies, nothing changes.
+	w.apply(in("a", "email", "ada@acme.io", "segment", "Data-curious"))
+	if p := w.person(w.lead("ada@acme.io")); len(p.Conflicts) != 0 || p.Fields["segment"].Value != "AI-native" {
+		t.Fatalf("same source edit: segment %q, conflicts %v; want the first value and no conflict",
+			p.Fields["segment"].Value, p.Conflicts)
+	}
 	w.apply(in("b", "email", "ada@acme.io", "segment", "Legacy"))
 	w.apply(in("b", "email", "ada@acme.io", "segment", "Legacy", "note", "x")) // same row again, edited
 	w.apply(in("c", "email", "ada@acme.io", "segment", "AI-native"))
@@ -383,9 +389,9 @@ func TestBuiltInFields(t *testing.T) {
 		in("receiver", "contact_id", "c-2", "email", "bo@acme.io"),
 		in("crm", "email", "cy@beta.io"),
 	)
-	x := NewIndex(w.m)
+	x := NewIndex(w.m, w.sources)
 	ada, bo, cy := w.lead("ada@acme.io"), w.lead("bo@acme.io"), w.lead("cy@beta.io")
-	if got := x.SourcesSeen(ada, w.sources); got != 2 {
+	if got := x.SourcesSeen(ada); got != 2 {
 		t.Errorf("ada sources_seen = %d, want 2 (two conference CSVs count once, plus the receiver)", got)
 	}
 	if !x.ReceiverOnly(bo) || x.ReceiverOnly(ada) || x.ReceiverOnly(cy) {
@@ -398,11 +404,11 @@ func TestBuiltInFields(t *testing.T) {
 	w.apply(in("crm", "email", "bo@acme.io"))
 	w.override("bo@acme.io", "same_as", "ada@acme.io")
 	w.apply()
-	x = NewIndex(w.m)
+	x = NewIndex(w.m, w.sources)
 	if x.ReceiverOnly(ada) || x.LeadsSeen()["acme.io"] != 1 {
 		t.Errorf("after the merge: receiver_only %v, leads_seen %v", x.ReceiverOnly(ada), x.LeadsSeen())
 	}
-	if got := x.SourcesSeen(ada, w.sources); got != 3 {
+	if got := x.SourcesSeen(ada); got != 3 {
 		t.Errorf("sources_seen counts the absorbed lead's channels: %d, want 3", got)
 	}
 }
@@ -492,7 +498,7 @@ func TestNamesakes(t *testing.T) {
 // checked here with a stub fold that reads Outcomes across the family.
 func TestOptOutSurvivesSameAs(t *testing.T) {
 	stubFold := func(m *model.Model, lead api.LeadID) string {
-		for _, id := range NewIndex(m).Family(lead) {
+		for _, id := range NewIndex(m, nil).Family(lead) {
 			if !m.Outcomes[model.Key(id)].UnsubscribedAt.IsZero() {
 				return "unsubscribed"
 			}
@@ -528,8 +534,8 @@ func TestOptOutSurvivesSameAs(t *testing.T) {
 			if _, ok := w.m.Outcomes[model.Key(optedOut)]; !ok {
 				t.Error("the opted-out lead's Outcomes row stays under its own id")
 			}
-			if NewIndex(w.m).Emails(survivor)[0] == "" || len(NewIndex(w.m).Emails(survivor)) != 2 {
-				t.Errorf("the survivor carries both emails: %v", NewIndex(w.m).Emails(survivor))
+			if NewIndex(w.m, w.sources).Emails(survivor)[0] == "" || len(NewIndex(w.m, w.sources).Emails(survivor)) != 2 {
+				t.Errorf("the survivor carries both emails: %v", NewIndex(w.m, w.sources).Emails(survivor))
 			}
 		})
 	}
@@ -716,8 +722,13 @@ func TestApplyEventPerson(t *testing.T) {
 	if p.Fields["linkedin_url"].Value != "" || w.lead("linkedin.com/in/bo") != bo {
 		t.Error("another lead's LinkedIn URL is not written")
 	}
-	if w.m.StateValue("key_conflicts") != "1" {
-		t.Error("the skipped URL counts as a key conflict")
+	if w.m.StateValue("key_conflicts") != "1" || w.logKinds("key_conflict") != 1 {
+		t.Error("the skipped URL counts as a key conflict and is logged")
+	}
+	for _, l := range w.m.Log {
+		if l.Kind == "key_conflict" && (l.LeadID != id || l.Email != "" || strings.Contains(l.Message, "@")) {
+			t.Errorf("the log row carries the lead id only: %+v", l)
+		}
 	}
 	if p.Fields["company.domain"].Value != "beta.io" || !p.Fields["company.domain"].Derived ||
 		p.Fields["full_name"].Value != "S Tranger" || p.Fields["company.name"].Value != "Beta" {
@@ -729,7 +740,7 @@ func TestApplyEventPerson(t *testing.T) {
 	if got, _ := FindPerson(w.m, api.Event{Attrs: map[string]string{"contact_id": "c-7"}}); got != id {
 		t.Error("the contact id finds the created lead")
 	}
-	if NewIndex(w.m).ReceiverOnly(id) != true {
+	if NewIndex(w.m, w.sources).ReceiverOnly(id) != true {
 		t.Error("a lead created for an event is receiver-only")
 	}
 	if got := ApplyEventPerson(w.m, api.Event{Kind: "visit_pricing", Domain: "acme.io"}); got != "" {
@@ -746,7 +757,7 @@ func TestIndexKeys(t *testing.T) {
 	w := newWorld(t)
 	w.apply(in("a", "linkedin", "linkedin.com/in/ada"))
 	w.apply(in("b", "email", "bo@acme.io"))
-	x := NewIndex(w.m)
+	x := NewIndex(w.m, w.sources)
 	ada, bo := w.lead("linkedin.com/in/ada"), w.lead("bo@acme.io")
 	if x.PersonKey(ada) != "linkedin.com/in/ada" || x.PersonKey(bo) != "bo@acme.io" {
 		t.Errorf("person keys %q %q", x.PersonKey(ada), x.PersonKey(bo))

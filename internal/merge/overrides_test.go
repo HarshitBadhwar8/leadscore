@@ -78,7 +78,7 @@ func TestSetStatus(t *testing.T) {
 	ada := w.lead("ada@acme.io")
 	w.override("linkedin.com/in/ada", "status", "replied_neutral")
 	w.override("ADA@acme.io", "status", "blocked")
-	w.override("ada@acme.io", "status", "resubscribe") // waiting; kept
+	w.override("ada@acme.io", "status", "resubscribe") // waiting; the newer status wins
 	w.override("bo@acme.io", "status", "replied_neutral")
 
 	key, err := SetStatus(w.m, "https://linkedin.com/in/ada", "Unsubscribed", t0)
@@ -89,8 +89,13 @@ func TestSetStatus(t *testing.T) {
 	if ov.Status[ada] != "unsubscribed" || ov.Blocked[ada] != "" {
 		t.Errorf("status %q blocked %q: one row replaces the rows under every key", ov.Status[ada], ov.Blocked[ada])
 	}
-	if got := countRows(w.m, "status"); got != 3 {
-		t.Errorf("status rows = %d, want ada's new row, her waiting resubscribe and bo's", got)
+	if got := countRows(w.m, "status"); got != 2 {
+		t.Errorf("status rows = %d, want ada's new row and bo's", got)
+	}
+	for _, o := range w.m.Overrides {
+		if o.Value == "resubscribe" {
+			t.Error("an explicit status deletes the resubscribe row still waiting for the lead")
+		}
 	}
 
 	if _, err := SetStatus(w.m, "ada@acme.io", "resubscribe", t0); err != nil {

@@ -1,7 +1,6 @@
 package merge
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
@@ -19,7 +18,7 @@ func in(source string, pairs ...string) api.InputRow {
 }
 
 func TestNormalizeResolvesHeaders(t *testing.T) {
-	n, err := Normalize(in("leads",
+	n := Normalize(in("leads",
 		"Work Email", "  Ada@ACME.io ",
 		"LinkedIn Profile", "https://www.LinkedIn.com/in/Ada/",
 		"Website", "https://www.Acme.io:443/about?x=1",
@@ -28,8 +27,8 @@ func TestNormalizeResolvesHeaders(t *testing.T) {
 		"???", "dropped",
 		"Empty", "",
 	), nil)
-	if err != nil {
-		t.Fatal(err)
+	if n.Reject != "" {
+		t.Fatal(n.Reject)
 	}
 	want := map[string]string{
 		"email":               "ada@acme.io",
@@ -55,11 +54,11 @@ func TestNormalizeResolvesHeaders(t *testing.T) {
 // even when its cell is empty, so a column order change is the only thing that
 // changes which column counts.
 func TestTwoHeadersOneFieldFirstWins(t *testing.T) {
-	n, _ := Normalize(in("s", "Email", "first@acme.io", "Work Email", "second@acme.io"), nil)
+	n := Normalize(in("s", "Email", "first@acme.io", "Work Email", "second@acme.io"), nil)
 	if n.Fields["email"] != "first@acme.io" {
 		t.Errorf("email = %q, want the first header's", n.Fields["email"])
 	}
-	n, _ = Normalize(in("s", "Title", "", "Job title", "CTO", "Email", "a@acme.io"), nil)
+	n = Normalize(in("s", "Title", "", "Job title", "CTO", "Email", "a@acme.io"), nil)
 	if _, ok := n.Fields["title"]; ok {
 		t.Errorf("title = %q: the first header owns the field even when empty", n.Fields["title"])
 	}
@@ -67,7 +66,7 @@ func TestTwoHeadersOneFieldFirstWins(t *testing.T) {
 
 func TestRubricAliasesWinOverBuiltins(t *testing.T) {
 	r := in("s", "Email", "a@acme.io", "Stage", "Series B", "Headcount", "40")
-	n, _ := Normalize(r, map[string]string{"stage": "deal_stage"})
+	n := Normalize(r, map[string]string{"stage": "deal_stage"})
 	if n.Fields["deal_stage"] != "Series B" || n.Fields["company.funding_stage"] != "" {
 		t.Errorf("fields = %v: the rubric's alias must win", n.Fields)
 	}
@@ -90,9 +89,9 @@ func TestRowIDs(t *testing.T) {
 		{"contact id means nothing for other sources", in("s", "contact_id", "c-1", "email", "a@acme.io"), "a@acme.io"},
 	}
 	for _, tt := range tests {
-		n, err := Normalize(tt.row, nil)
-		if err != nil || n.RowID != tt.want {
-			t.Errorf("%s: row id %q, %v; want %q", tt.name, n.RowID, err, tt.want)
+		n := Normalize(tt.row, nil)
+		if n.Reject != "" || n.RowID != tt.want {
+			t.Errorf("%s: row id %q, %v; want %q", tt.name, n.RowID, n.Reject, tt.want)
 		}
 	}
 }
@@ -104,9 +103,9 @@ func TestNormalizeRejects(t *testing.T) {
 		"no key":              in("s", "name", "Ada", "title", "CTO"),
 		"name without domain": in("s", "name", "Ada"),
 	} {
-		n, err := Normalize(r, nil)
-		if !errors.Is(err, ErrRejected) || n.Reject == "" {
-			t.Errorf("%s: err %v, reject %q; want a reject", name, err, n.Reject)
+		n := Normalize(r, nil)
+		if n.Reject == "" {
+			t.Errorf("%s: want a reject", name)
 		}
 		if n.RowID == "" || n.RowHash == "" {
 			t.Errorf("%s: a rejected row still needs a row id and hash to be recorded once", name)
@@ -120,10 +119,10 @@ func TestNormalizeRejects(t *testing.T) {
 // Proof: the hash covers every raw cell and the alias table, so an edited row
 // or an alias change re-applies the row; header order does not matter.
 func TestRowHash(t *testing.T) {
-	a, _ := Normalize(in("s", "email", "a@acme.io", "title", "CTO"), nil)
-	b, _ := Normalize(in("s", "title", "CTO", "email", "a@acme.io"), nil)
-	c, _ := Normalize(in("s", "email", "a@acme.io", "title", "CEO"), nil)
-	d, _ := Normalize(in("s", "email", "a@acme.io", "title", "CTO"), map[string]string{"title": "job"})
+	a := Normalize(in("s", "email", "a@acme.io", "title", "CTO"), nil)
+	b := Normalize(in("s", "title", "CTO", "email", "a@acme.io"), nil)
+	c := Normalize(in("s", "email", "a@acme.io", "title", "CEO"), nil)
+	d := Normalize(in("s", "email", "a@acme.io", "title", "CTO"), map[string]string{"title": "job"})
 	if a.RowHash != b.RowHash {
 		t.Error("header order changed the hash")
 	}

@@ -72,12 +72,11 @@ func runSetStatus(inv *invocation) int {
 // runMerge: merge <person> <person> appends a same_as row.
 func runMerge(inv *invocation) int {
 	return editOverrides(inv, func(m *model.Model) (string, error) {
-		known := isKnown(m, inv.args[0]) && isKnown(m, inv.args[1])
 		a, b, err := merge.AddPair(m, merge.ActionSameAs, inv.args[0], inv.args[1])
 		if err != nil {
 			return "", err
 		}
-		return "Overrides: " + a + " same_as " + b + "; the next run merges them for good" + waits(known), nil
+		return "Overrides: " + a + " same_as " + b + "; the next run merges them for good", nil
 	})
 }
 

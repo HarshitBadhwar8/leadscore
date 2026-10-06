@@ -181,16 +181,18 @@ func OverrideHash(o model.Override) string {
 	return hex.EncodeToString(h[:])
 }
 
-// Duplicates returns the live leads that are unresolved namesakes (RFC 6.5):
-// two live leads with the same company domain and normalized full name, not
-// kept apart by an Overrides `distinct` row naming that pair. Every lane skips
-// them. A third namesake stays blocked until it is paired with each of the
-// others.
+// Duplicates returns the leads every lane skips as unresolved duplicates:
+// namesakes (RFC 6.5), two live leads with the same company domain and
+// normalized full name not kept apart by an Overrides `distinct` row naming
+// that pair (a third namesake stays blocked until paired with each of the
+// others), and every lead in a hand-edited merged_into cycle (Cycles).
 func Duplicates(m *model.Model) map[api.LeadID]bool {
 	distinct := map[[2]api.LeadID]bool{}
+	inPair := map[api.LeadID]bool{}
 	for _, o := range ParseOverrides(m).Rows {
 		if o.Action == ActionDistinct && o.Lead != "" && o.Other != "" {
 			distinct[pair(o.Lead, o.Other)] = true
+			inPair[o.Lead], inPair[o.Other] = true, true
 		}
 	}
 	groups := map[string][]api.LeadID{}
@@ -205,8 +207,23 @@ func Duplicates(m *model.Model) map[api.LeadID]bool {
 		k := d + "\x00" + n
 		groups[k] = append(groups[k], p.LeadID)
 	}
-	out := map[api.LeadID]bool{}
+	out := Cycles(m)
 	for _, ids := range groups {
+		if len(ids) < 2 {
+			continue
+		}
+		paired := false
+		for _, id := range ids {
+			paired = paired || inPair[id]
+		}
+		if !paired {
+			// No distinct row touches the group: every member is blocked, with
+			// no need to look at each pair.
+			for _, id := range ids {
+				out[id] = true
+			}
+			continue
+		}
 		for i := range ids {
 			for j := i + 1; j < len(ids); j++ {
 				if !distinct[pair(ids[i], ids[j])] {
@@ -233,8 +250,9 @@ func pair(a, b api.LeadID) [2]api.LeadID {
 // `none`, or `resubscribe`. It replaces the lead's status rows under every one
 // of its identity keys with one row; `none` deletes them; `resubscribe` deletes
 // them (a manual `unsubscribed` included) and writes a `resubscribe` row with
-// the request time in `note`. A `resubscribe` row already waiting is kept. It
-// returns the person the row names.
+// the request time in `note`. An explicit status also deletes a `resubscribe`
+// row still waiting for the lead: the newer instruction wins. It returns the
+// person the row names.
 func SetStatus(m *model.Model, person, value string, now time.Time) (string, error) {
 	v := strings.ToLower(strings.TrimSpace(value))
 	if !isManualStatus(v) && v != "none" && v != Resubscribe {
@@ -246,11 +264,12 @@ func SetStatus(m *model.Model, person, value string, now time.Time) (string, err
 		return "", err
 	}
 	want := model.Override{Person: key, Action: ActionStatus, Value: v}
+	explicit := v != "none" && v != Resubscribe
 	for _, o := range ParseOverrides(m).Rows {
-		if o.Action != ActionStatus || o.Value == Resubscribe {
+		if o.Action != ActionStatus || (o.Value == Resubscribe && !explicit) {
 			continue
 		}
-		if v != "none" && v != Resubscribe && sameOverride(o.Raw, want) {
+		if explicit && sameOverride(o.Raw, want) {
 			continue // already says this; deleting and re-adding it would rewrite the tab
 		}
 		if (lead != "" && o.Lead == lead) || (lead == "" && o.Person == key) {
@@ -273,7 +292,9 @@ func SetStatus(m *model.Model, person, value string, now time.Time) (string, err
 }
 
 // AddPair appends a `same_as` or `distinct` row for two persons. Two persons
-// that are already one lead are refused.
+// that are already one lead are refused, and so is a `same_as` naming a person
+// no lead matches: a merge is permanent, so it must name two leads that exist
+// now rather than wait for a typo to come true. A `distinct` row may wait.
 func AddPair(m *model.Model, action, a, b string) (string, string, error) {
 	if action != ActionSameAs && action != ActionDistinct {
 		return "", "", fmt.Errorf("action %q is not same_as or distinct", action)
@@ -288,6 +309,9 @@ func AddPair(m *model.Model, action, a, b string) (string, string, error) {
 	}
 	if ka == kb || (la != "" && la == lb) {
 		return "", "", errors.New("both persons are already the same lead")
+	}
+	if action == ActionSameAs && (la == "" || lb == "") {
+		return "", "", errors.New("merge needs two known leads; a person no lead matches cannot be merged")
 	}
 	m.Put(model.TableOverrides, model.Override{Person: ka, Action: action, Value: kb})
 	return ka, kb, nil
@@ -314,7 +338,7 @@ func AddRetry(m *model.Model, person, lane string, now time.Time) (string, error
 // normalized email or LinkedIn URL, so the row waits until the person appears.
 func personKey(m *model.Model, person string) (key string, lead api.LeadID, err error) {
 	if id, ok := Resolve(m, person); ok {
-		return NewIndex(m).PersonKey(id), id, nil
+		return NewIndex(m, nil).PersonKey(id), id, nil
 	}
 	p := NormalizePerson(person)
 	switch {

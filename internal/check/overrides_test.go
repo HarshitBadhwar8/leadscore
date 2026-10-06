@@ -2,11 +2,13 @@ package check
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
+	"github.com/HarshitBadhwar8/leadscore/internal/config"
 	"github.com/HarshitBadhwar8/leadscore/internal/merge"
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
 )
@@ -17,7 +19,7 @@ func people(t *testing.T, rows ...api.InputRow) *model.Model {
 	m := model.New()
 	var ns []merge.Normalized
 	for _, r := range rows {
-		n, _ := merge.Normalize(r, nil)
+		n := merge.Normalize(r, nil)
 		ns = append(ns, n)
 	}
 	merge.Apply(m, ns, merge.ApplyCtx{Now: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), RunID: "r1"})
@@ -98,5 +100,37 @@ func TestDuplicatesCheck(t *testing.T) {
 	ps = byKey(duplicatesCheck{}.Run(context.Background(), Env{Model: m}))
 	if p, ok := ps["key_conflicts"]; len(ps) != 1 || !ok || !p.Warning || !strings.Contains(p.Message, "3 input row") {
 		t.Errorf("problems = %v, want only the key-conflict count as a warning", ps)
+	}
+}
+
+func TestOverridesCheckUnknownRetryLane(t *testing.T) {
+	m := people(t, row("email", "ada@acme.io"))
+	m.Put(model.TableOverrides, model.Override{Person: "*", Action: "retry", Value: "Fleet-Ops", Note: "t1"})
+	m.Put(model.TableOverrides, model.Override{Person: "ada@acme.io", Action: "retry", Value: "flet-ops", Note: "t2"})
+	m.Put(model.TableOverrides, model.Override{Person: "*", Action: "retry", Note: "t3"})
+	cfg := &config.Config{RubricPath: filepath.Join("..", "..", "examples", "rubric.yml")}
+	ps := byKey(overridesCheck{}.Run(context.Background(), Env{Model: m, Config: cfg}))
+	if p, ok := ps["override_unknown_lane:2"]; len(ps) != 1 || !ok || !p.Warning {
+		t.Errorf("problems = %v, want only row 2's unknown lane, as a warning", ps)
+	}
+}
+
+func TestDuplicatesCheckMergeCycle(t *testing.T) {
+	m := people(t, row("email", "ada@acme.io"), row("email", "bo@acme.io"))
+	a, _ := merge.Resolve(m, "ada@acme.io")
+	b, _ := merge.Resolve(m, "bo@acme.io")
+	for from, to := range map[api.LeadID]api.LeadID{a: b, b: a} {
+		p := m.People[model.Key(from)]
+		p.MergedInto = to
+		m.Put(model.TablePeople, p)
+	}
+	ps := byKey(duplicatesCheck{}.Run(context.Background(), Env{Model: m}))
+	for _, id := range []api.LeadID{a, b} {
+		if p, ok := ps["merge_cycle:"+string(id)]; !ok || p.Warning {
+			t.Errorf("merge_cycle:%s = %+v, want a failure", id, p)
+		}
+	}
+	if len(ps) != 2 {
+		t.Errorf("problems = %v", ps)
 	}
 }

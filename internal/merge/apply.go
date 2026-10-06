@@ -44,24 +44,30 @@ var inputFacts = map[string]string{
 	"company.region":        "region",
 }
 
-// Apply merges rows into the model, in order (RFC 6.5): each row that is new or
-// changed since it was last applied (by source, row id and hash) is matched to
-// a lead, or makes a new one, and fills that lead's empty fields. It then
-// applies the Companies tab, the Overrides `same_as` merges (contracts section
-// 7), and marks every lead an `apollo_held` source supplied.
+// Apply merges rows into the model, in order (RFC 6.5). Rows are applied by
+// row group (Group): every row of a source that shares a row id, as one unit
+// under one hash, so a group applied before and unchanged is skipped. Each row
+// of a changed group is matched to a lead, or makes a new one, and fills that
+// lead's empty fields. Apply then applies the Companies tab, the Overrides
+// `same_as` merges (contracts section 7), and marks every lead an
+// `apollo_held` source supplied.
 //
 // Matching, in order: the same source and row id; the row's email; with no
 // email, its LinkedIn URL; with neither matching and the source's
-// match_domain_name on, the company domain and normalized full name. A row
-// whose email matches no lead is a new lead even when its LinkedIn URL belongs
-// to someone: one wrong URL must never join two people.
+// match_domain_name on, the company domain and normalized full name when
+// exactly one live lead has them. A row whose email matches no lead is a new
+// lead even when its LinkedIn URL belongs to someone: one wrong URL must never
+// join two people.
+//
+// Pass every row Normalize returned, rejected ones included: a reject is
+// recorded here, once per group version, with no lead.
 func Apply(m *model.Model, rows []Normalized, c ApplyCtx) {
 	a := &applier{m: m, c: c, src: map[string]config.Source{}}
 	for _, s := range c.Sources {
 		a.src[s.ID] = s
 	}
-	for _, r := range rows {
-		a.row(r)
+	for _, g := range Group(rows) {
+		a.group(g)
 	}
 	a.companiesTab()
 	a.sameAs()
@@ -78,41 +84,76 @@ func (a *applier) log(level, kind string, lead api.LeadID, msg string) {
 	a.m.Put(model.TableLog, model.LogEntry{At: a.c.Now, RunID: a.c.RunID, Level: level, LeadID: lead, Kind: kind, Message: msg})
 }
 
-// row applies one normalized row.
-func (a *applier) row(r Normalized) {
-	key := model.K(r.SourceID, r.RowID)
-	prev, had := a.m.AppliedRows[key]
-	if had && prev.RowHash == r.RowHash {
+// group applies one row group and records it in Applied rows.
+func (a *applier) group(g RowGroup) {
+	prev, had := a.m.AppliedRows[model.K(g.SourceID, g.RowID)]
+	if had && prev.RowHash == g.Hash {
 		return // applied before, unchanged
 	}
 	first := a.c.Now
 	if had && !prev.FirstAppliedAt.IsZero() {
 		first = prev.FirstAppliedAt
 	}
+	// A group that applied before keeps its lead, even when every row is now
+	// rejected, so the lead keeps everything it had and the same row id still
+	// finds it.
+	lead := prev.LeadID
+	var rejects []string
+	conflict := false
+	for _, r := range g.Rows {
+		if reason := a.rejectReason(r); reason != "" {
+			rejects = append(rejects, reason)
+			continue
+		}
+		var c bool
+		lead, c = a.row(r, lead)
+		conflict = conflict || c
+	}
+	ar := model.AppliedRow{SourceID: g.SourceID, RowID: g.RowID, RowHash: g.Hash, LeadID: lead,
+		FirstAppliedAt: first, KeyConflictAt: prev.KeyConflictAt}
+	countIt := conflict && ar.KeyConflictAt.IsZero()
+	if countIt {
+		ar.KeyConflictAt = a.c.Now
+	}
+	a.m.Put(model.TableAppliedRows, ar)
+	if len(rejects) > 0 {
+		a.log("warn", LogRowRejected, "", fmt.Sprintf("source %s: %d row(s) rejected: %s (row hash %s)",
+			g.SourceID, len(rejects), strings.Join(rejects, "; "), shortHash(g.Hash)))
+	}
+	if countIt {
+		// Counted once per source and row id, so re-applying the row (an edit,
+		// an alias change) does not inflate the count.
+		countKeyConflict(a.m)
+		a.log("warn", LogKeyConflict, lead, fmt.Sprintf("source %s: a row's email or LinkedIn URL belongs to another lead, or differs from this lead's; the key was not written (row hash %s)",
+			g.SourceID, shortHash(g.Hash)))
+	}
+}
+
+// rejectReason is why a row cannot be applied, or empty.
+func (a *applier) rejectReason(r Normalized) string {
+	if r.Reject != "" {
+		return r.Reject
+	}
+	if r.Fields[FieldEmail] == "" && r.Fields[FieldLinkedIn] == "" && !a.source(r.SourceID).MatchDomainName {
+		return "no email or LinkedIn URL, and domain + name matching is off for this source"
+	}
+	return ""
+}
+
+// row applies one valid row. known is the lead its group already resolved to
+// (the same source and row id), or empty. It returns the row's lead and
+// whether one of its keys conflicted.
+func (a *applier) row(r Normalized, known api.LeadID) (api.LeadID, bool) {
 	src := a.source(r.SourceID)
 	email, li := r.Fields[FieldEmail], r.Fields[FieldLinkedIn]
 	domain, name := r.Fields[FieldDomain], NormalizeName(r.Fields[FieldFullName])
-
-	reject := r.Reject
-	if reject == "" && email == "" && li == "" && !src.MatchDomainName {
-		reject = "no email or LinkedIn URL, and domain + name matching is off for this source"
-	}
-	if reject != "" {
-		// Recorded once per row version. A row that applied before keeps its
-		// lead, so the lead keeps everything it had.
-		a.m.Put(model.TableAppliedRows, model.AppliedRow{SourceID: r.SourceID, RowID: r.RowID, RowHash: r.RowHash,
-			LeadID: prev.LeadID, FirstAppliedAt: first})
-		a.log("warn", LogRowRejected, "", fmt.Sprintf("source %s: a row was rejected: %s (row hash %s)",
-			r.SourceID, reject, shortHash(r.RowHash)))
-		return
-	}
 
 	// Match.
 	var lead api.LeadID
 	sameRow := false
 	switch {
-	case had && prev.LeadID != "":
-		lead, sameRow = Live(a.m, prev.LeadID), true
+	case known != "":
+		lead, sameRow = Live(a.m, known), true
 	case email != "":
 		if idn, ok := a.m.Identities[model.Key(email)]; ok {
 			lead = Live(a.m, idn.LeadID)
@@ -199,8 +240,6 @@ func (a *applier) row(r Normalized) {
 		p.ApolloHeldAt = a.c.Now
 	}
 	a.m.Put(model.TablePeople, p)
-	a.m.Put(model.TableAppliedRows, model.AppliedRow{SourceID: r.SourceID, RowID: r.RowID, RowHash: r.RowHash,
-		LeadID: lead, FirstAppliedAt: first})
 
 	// Company facts from the row's built-in company columns go to the lead's
 	// company, and only when the row speaks for that company: a sighting that
@@ -212,12 +251,7 @@ func (a *applier) row(r Normalized) {
 			}
 		}
 	}
-
-	if conflict {
-		countKeyConflict(a.m)
-		a.log("warn", LogKeyConflict, lead, fmt.Sprintf("source %s: a row's email or LinkedIn URL belongs to another lead, or differs from this lead's; the key was not written (row hash %s)",
-			r.SourceID, shortHash(r.RowHash)))
-	}
+	return lead, conflict
 }
 
 // source returns a source's settings; an unconfigured one (the receiver, or a
@@ -229,23 +263,23 @@ func (a *applier) source(id string) config.Source {
 	return config.Source{ID: id, Channel: id}
 }
 
-// namesake finds the live lead at a domain with the same normalized full name:
-// the oldest when several match, so the answer does not depend on map order.
+// namesake finds the one live lead at a domain with the same normalized full
+// name. When several match (namesakes, even a pair marked distinct) the row
+// could be any of them, so it matches none and makes a new lead, which
+// Duplicates then blocks until a person resolves it.
 func (a *applier) namesake(domain, name string) api.LeadID {
-	var best *model.Person
+	var found api.LeadID
 	for _, id := range a.m.PeopleAt(domain) {
 		p := a.m.People[model.Key(id)]
 		if p.MergedInto != "" || NormalizeName(p.Fields[FieldFullName].Value) != name {
 			continue
 		}
-		if best == nil || older(p, *best) {
-			best = &p
+		if found != "" {
+			return ""
 		}
+		found = id
 	}
-	if best == nil {
-		return ""
-	}
-	return best.LeadID
+	return found
 }
 
 // older reports whether a was created before b (ties: the lower lead id).
@@ -366,9 +400,12 @@ func (a *applier) inputFact(domain, fact, v string) {
 // squashed form. A changed value moves the old one to `previous`; the same
 // value from a lower origin is taken over without counting as a change. Only
 // the first row for a domain counts, so two rows cannot flip a fact each run.
+// A companies_tab fact whose cell was emptied, or whose row is gone, moves to
+// `previous` and leaves `facts`, so a lower origin can fill it again.
 func (a *applier) companiesTab() {
 	table := aliasTable(a.c.Aliases)
-	seen := map[string]bool{}
+	tab := map[string]map[string]string{} // domain -> fact -> value
+	var order []string
 	for _, row := range a.m.Companies {
 		domain := ""
 		cols := make([]string, 0, len(row))
@@ -397,13 +434,19 @@ func (a *applier) companiesTab() {
 				}
 			}
 		}
-		if domain == "" || seen[domain] {
+		if domain == "" {
 			continue
 		}
-		seen[domain] = true
+		if _, seen := tab[domain]; seen {
+			continue
+		}
+		tab[domain] = facts
+		order = append(order, domain)
+	}
+	for _, domain := range order {
 		cf := cloneCompany(a.m.CompanyFacts[model.Key(domain)])
 		cf.Domain = domain
-		for name, v := range facts {
+		for name, v := range tab[domain] {
 			cur, has := cf.Facts[name]
 			switch {
 			case has && cur.Value == v:
@@ -420,6 +463,30 @@ func (a *applier) companiesTab() {
 			a.m.Put(model.TableCompanyFacts, cf)
 		}
 	}
+	// Facts the tab no longer holds.
+	keys := make([]string, 0, len(a.m.CompanyFacts))
+	for k := range a.m.CompanyFacts {
+		keys = append(keys, string(k))
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		cf := a.m.CompanyFacts[model.Key(k)]
+		var gone []string
+		for name, f := range cf.Facts {
+			if _, still := tab[cf.Domain][name]; f.Origin == OriginCompaniesTab && !still {
+				gone = append(gone, name)
+			}
+		}
+		if len(gone) == 0 {
+			continue
+		}
+		cf = cloneCompany(cf)
+		for _, name := range gone {
+			cf.Previous[name] = cf.Facts[name]
+			delete(cf.Facts, name)
+		}
+		a.m.Put(model.TableCompanyFacts, cf)
+	}
 }
 
 // sameAs applies every Overrides `same_as` row whose two persons are known
@@ -429,9 +496,10 @@ func (a *applier) sameAs() {
 		if o.Action != ActionSameAs || o.Lead == "" || o.Other == "" {
 			continue
 		}
-		x, y := Live(a.m, o.Lead), Live(a.m, o.Other)
-		if x == y {
-			continue
+		x, cx := live(a.m, o.Lead)
+		y, cy := live(a.m, o.Other)
+		if x == y || cx || cy {
+			continue // one lead already, or a hand-edited cycle that blocks both until fixed
 		}
 		px, okx := a.m.People[model.Key(x)]
 		py, oky := a.m.People[model.Key(y)]
@@ -483,6 +551,20 @@ func (a *applier) mergeLeads(s, x model.Person) {
 	x.MergedInto = s.LeadID
 	a.m.Put(model.TablePeople, s)
 	a.m.Put(model.TablePeople, x)
+	// Leads absorbed into x earlier now point at the survivor directly, so every
+	// chain stays one step deep however many merges follow.
+	var earlier []string
+	for k, p := range a.m.People {
+		if p.MergedInto == x.LeadID {
+			earlier = append(earlier, string(k))
+		}
+	}
+	sort.Strings(earlier)
+	for _, k := range earlier {
+		p := clonePerson(a.m.People[model.Key(k)])
+		p.MergedInto = s.LeadID
+		a.m.Put(model.TablePeople, p)
+	}
 	a.log("info", LogMerged, s.LeadID, fmt.Sprintf("lead %s merged into %s by an Overrides same_as row", x.LeadID, s.LeadID))
 }
 

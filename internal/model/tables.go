@@ -60,7 +60,7 @@ var Tables = []TableDef{
 	{Name: TableWindowEvents, Key: []string{"event_key"}, Columns: []string{
 		"event_key", "subject", "lead_id", "domain", "kind", "at", "attrs"}},
 	{Name: TableAppliedRows, Key: []string{"source_id", "row_id"}, Columns: []string{
-		"source_id", "row_id", "row_hash", "lead_id", "first_applied_at"}},
+		"source_id", "row_id", "row_hash", "lead_id", "first_applied_at", "key_conflict_at"}},
 	{Name: TableSeenEvents, Key: []string{"event_key"}, Columns: []string{"event_key", "first_received_at", "run_id"}},
 	{Name: TableOutcomes, Key: []string{"lead_id"}, Columns: []string{
 		"lead_id", "status", "status_at", "unsubscribed_at", "unsubscribed_origin", "reply_status", "reply_at",

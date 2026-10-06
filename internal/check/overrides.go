@@ -4,9 +4,11 @@ import (
 	"context"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/merge"
+	"github.com/HarshitBadhwar8/leadscore/internal/rules"
 )
 
 func init() {
@@ -17,8 +19,10 @@ func init() {
 // overridesCheck is the `overrides` check (contracts section 10): a lead with
 // conflicting status rows or a row of unknown value is blocked on every lane
 // (status_conflict:<lead>, a failure); a row naming a person not yet known
-// waits for that person (override_unmatched:<row>, a warning). Messages name
-// lead ids and row numbers, never a person's email.
+// waits for that person (override_unmatched:<row>, a warning); a retry row
+// naming a lane the rubric does not have retries nothing
+// (override_unknown_lane:<row>, a warning). Messages name lead ids and row
+// numbers, never a person's email.
 type overridesCheck struct{}
 
 func (overridesCheck) Name() string { return "overrides" }
@@ -49,12 +53,46 @@ func (overridesCheck) Run(_ context.Context, env Env) []Problem {
 			Warning: o.Invalid == "",
 		})
 	}
+	if lanes := rubricLanes(env); lanes != nil {
+		for _, o := range ov.Rows {
+			if o.Action == merge.ActionRetry && o.Value != "" && !lanes[strings.ToLower(o.Value)] {
+				out = append(out, Problem{
+					Key:     "override_unknown_lane:" + strconv.Itoa(o.Row),
+					Message: "Overrides row " + strconv.Itoa(o.Row) + " retries a lane the rubric does not have, so it retries nothing",
+					Fix:     "use a lane id from the rubric, or leave value empty for every lane",
+					Warning: true,
+				})
+			}
+		}
+	}
+	return out
+}
+
+// rubricLanes returns the rubric's lane ids, lowercased (ids are unique
+// ignoring case), or nil when there is no rubric to read or it does not compile.
+func rubricLanes(env Env) map[string]bool {
+	if env.Config == nil {
+		return nil
+	}
+	text, err := env.Config.Rubric()
+	if err != nil {
+		return nil
+	}
+	r, err := rules.Compile(text)
+	if err != nil {
+		return nil
+	}
+	out := map[string]bool{}
+	for _, l := range r.Lanes() {
+		out[strings.ToLower(l.ID)] = true
+	}
 	return out
 }
 
 // duplicatesCheck is the `duplicates` check (contracts section 10): unresolved
 // namesakes, which every lane skips (namesake:<lead>), and the running count of
-// key conflicts (a warning: pushing is not blocked).
+// key conflicts (a warning: pushing is not blocked). A lead in a hand-edited
+// merged_into cycle is raised as merge_cycle:<lead> instead.
 type duplicatesCheck struct{}
 
 func (duplicatesCheck) Name() string { return "duplicates" }
@@ -65,8 +103,17 @@ func (duplicatesCheck) Run(_ context.Context, env Env) []Problem {
 		return nil
 	}
 	dups := merge.Duplicates(env.Model)
+	cycles := merge.Cycles(env.Model)
 	var out []Problem
 	for _, lead := range sortedLeads(dups) {
+		if cycles[lead] {
+			out = append(out, Problem{
+				Key:     "merge_cycle:" + string(lead),
+				Message: "lead " + string(lead) + "'s merged_into leads round in a cycle back to itself; every lane skips it",
+				Fix:     "in the store's People table, clear merged_into on one lead of the cycle, then merge them again with leadscore merge",
+			})
+			continue
+		}
 		out = append(out, Problem{
 			Key: "namesake:" + string(lead),
 			Message: "lead " + string(lead) + " shares a company domain and name with another lead (" +
