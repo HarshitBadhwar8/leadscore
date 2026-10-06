@@ -1,0 +1,32 @@
+internal/config/duration.go
+  s_28e5c721690f52::t_ca4382a360268e 1-37
+internal/config/sethosting_test.go
+  s_28e5c721690f52::t_30cc0ccf25bdc0 1-110
+internal/config/get.go
+  s_28e5c721690f52::t_3f6a5af9100c9a 1-49,54-55,60-152,157-181
+  s_28e5c721690f52::t_4e0d6fc5753b8f 50-53,56-59
+  s_28e5c721690f52::t_6f420b4fd066b2 153-156
+internal/config/config.go
+  s_28e5c721690f52::t_02df47e890b539 320-330
+  s_28e5c721690f52::t_c44f02051bb1cd 1-319,331-714
+internal/config/config_test.go
+  s_28e5c721690f52::t_a83925144c7faf 1-435
+internal/model/model.go
+  s_28e5c721690f52::t_aa56b4f839f362 1-7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "153c04291be8f35d1da68b366eea021196e4c950",
+  "prompts": {},
+  "sessions": {
+    "s_28e5c721690f52": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "da9242c6-61ec-4654-be3b-55ff7ec11668",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
