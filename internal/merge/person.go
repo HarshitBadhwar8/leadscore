@@ -173,7 +173,11 @@ func ApplyEventPerson(m *model.Model, e api.Event) api.LeadID {
 		// So the contact's later webhooks and receiver rows find this lead by
 		// contact id. The empty hash makes the first real receiver row apply.
 		if _, ok := m.AppliedRows[model.K(ReceiverSource, cid)]; !ok {
-			m.Put(model.TableAppliedRows, model.AppliedRow{SourceID: ReceiverSource, RowID: cid, LeadID: id, FirstAppliedAt: at})
+			ar := model.AppliedRow{SourceID: ReceiverSource, RowID: cid, LeadID: id, FirstAppliedAt: at}
+			if conflict {
+				ar.KeyConflictAt = at // counted below, so the contact's first receiver row does not count it again
+			}
+			m.Put(model.TableAppliedRows, ar)
 		}
 	}
 	if conflict {

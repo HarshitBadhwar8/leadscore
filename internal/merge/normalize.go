@@ -252,11 +252,24 @@ func CanonicalLinkedIn(raw string) string {
 	if host != "linkedin.com" && !strings.HasSuffix(host, ".linkedin.com") {
 		return ""
 	}
+	// Split the escaped path, then decode each segment, so an encoded slash
+	// ("john%2Fsmith") stays inside its segment and is refused rather than
+	// read as a path; a "." or ".." segment anywhere refuses the URL. A decoded segment is
+	// lowercased in Unicode NFC, so composed and decomposed letters are one key.
 	var segs []string
-	for _, p := range strings.Split(u.Path, "/") {
-		if p = strings.TrimSpace(p); p != "" {
-			segs = append(segs, p)
+	for _, p := range strings.Split(u.EscapedPath(), "/") {
+		if p == "" {
+			continue
 		}
+		d, err := url.PathUnescape(p)
+		if err != nil {
+			return ""
+		}
+		d = strings.ToLower(norm.NFC.String(strings.TrimSpace(d)))
+		if d == "" || d == "." || d == ".." || strings.Contains(d, "/") {
+			return "" // a browser would resolve such a path elsewhere: no key
+		}
+		segs = append(segs, d)
 	}
 	switch {
 	case len(segs) >= 2 && segs[0] == "in":

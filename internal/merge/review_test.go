@@ -287,3 +287,48 @@ func TestKeyConflictCountedOnce(t *testing.T) {
 		t.Errorf("key_conflicts %q, logged %d; want 1 and 1", got, w.logKinds("key_conflict"))
 	}
 }
+
+// A slug is decoded segment by segment: an encoded slash or a dot segment is
+// never a slug, and case and Unicode form never split one person.
+func TestLinkedInSlugDecoding(t *testing.T) {
+	for _, v := range []string{
+		"https://linkedin.com/in/john%2Fsmith",
+		"https://linkedin.com/in/john/../mary",
+		"https://linkedin.com/in/./a",
+		"https://linkedin.com/in/../a",
+		"https://linkedin.com/in/%2E",
+		"https://linkedin.com/in/%zz",
+	} {
+		if got := CanonicalLinkedIn(v); got != "" {
+			t.Errorf("CanonicalLinkedIn(%q) = %q, want no key", v, got)
+		}
+	}
+	if CanonicalLinkedIn("https://linkedin.com/in/john%2Fsmith") == CanonicalLinkedIn("https://linkedin.com/in/john") {
+		t.Error("an encoded slash joined two slugs")
+	}
+	const want = "linkedin.com/in/jörg"
+	for _, v := range []string{
+		"https://linkedin.com/in/J%C3%96RG",
+		"https://linkedin.com/in/j%C3%B6rg",
+		"https://linkedin.com/in/jörg",  // composed
+		"https://linkedin.com/in/jörg", // decomposed
+		"https://linkedin.com/in/JO%CC%88RG/",
+	} {
+		if got := CanonicalLinkedIn(v); got != want {
+			t.Errorf("CanonicalLinkedIn(%q) = %q, want %q", v, got, want)
+		}
+	}
+}
+
+// The key conflict an event-created lead counted is not counted again by the
+// first receiver row for the same contact id.
+func TestEventConflictCountedOnceForTheContact(t *testing.T) {
+	w := newWorld(t)
+	w.apply(in("a", "email", "bo@acme.io", "linkedin", "linkedin.com/in/bo"))
+	ApplyEventPerson(w.m, NormalizeEventKeys(api.Event{Kind: "visit_pricing", Email: "cy@acme.io",
+		LinkedInURL: "linkedin.com/in/bo", ReceivedAt: t0, Attrs: map[string]string{"contact_id": "c-9"}}))
+	w.apply(in("receiver", "contact_id", "c-9", "email", "cy@acme.io", "linkedin", "linkedin.com/in/bo"))
+	if got := w.m.StateValue("key_conflicts"); got != "1" || w.logKinds("key_conflict") != 1 {
+		t.Errorf("key_conflicts %q, logged %d; want 1 and 1", got, w.logKinds("key_conflict"))
+	}
+}
