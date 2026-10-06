@@ -11,8 +11,14 @@
 *.db-wal
 *.db-shm
 .env
+.env.*
+*.pem
+gha-creds-*.json
 
 # Editors and OS
 .idea/
 .vscode/
 .DS_Store
+
+# Local agent tooling state
+.claude/
