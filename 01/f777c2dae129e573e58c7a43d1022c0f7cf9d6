@@ -1,0 +1,21 @@
+.gitignore
+  s_28e5c721690f52::t_82038081cb533f 1-18
+README.md
+  s_28e5c721690f52::t_0dc660ca0c2933 1-6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "01f777c2dae129e573e58c7a43d1022c0f7cf9d6",
+  "prompts": {},
+  "sessions": {
+    "s_28e5c721690f52": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "da9242c6-61ec-4654-be3b-55ff7ec11668",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
