@@ -1,0 +1,18 @@
+# Binaries
+/leadscore
+/bin/
+*.exe
+*.test
+*.out
+
+# Local runtime state
+/out/
+*.db
+*.db-wal
+*.db-shm
+.env
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
