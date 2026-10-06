@@ -1,0 +1,55 @@
+internal/check/overrides.go
+  s_9dab9ff7f2c580::t_17213def359c77 1-96
+internal/merge/apply.go
+  s_9dab9ff7f2c580::t_dccc194db55a5b 1-521
+internal/merge/overrides_test.go
+  s_9dab9ff7f2c580::t_a651db30877108 1-168
+internal/cli/overrides_test.go
+  s_9dab9ff7f2c580::t_57ec1deb1213f0 1-117
+  s_9dab9ff7f2c580::t_2a91acfd52fb27 118
+internal/merge/normalize.go
+  s_9dab9ff7f2c580::t_affb78a19aa4ff 1-245
+internal/merge/merge_test.go
+  s_9dab9ff7f2c580::t_526bf0b732c2b4 1-760
+internal/cli/overrides.go
+  s_9dab9ff7f2c580::t_a0243684b648ad 1-130
+internal/merge/normalize_test.go
+  s_9dab9ff7f2c580::t_63d7146fe6e790 1-175
+internal/merge/person.go
+  s_9dab9ff7f2c580::t_6b7f7fe2cd9635 1-347
+internal/merge/overrides.go
+  s_9dab9ff7f2c580::t_a8b5ed3038dcc3 1-327
+  s_9dab9ff7f2c580::t_70ee686422888e 328-340
+README.md
+  s_9dab9ff7f2c580::t_67407f9d5bea27 17,22,38-54
+docs/design/oss-outbound-engine-contracts.md
+  s_9dab9ff7f2c580::t_05854f8844cb46 474,479,483,731,733,861-863,865-866
+go.mod
+  s_9dab9ff7f2c580::t_6533ff0489ba6c 7
+internal/check/overrides_test.go
+  s_9dab9ff7f2c580::t_cbcd5ffd4e248d 1-102
+internal/cli/cli.go
+  s_9dab9ff7f2c580::t_001519be4d127d 96,104,112,120
+internal/merge/emaildomain.go
+  s_9dab9ff7f2c580::t_76228458daff26 1-68
+internal/merge/emailshape.go
+  s_9dab9ff7f2c580::t_66435aae346f06 1-63
+internal/merge/emailshape_test.go
+  s_9dab9ff7f2c580::t_5f2ca0619a003f 1-115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "94350f54ed20c2b196e5768031e46a60b1642d91",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
