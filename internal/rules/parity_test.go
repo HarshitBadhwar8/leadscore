@@ -1,4 +1,4 @@
-package rules
+package rules_test
 
 import (
 	"bytes"
@@ -6,9 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -17,10 +18,11 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
+	"github.com/HarshitBadhwar8/leadscore/internal/rules"
 )
 
-// The parity directory (RFC 8.3) holds a team's private rubric and the
-// verdicts its previous scoring system gave, kept outside the repo:
+// The parity directory holds a team's private rubric and the verdicts its
+// previous scoring system gave, kept outside the repo:
 //
 //	rubric.yml          the rubric
 //	parity.json         {"rows": [{id, inputs, account_pass, lead_pass}]}
@@ -31,6 +33,13 @@ import (
 // case's expect, map verdict fields to values: account_score and
 // contact_score are the score halves; any other key is a derived name.
 // Values compare as JSON, and null means no value.
+//
+// These tests are skipped unless LEADSCORE_PARITY_DIR is set. Never set it in
+// CI: the directory is private and its contents must not reach CI logs.
+
+// parityFields are the verdict fields every parity.json row must carry, across
+// account_pass and lead_pass, so a row cannot pass by leaving one out.
+var parityFields = []string{"fit_signal", "tier", "priority", "needs_review", "account_score", "contact_score"}
 
 // A private rubric kept outside the repo, in LEADSCORE_PARITY_DIR, must
 // compile.
@@ -43,37 +52,34 @@ func TestPrivateRubricCompiles(t *testing.T) {
 	t.Logf("compiled, version %s", r.Version())
 }
 
-// TestParityWithCore runs the private rubric over the exported verdicts and the
+// TestParity runs the private rubric over the exported verdicts and the
 // conformance cases and compares every field. A mismatch passes only when
-// divergences.yml lists its row and field, and every listed row must still
-// mismatch on one of its fields, so the list cannot go stale.
-func TestParityWithCore(t *testing.T) {
+// divergences.yml lists its row and field, and every listed field on every
+// listed row must still mismatch, so the list cannot go stale.
+func TestParity(t *testing.T) {
 	dir := parityDir(t)
 	r := parityRubric(t, dir)
 	divs := parityDivergences(t, dir)
 
-	// Expected mismatches: row -> field -> divergence name.
-	allowed := map[string]map[string]string{}
+	// Expected mismatches: (row, field) -> the one divergence that lists it.
+	type spot struct{ row, field string }
+	allowed := map[spot]string{}
 	for _, d := range divs {
 		for _, row := range d.Rows {
-			if allowed[row] == nil {
-				allowed[row] = map[string]string{}
-			}
 			for _, f := range d.Fields {
-				allowed[row][f] = d.Name
+				s := spot{row, f}
+				if prev, ok := allowed[s]; ok {
+					t.Fatalf("divergences.yml: %s and %s both list %s on %s", prev, d.Name, f, row)
+				}
+				allowed[s] = d.Name
 			}
 		}
 	}
-	hit := map[string]bool{}   // rows that mismatched where a divergence allows it
+	hit := map[spot]bool{}     // listed spots that mismatched
 	known := map[string]bool{} // every row id and case name
 	compare := func(id string, want map[string]any, got api.Verdict) {
 		known[id] = true
-		keys := make([]string, 0, len(want))
-		for k := range want {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
+		for _, k := range slices.Sorted(maps.Keys(want)) {
 			var g any
 			switch k {
 			case "account_score":
@@ -92,13 +98,20 @@ func TestParityWithCore(t *testing.T) {
 			if gs == ws {
 				continue
 			}
-			if name, ok := allowed[id][k]; ok {
-				hit[id] = true
+			if name, ok := allowed[spot{id, k}]; ok {
+				hit[spot{id, k}] = true
 				t.Logf("%s: %s = %s, expected %s (divergence %s)", id, k, gs, ws, name)
 				continue
 			}
 			t.Errorf("%s: %s = %s, want %s", id, k, gs, ws)
 		}
+	}
+	verdict := func(res rules.Result, id string) (api.Verdict, bool) {
+		v, ok := res.Verdicts[api.LeadID(id)]
+		if !ok {
+			t.Errorf("no verdict for row %s", id)
+		}
+		return v, ok
 	}
 
 	// parity.json: one evaluation over every row, so leads sharing a company
@@ -116,14 +129,11 @@ func TestParityWithCore(t *testing.T) {
 		if known[row.ID] {
 			t.Fatalf("parity.json: row id %s appears twice", row.ID)
 		}
-		want := map[string]any{}
-		for k, v := range row.AccountPass {
-			want[k] = v
+		want := maps.Clone(row.AccountPass)
+		maps.Copy(want, row.LeadPass)
+		if v, ok := verdict(res, row.ID); ok {
+			compare(row.ID, want, v)
 		}
-		for k, v := range row.LeadPass {
-			want[k] = v
-		}
-		compare(row.ID, want, res.Verdicts[api.LeadID(row.ID)])
 	}
 
 	// Conformance cases: each one lead at its own company.
@@ -149,19 +159,27 @@ func TestParityWithCore(t *testing.T) {
 			for _, w := range res.Warnings {
 				t.Logf("%s warning: %s", c.Name, w)
 			}
-			compare(c.Name, c.Expect, res.Verdicts[api.LeadID(c.Name)])
+			if v, ok := verdict(res, c.Name); ok {
+				compare(c.Name, c.Expect, v)
+			}
 		}
+	}
+	if cases == 0 {
+		t.Fatal("no conformance cases in conformance/*.yml; the comparison would pass vacuously")
 	}
 
 	var names []string
 	for _, d := range divs {
 		names = append(names, d.Name)
 		for _, row := range d.Rows {
-			switch {
-			case !known[row]:
+			if !known[row] {
 				t.Errorf("divergence %s names %q, which is neither a parity row nor a case", d.Name, row)
-			case !hit[row]:
-				t.Errorf("divergence %s: %s now matches on %v; remove it from divergences.yml", d.Name, row, d.Fields)
+				continue
+			}
+			for _, f := range d.Fields {
+				if !hit[spot{row, f}] {
+					t.Errorf("divergence %s: %s now matches on %s; remove it from divergences.yml", d.Name, row, f)
+				}
 			}
 		}
 	}
@@ -178,13 +196,13 @@ func parityDir(t *testing.T) string {
 	return dir
 }
 
-func parityRubric(t *testing.T, dir string) *Rubric {
+func parityRubric(t *testing.T, dir string) *rules.Rubric {
 	t.Helper()
 	src, err := os.ReadFile(filepath.Join(dir, "rubric.yml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := Compile(src)
+	r, err := rules.Compile(src)
 	if err != nil {
 		t.Fatalf("rubric.yml:\n%v", err)
 	}
@@ -214,6 +232,18 @@ func parityRows(t *testing.T, dir string) []parityRow {
 	}
 	if len(file.Rows) == 0 {
 		t.Fatal("parity.json has no rows; the comparison would pass vacuously")
+	}
+	for i, row := range file.Rows {
+		if row.ID == "" {
+			t.Fatalf("parity.json: row %d has no id", i+1)
+		}
+		for _, f := range parityFields {
+			_, inAccount := row.AccountPass[f]
+			_, inLead := row.LeadPass[f]
+			if !inAccount && !inLead {
+				t.Fatalf("parity.json: row %s has no %s; every row needs %s", row.ID, f, strings.Join(parityFields, ", "))
+			}
+		}
 	}
 	return file.Rows
 }
@@ -267,9 +297,12 @@ func parityDivergences(t *testing.T, dir string) []divergence {
 		t.Fatalf("divergences.yml: %v", err)
 	}
 	seen := map[string]bool{}
-	for _, d := range divs {
-		if d.Name == "" || strings.TrimSpace(d.What) == "" || strings.TrimSpace(d.Effect) == "" {
-			t.Fatalf("divergences.yml: every entry needs a name, what and effect (%+v)", d)
+	for i, d := range divs {
+		if d.Name == "" {
+			t.Fatalf("divergences.yml: entry %d has no name", i+1)
+		}
+		if strings.TrimSpace(d.What) == "" || strings.TrimSpace(d.Effect) == "" {
+			t.Fatalf("divergences.yml: %s needs a what and an effect", d.Name)
 		}
 		if seen[d.Name] {
 			t.Fatalf("divergences.yml: %s is listed twice", d.Name)
@@ -300,8 +333,8 @@ func rowsInputs(rows []parityRow) []leadInput {
 // first seen in the order given, company facts by domain (they must agree
 // across a company's leads), and company.leads_seen as given or, when no lead
 // gives it, the number of leads at the domain.
-func buildInput(leads []leadInput) (Input, error) {
-	in := Input{Companies: map[string]api.CompanyFacts{}, LeadsSeen: map[string]int{}}
+func buildInput(leads []leadInput) (rules.Input, error) {
+	in := rules.Input{Companies: map[string]api.CompanyFacts{}, LeadsSeen: map[string]int{}}
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	companyVals := map[string]map[string]string{} // domain -> key -> value, to check they agree
 	counts := map[string]int{}
@@ -312,12 +345,7 @@ func buildInput(leads []leadInput) (Input, error) {
 		}
 		facts := api.CompanyFacts{Domain: l.Domain}
 		cv := map[string]string{}
-		keys := make([]string, 0, len(li.fields))
-		for k := range li.fields {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
+		for _, k := range slices.Sorted(maps.Keys(li.fields)) {
 			v := li.fields[k]
 			if v == nil {
 				continue // null is no value
@@ -368,14 +396,14 @@ func buildInput(leads []leadInput) (Input, error) {
 				}
 			}
 			if err != nil {
-				return Input{}, fmt.Errorf("%s: %s: %v", li.id, k, err)
+				return rules.Input{}, fmt.Errorf("%s: %s: %v", li.id, k, err)
 			}
 		}
 		if l.Domain != "" {
 			counts[l.Domain]++
 			if prev, ok := companyVals[l.Domain]; ok {
-				if !sameStrings(prev, cv) {
-					return Input{}, fmt.Errorf("%s: company facts differ from an earlier lead at %s", li.id, l.Domain)
+				if !maps.Equal(prev, cv) {
+					return rules.Input{}, fmt.Errorf("%s: company facts differ from an earlier lead at %s", li.id, l.Domain)
 				}
 			} else {
 				companyVals[l.Domain] = cv
@@ -392,25 +420,13 @@ func buildInput(leads []leadInput) (Input, error) {
 	return in, nil
 }
 
-func sameStrings(a, b map[string]string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k, v := range a {
-		if b[k] != v {
-			return false
-		}
-	}
-	return true
-}
-
 // jsonValue renders v as normalized JSON, so 40, 40.0 and a json.Number "40"
 // compare equal and a nil value is null.
 func jsonValue(t *testing.T, v any) string {
 	t.Helper()
 	b, err := json.Marshal(v)
 	if err != nil {
-		t.Fatalf("encoding %v: %v", v, err)
+		t.Fatalf("encoding a value: %v", err)
 	}
 	var x any
 	if err := json.Unmarshal(b, &x); err != nil {
