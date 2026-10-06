@@ -1,0 +1,61 @@
+internal/engine/engine.go
+  s_9dab9ff7f2c580::t_25d08ddc977d67 1-136
+internal/cli/run.go
+  s_9dab9ff7f2c580::t_0e31864d710a51 1-282
+internal/engine/score.go
+  s_9dab9ff7f2c580::t_9e5589a89b2fbc 1-202
+internal/engine/dryrun.go
+  s_9dab9ff7f2c580::t_e7ecce539dc639 1-89
+  s_9dab9ff7f2c580::t_79cb56aaf6bf07 90-95
+internal/engine/run.go
+  s_9dab9ff7f2c580::t_9d1d561b65c72b 1-593
+internal/engine/run_test.go
+  s_9dab9ff7f2c580::t_60cf73fbf5608c 1-635,637-638
+  s_9dab9ff7f2c580::t_b44c65cf41b1e2 636,639-659
+internal/engine/helpers_test.go
+  s_9dab9ff7f2c580::t_b710dd37dca855 1-233
+internal/check/rubric.go
+  s_9dab9ff7f2c580::t_b6af4b82943d8d 5,7-8,14-16,31,33,42-121,123
+  s_9dab9ff7f2c580::t_5408ab5b306933 122,124
+internal/engine/ingest.go
+  s_9dab9ff7f2c580::t_58d8c27e8fa16f 1-117
+internal/engine/health.go
+  s_9dab9ff7f2c580::t_6a242980f14266 1-107
+  s_9dab9ff7f2c580::t_b349a84cccdf53 108
+README.md
+  s_9dab9ff7f2c580::t_79d66370c9184e 23,39-57
+docs/design/oss-outbound-engine-contracts.md
+  s_9dab9ff7f2c580::t_065a7f632ffd25 405,443,483,852,858,887,907-909,914,917-919
+internal/check/check.go
+  s_9dab9ff7f2c580::t_3318feb5a91114 30-33
+internal/check/runcases_test.go
+  s_9dab9ff7f2c580::t_f92025efe193a1 1-123
+internal/check/store.go
+  s_9dab9ff7f2c580::t_88875952f77aef 12,19,26-27,29,70-72,153-179
+internal/cli/cli.go
+  s_9dab9ff7f2c580::t_f124efb8aa9f5c 56,64,76,86-88
+internal/cli/run_test.go
+  s_9dab9ff7f2c580::t_cf351ea98b6d90 1-102
+internal/engine/dryrun_test.go
+  s_9dab9ff7f2c580::t_5c105d143384b9 1-62
+leadscore.go
+  s_9dab9ff7f2c580::t_fba203211f9a7f 20,257-259,261
+stub_adapters_test.go
+  s_9dab9ff7f2c580::t_c728c30dcb93d4 10-11,243-247
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e0e18516e51aa227f30300d91dc54b80c6d1ad53",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
