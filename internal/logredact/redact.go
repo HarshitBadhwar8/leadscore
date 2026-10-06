@@ -3,14 +3,15 @@
 // sends back. Every stdout and Cloud Logging line passes through it, so logs
 // carry ids, never emails.
 //
-// Copied from Workloom core's backend/pkg/logredact (Redact and
-// VendorErrorDetail only; RedactStruct needs protobuf and is not copied).
+// Adapted from the logredact module by its authors (Redact and
+// VendorErrorDetail).
 package logredact
 
 import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync/atomic"
 )
 
 // redactedPlaceholder is the replacement string written wherever a value is
@@ -20,12 +21,19 @@ const redactedPlaceholder = "[REDACTED]"
 // tokenPatterns match well-known secret formats anywhere inside a string.
 // Each match is replaced wholesale with redactedPlaceholder.
 var tokenPatterns = []*regexp.Regexp{
+	// A PEM private key, through its END line (or to the end of the text when
+	// cut off), first so no shorter pattern splits it.
+	regexp.MustCompile(`(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$)`),
 	regexp.MustCompile(`(?i)Bearer\s+\S+`),
+	// HubSpot private-app token: pat-<region>-<uuid>.
+	regexp.MustCompile(`(?i)\bpat-[a-z]{2,4}\d*-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`),
+	// Google API key.
+	regexp.MustCompile(`AIza[0-9A-Za-z_\-]{35}`),
 	regexp.MustCompile(`ya29\.\S+`),
 	regexp.MustCompile(`gho_\S+`),
 	regexp.MustCompile(`ghp_\S+`),
 	regexp.MustCompile(`ghs_\S+`),
-	regexp.MustCompile(`sk-\S+`),
+	regexp.MustCompile(`\bsk-\S+`),
 	regexp.MustCompile(`xoxb-\S+`),
 	regexp.MustCompile(`xoxp-\S+`),
 	regexp.MustCompile(`xoxa-\S+`),
@@ -41,12 +49,47 @@ var pathUsernameRegex = regexp.MustCompile(`/(Users|home)/[^/]+/`)
 // Redact returns s with all known token patterns, emails, and home-dir paths
 // replaced. Used for free-form fields like log messages and event names.
 func Redact(s string) string {
+	if vals := secretValues.Load(); vals != nil {
+		for _, v := range *vals {
+			s = strings.ReplaceAll(s, v, redactedPlaceholder)
+		}
+	}
 	for _, p := range tokenPatterns {
 		s = p.ReplaceAllString(s, redactedPlaceholder)
 	}
 	s = emailRegex.ReplaceAllStringFunc(s, maskEmail)
 	s = pathUsernameRegex.ReplaceAllString(s, "~/")
 	return s
+}
+
+// SecretVariables are the environment variables whose exact values Redact
+// masks once MaskEnvSecrets has run (RFC 6.13's key variables).
+var SecretVariables = []string{
+	"APOLLO_API_KEY",
+	"HUBSPOT_TOKEN",
+	"LEADSCORE_RECEIVER_SECRET",
+	"LEADSCORE_RECEIVER_SECRET_PREVIOUS",
+}
+
+// minSecretLen keeps a tiny or placeholder value from masking ordinary text.
+const minSecretLen = 6
+
+var secretValues atomic.Pointer[[]string]
+
+// MaskEnvSecrets makes Redact mask the exact values of SecretVariables, read
+// through getenv (os.Getenv at startup). Patterns cannot recognise an Apollo
+// key or a receiver secret, so their values are masked literally. Calling it
+// again replaces the set.
+func MaskEnvSecrets(getenv func(string) string) {
+	var vals []string
+	for _, name := range SecretVariables {
+		if v := strings.TrimSpace(getenv(name)); len(v) >= minSecretLen {
+			vals = append(vals, v)
+		}
+	}
+	// Longest first, so a secret that contains another is masked whole.
+	sort.Slice(vals, func(i, j int) bool { return len(vals[i]) > len(vals[j]) })
+	secretValues.Store(&vals)
 }
 
 func maskEmail(email string) string {

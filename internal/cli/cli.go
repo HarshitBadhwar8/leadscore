@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/config"
+	"github.com/HarshitBadhwar8/leadscore/internal/logredact"
 )
 
 // Exit codes.
@@ -190,6 +192,8 @@ var errHelp = errors.New("help requested")
 
 // Main runs the command line and returns the exit code.
 func Main(args []string, stdout, stderr io.Writer) int {
+	// Before anything can log: mask the exact key values from the environment.
+	logredact.MaskEnvSecrets(os.Getenv)
 	inv, err := parse(args)
 	if errors.Is(err, errHelp) {
 		usage(stdout)
