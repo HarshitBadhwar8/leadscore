@@ -403,7 +403,7 @@ Test presence with `has(lead.x)`.
 
 ## 3. `leadscore.yml`
 
-Unknown engine keys fail loading, naming the key; adapter blocks are passed through as `Config`. Relative paths are relative to the folder holding `leadscore.yml`.
+Unknown engine keys fail loading, naming the key; adapter blocks are passed through as `Config`. Engine keys (including a source's `id`, `type`, `channel`, `path` and `tabs`) are read as text exactly as written, so `spreadsheet: 0123` and `tabs: [2024]` are `"0123"` and `"2024"`. Any other key in an adapter block reaches the adapter with YAML's types (`0123` arrives as a number), so quote ids there. Relative paths are relative to the folder holding `leadscore.yml`.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|

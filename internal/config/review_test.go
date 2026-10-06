@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -133,5 +134,27 @@ func TestFolderSyncSkippedOnWindows(t *testing.T) {
 	}
 	if !syncsDirs("linux") || !syncsDirs("darwin") {
 		t.Error("the folder sync must stay on Unix")
+	}
+}
+
+func TestListItemsKeepTheirLiteral(t *testing.T) {
+	c := mustParse(t, `
+version: 1
+store: { type: sheets, spreadsheet: s }
+sources: [ { id: 2024, type: sheetsource, tabs: [2024, 0042, Leads], path: 007 } ]
+receiver: { visit_events: [visit_pricing, 1] }
+`)
+	b := c.Sources[0].Block
+	if !reflect.DeepEqual(b["tabs"], []any{"2024", "0042", "Leads"}) {
+		t.Errorf("tabs = %#v, want text as written", b["tabs"])
+	}
+	if b["path"] != "/team/007" || b["id"] != "2024" || c.Sources[0].ID != "2024" {
+		t.Errorf("source block = %#v", b)
+	}
+	if !reflect.DeepEqual(c.Receiver.VisitEvents, []string{"visit_pricing", "1"}) {
+		t.Errorf("visit_events = %v", c.Receiver.VisitEvents)
+	}
+	if _, err := Parse([]byte(minimal+"receiver: { visit_events: [ {a: 1} ] }\n"), "/team", noEnv); err == nil {
+		t.Error("a mapping inside a text list must fail")
 	}
 }

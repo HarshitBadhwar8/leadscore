@@ -433,8 +433,14 @@ func (p *parser) sources(c *Config, raw map[string]any) error {
 		s.Events = p.boolean(e, "events", name+".events")
 		s.ApolloHeld = p.boolean(e, "apollo_held", name+".apollo_held")
 		s.MatchDomainName = p.boolean(e, "match_domain_name", name+".match_domain_name")
-		if path, isStr := e["path"].(string); isStr && path != "" {
-			e["path"] = p.path(path)
+		// The engine-known source keys are read as text as written. Other keys
+		// in an adapter block reach the adapter with YAML's types, so a numeric
+		// id there should be quoted (contracts section 3).
+		if _, has := e["path"]; has {
+			e["path"] = p.path(p.str(e, "path", name+".path", ""))
+		}
+		if _, has := e["tabs"]; has {
+			p.strList(e, "tabs", name+".tabs")
 		}
 		// The engine hands a Sheet-tab source the store's spreadsheet and
 		// credentials, so a team writes them once.
@@ -694,14 +700,23 @@ func (p *parser) strList(m map[string]any, key, name string) []string {
 		return []string{}
 	}
 	out := make([]string, 0, len(list))
-	for _, item := range list {
-		s, ok := item.(string)
-		if !ok {
+	for i, item := range list {
+		switch v := item.(type) {
+		case string:
+			out = append(out, v)
+		case nil, map[string]any, []any:
 			p.fail("`%s` must be a list of text", name)
 			return []string{}
+		default:
+			// A plain scalar item (tabs: [2024]) is text as written.
+			lit, ok := p.lits[fmt.Sprintf("%s[%d]", name, i)]
+			if !ok {
+				lit = fmt.Sprint(v)
+			}
+			out = append(out, lit)
 		}
-		out = append(out, s)
 	}
+	m[key] = toAnyList(out)
 	return out
 }
 
