@@ -178,7 +178,7 @@ type WriteOp int
 
 const (
 	OpReplace WriteOp = iota // rewrite the whole table
-	OpAppend                 // add rows
+	OpAppend                 // add rows; on a keyed section 4 table, a key the table already holds fails the commit
 	OpUpsert                 // insert or update by Key columns
 	OpDelete                 // delete rows matching Key columns
 	OpTrim                   // delete rows whose Column is before Before
@@ -216,7 +216,9 @@ type Backend interface {
 	Lease(ctx context.Context, owner string, ttl time.Duration) (RunLease, error)
 	// Commit applies every write all-or-nothing (one Sheets batchUpdate, one SQL
 	// transaction). It rejects an OpUpsert or OpDelete with no Key before applying
-	// anything. It creates a missing table, and appends a missing column, the first
+	// anything. An OpAppend to a keyed section 4 table of a key the table already
+	// holds (or that the same commit already wrote) fails the whole commit. It
+	// creates a missing table, and appends a missing column, the first
 	// time a write names it. It returns ErrTooLarge rather than splitting.
 	Commit(ctx context.Context, writes []TableWrite) error
 }

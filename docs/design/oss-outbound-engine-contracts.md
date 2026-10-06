@@ -173,7 +173,7 @@ type WriteOp int
 
 const (
     OpReplace WriteOp = iota // rewrite the whole table
-    OpAppend                 // add rows
+    OpAppend                 // add rows; on a keyed section 4 table, a key the table already holds fails the commit
     OpUpsert                 // insert or update by Key columns
     OpDelete                 // delete rows matching Key columns
     OpTrim                   // delete rows whose Column is before Before
@@ -211,7 +211,8 @@ type Backend interface {
     Lease(ctx context.Context, owner string, ttl time.Duration) (RunLease, error)
     // Commit applies every write all-or-nothing (one Sheets batchUpdate, one SQL
     // transaction). It rejects an OpUpsert or OpDelete with no Key before applying
-    // anything. It creates a missing table, and appends a missing column, the first
+    // anything. An OpAppend to a keyed section 4 table of a key the table already
+    // holds (or that the same commit already wrote) fails the whole commit. It creates a missing table, and appends a missing column, the first
     // time a write names it. It returns ErrTooLarge rather than splitting.
     Commit(ctx context.Context, writes []TableWrite) error
 }
@@ -290,8 +291,10 @@ var Schema []Table // every section 4 tool table, in section 4 order
 // append, ordering, a slow append interleaved with a read, crash between phases,
 // added columns and unknown columns kept, many callers racing Lease with exactly
 // one winner (also on an expired lease), release by a non-owner refused, OpTrim,
-// DeleteProcessed dropping a partition, and ErrEventsShrank (a cursor saved from
-// one store read against a fresh store).
+// DeleteProcessed dropping a partition, ErrEventsShrank (a cursor saved from
+// one store read against a fresh store), and a commit that fails while applying
+// (its last write an OpAppend of a key a keyed table already holds) leaving
+// nothing applied.
 func Run(t *testing.T, open func(t *testing.T) (api.Backend, api.EventLog))
 
 package sinktest
@@ -477,7 +480,7 @@ Every tool table is created with exactly these columns, in this order (`storetes
 
 **`Health` rows.** Results: `last_result` (`healthy` or `unhealthy`), `last_run_at`, `last_success_at`, `run_id`, `rubric_version`, `schedule`. Problems: key `<kind>:<id>`, exactly as the check or hook gives it, for example `push_failed:<lead>:<lane>:<step>`, `namesake:<lead>`, `secret_missing:<variable>`, `status_conflict:<lead>`, `override_unmatched:<row>`, `receiver_only_push:<lead>`, `silent:<kind>`, `skipped_runs`, `ledger_shrank`, `view_write_failed`. Each run rewrites the problem rows: it keeps `first_seen_at` for a problem still open and deletes resolved ones. On Sheets, cell `H1` of the `Health` tab (outside the table, the one exception to exact width) holds the staleness formula, rewritten each run: `=IF(NOW()-DATEVALUE(LEFT(<last_success_at cell>,10))-TIMEVALUE(MID(<last_success_at cell>,12,8))>3*<schedule in days>,"STALE: no successful run in 3 intervals","ok")`.
 
-**`State` keys.** `schema_version` (`major.minor`), `config_version`, `cursor:<source id>`, `cursor:events`, `last_poll_at`, `first_run_at`, `last_received:<kind>` (received time of the newest event of each kind), `enrich_count:<YYYY-MM-DD>` (UTC), `ledger_rows` (the highest committed ledger row count; never lowered by a run), `key_conflicts` (running count), `opened_by` (the hostname of the `serve` process that last opened a SQLite file), and on SQLite `lease_owner` and `lease_expires_at`. The `store` check (SQLite) fails when the current process is not in a container (no `/.dockerenv`) while `opened_by` names one.
+**`State` keys.** `schema_version` (`major.minor`), `config_version`, `cursor:<source id>`, `cursor:events`, `last_poll_at`, `first_run_at`, `last_received:<kind>` (received time of the newest event of each kind), `enrich_count:<YYYY-MM-DD>` (UTC), `ledger_rows` (the highest committed ledger row count; never lowered by a run), `key_conflicts` (running count), `opened_by` (the hostname of the `serve` process that last opened a SQLite file, written only when that `serve` runs in a container and cleared otherwise), `export_lane:<lane id>` (`yes`: the lane once had an `Export` table, so the table is still loaded and kept current after the lane leaves the rubric), and on SQLite `lease_owner` and `lease_expires_at`. The `store` check (SQLite) fails when the current process is not in a container (no `/.dockerenv`) while `opened_by` names one.
 
 **Sheets lease file.** `gs://<lease_bucket>/leadscore-lease.json`: `{"owner": "<run id>", "expires_at": "<time>"}`. Taking it writes with `ifGenerationMatch` (0 when absent); release deletes it with `ifGenerationMatch`. A Sheets commit whose encoded body is over 9MB, or that the API rejects as too large, is `ErrTooLarge`.
 
@@ -785,18 +788,22 @@ Not public API: these live under `internal/` and may change between releases. Th
 | `adapters/apollo` | S8 owns `client.go` (key, base URL, 30-second timeout, the two call modes) and registration; S9 adds the body parsers, `PolledReplyKey` and `RequiredPaths`; S12 adds sinks, the `Lookup` and the `Poller` | |
 | `adapters/hubspot`, `adapters/csv`, `adapters/sheetsource` | S11, S7, S5 | |
 
+**Built-in stores** register through a blank import in the root package (`leadscore.go`): their packages are internal, so a custom build could not import them, and this way every build has them.
+
 **Import rule.** Inside the module, only `cmd/` and `_test.go` files import the root package; `internal/*`, `adapters/*`, `storetest` and `sinktest` use `internal/api`, whose names the root aliases (so `api.Backend` is `leadscore.Backend`). A root import from anywhere else becomes an import cycle once the root reaches that package; a test in the root package enforces the rule. Code blocks in section 12 therefore write `api.X`.
 
 **Conformance tests** call `storetest.Run` and `sinktest.Run` from an external test package (`package sqlite_test`, `package apollo_test`), never from inside the package under test.
 
 ### 12.2 The in-memory model (S4)
 
-One Go struct per section 4 table, with typed fields for known columns and an `Extra map[string]string` for unknown ones. Keyed tables are held in maps by primary key (key type `[]string` in section 4 key order); keyless tables (`Overrides`, `Log`) are ordered slices. Two indexes: identities by key, and people by company domain.
+One Go struct per section 4 table, with typed fields for known columns and an `Extra map[string]string` for unknown ones (`Ranked`'s non-fixed columns are its derived names, held in `RankedRow.Derived`). Keyed tables are held in maps by primary key; keyless tables (`Overrides`, `Log`) are ordered slices. Go map keys cannot be slices, so the key type is `model.Key`: the key column values in section 4 key order, joined (`model.K(parts...)`, `Key.Parts()`); a one-column key is the value itself (`m.People[model.Key(id)]`). Export tables are `Model.Exports[<lane id>]`; the people-owned `Companies` tab is loaded read-only as raw rows (`Model.Companies`). Two indexes: identities by key (the `Identities` map) plus `Model.IdentitiesOf(lead)`, and people by company domain (`Model.PeopleAt(domain)`, reading `People.fields["company.domain"]`).
 
-- Every change goes through `Model.Put(table, row)` and `Model.Delete(table, key)`, which record what changed.
-- `codec.Encode(model, tables ...string) []TableWrite` turns the recorded changes for the named tables (all when none named) into writes: `OpAppend` for new rows of `Seen events`, `Window events`, `Log` and `Identities`; `OpUpsert` for new or changed keyed rows (including `Applied rows`); `OpDelete` for deleted rows (by key, or all columns for `Overrides`); `OpReplace` for `Ranked` (first chunk; later chunks append); `OpTrim` for retention. For `State`, a table name may carry a key prefix (`State:cursor:`).
-- `Model.Committed(writes)` clears only the committed changes after `Commit` succeeds. `Model.Discard()` drops all uncommitted changes (dry-run, and `ErrTooLarge` reloads).
+- Every change goes through `Model.Put(table, row)`, `Model.Delete(table, key []string)` and `Model.Trim(table, column, before)` (retention: removes the rows now and records an `OpTrim`), which record what changed. A row put back unchanged records nothing. `Put` returns an error and records nothing for an `Export <lane id>` table whose lane id breaks section 2's rule (letters, digits, `-`, `_`, starting with a letter or digit) or matches an already recorded `export_lane:` id only ignoring case (two such lanes would share one SQLite table); `Delete` and `Trim` on such a table do nothing. A row of the wrong type for its table panics. `Put` keeps the row as the store will return it (times in UTC to the millisecond, JSON numbers as float64, exact up to 2^53), and the first row put in an `Export <lane id>` table also sets `State` `export_lane:<lane id>` to `yes`. That record must be committed in the same commit as the table's first write; `Encode` guarantees it: encoding an export table without `State` adds that one `State` row. `Model.SetState(key, value)` and `Model.StateValue(key)` are shorthands for `State`.
+- `codec.Encode(model, tables ...string) []TableWrite` turns the recorded changes for the named tables (all when none named) into writes: `OpAppend` for new rows of `Seen events`, `Window events`, `Log` and `Identities`, and new `Overrides` rows (an append of a key a keyed table already holds fails the commit, C1, so `Encode` appends only keys not in the store); `OpUpsert` for new or changed keyed rows (including `Applied rows`); `OpDelete` for deleted rows (by key, or all columns for `Overrides`); `OpReplace` for `Ranked` (the whole table; `codec.Chunk(write, size)` splits it into a first chunk and later appends); `OpTrim` for retention, first among a table's writes. For `State`, a table name may carry a key prefix (`State:cursor:`).
+- `Model.Committed(writes)` runs after `Commit` succeeds: the model takes what the writes stored as committed and compares every row they touched with its current value again, so a change made between `Encode` and `Committed` (even back to the old value, or a delete of a row the write added) stays recorded. `Model.Discard()` drops all uncommitted changes (dry-run, and `ErrTooLarge` reloads).
+- `codec.Load(ctx, backend)` reads `State` first and refuses a newer major `schema_version` with `codec.ErrNewerSchema` (a value that is not digits `.` digits is `codec.ErrBadVersion`) before decoding anything else. It then reads every table except `Log` and `Events`, plus `Companies` and the export table of every lane recorded as `export_lane:<lane id>` (the `Backend` cannot list tables). It records this binary's version when the stored one is missing or older; a newer minor is kept. Load errors name the table, row and column, never the cell value. Times are `model.TimeFormat`; `model.FormatTime` and `model.ParseTime` read and write it.
 - No slice writes a table any other way.
+- `storetest` partitions: the suite appends old events with an old `RawEvent.ReceivedAt`, so a store that keeps one partition per month picks the month from `ReceivedAt` (the receiver's clock).
 
 ### 12.3 The evaluator (S2)
 
@@ -822,7 +829,7 @@ type Problem struct{ Key, Message, Fix string; Warning bool } // Key in the sect
 func Register(c Check)
 ```
 
-A problem is written to `Health` under `Problem.Key` as given, and cleared when a later run of the same check stops returning it. Owners: S1 `secrets`; S2 registers `rubric` (compile), and S10a adds the field part to that same check (`Fields()` against the loaded columns in `Env.Model`); S4 `store` (SQLite cases) and S5 its Sheets cases, `sheets`, `sheet-access`; S6 `overrides` (raising `status_conflict:<lead>` and `override_unmatched:<row>`) and `duplicates`; S8 `apollo-key`; S10b `pushes` and the ledger part of `store`; S11 `hubspot`; S12 `apollo-sequences`; S14a `receiver-secret`; S14b `hosting`; S15 `receiver-silence`; S16 `rubric-version`, `receivers`, `lease`, `pushes-enabled`. S14b extends `secrets` for Secret Manager keys (a local command on a hosted install, where S1's check skips the environment variables).
+A problem is written to `Health` under `Problem.Key` as given, and cleared when a later run of the same check stops returning it. Owners: S1 `secrets`; S2 registers `rubric` (compile), and S10a adds the field part to that same check (`Fields()` against the loaded columns in `Env.Model`); S4 `store` (the schema-version and SQLite cases, in `internal/check/store.go`, raising `store:newer_schema`, `store:bad_schema_version`, `store:disk_not_kept` and `store:opened_outside_container`; S5, S10a and S10b add their cases to that file) and S5 its Sheets cases, `sheets`, `sheet-access`; S6 `overrides` (raising `status_conflict:<lead>` and `override_unmatched:<row>`) and `duplicates`; S8 `apollo-key`; S10a the Cloud Run part of `store` (a SQLite store or CSV path while `CLOUD_RUN_JOB` or `K_SERVICE` is set); S10b `pushes` and the ledger part of `store`; S11 `hubspot`; S12 `apollo-sequences`; S14a `receiver-secret`; S14b `hosting`; S15 `receiver-silence`; S16 `rubric-version`, `receivers`, `lease`, `pushes-enabled`. S14b extends `secrets` for Secret Manager keys (a local command on a hosted install, where S1's check skips the environment variables).
 
 ### 12.5 Merge owns persons, aliases and row ids (S6)
 
