@@ -1,0 +1,5 @@
+First Name,Last Name,Title,Company,Email,Website,LinkedIn Url,Last Visited,Page
+Priya,Rao,VP Engineering,Acme,priya@acme.example,acme.example,https://www.linkedin.com/in/priya-rao,2026-08-20T10:00:00Z,/pricing
+,,,Initech,,initech.example,,2026-08-21,/docs
+Sam,Lee,CTO,Globex,sam@globex.example,globex.example,,20/08/2026,/pricing
+,,,,,,,2026-08-22T09:30:00+05:30,/blog
