@@ -323,7 +323,7 @@ func Run(t *testing.T, h Harness)
 
 ## 2. Rubric grammar
 
-A rubric is one YAML file. Top-level keys, all optional except `version` and `lanes`: `version` (1), `fields`, `settings`, `company`, `detectors`, `derive`, `conflicts`, `score`, `limits`, `lanes`. RFC section 6.4 has an abridged example and the built-in fields.
+A rubric is one YAML file. Top-level keys, all optional except `version` and `lanes`: `version` (1), `fields`, `settings`, `company`, `detectors`, `derive`, `conflicts`, `score`, `limits`, `lanes`. RFC section 6.4 has an abridged example and the built-in fields. YAML aliases (`*name`) and a key repeated in one mapping fail at load, naming the line: an alias's expansion can grow exponentially, and a repeated key would silently keep only the last value.
 
 **Aliases and headers.** The engine resolves input headers to field names before merge, once, for every source. A header is matched after squashing it to lowercase `a-z0-9` (so `Work Email` and `work_email` both become `workemail`). When two headers of one row resolve to the same field, the first in file order wins. The built-in alias table (in `internal/api`, from core plus three company facts):
 
@@ -344,13 +344,13 @@ A rubric is one YAML file. Top-level keys, all optional except `version` and `la
 | `contact_id` | contactid, apollocontactid, personid |
 | `at` (event rows) | visitedat, visitdate, lastvisited, lastvisitat |
 
-Core's `data_quality_note`, `primary_ai_coding_tool` and `visited_domain` aliases do not ship. A declared field also matches its own squashed name and its `aliases`; a field's `aliases` win on a clash with the built-in table. Any other header is kept under its squashed name, and rules refer to it by that name (a header `Primary AI coding tool` is `primaryaicodingtool`).
+Core's `data_quality_note`, `primary_ai_coding_tool` and `visited_domain` aliases do not ship. A declared field also matches its own squashed name and its `aliases`; a field's `aliases` win on a clash with the built-in table. Any other header is kept under its squashed name, and rules refer to it by that name (a header `Primary AI coding tool` is `primaryaicodingtool`). A rule naming an undeclared field that is not a squashed name (lowercase letters and digits only) fails at load, since no column can carry it; so does a rule naming a header spelling that resolves to another field (`jobtitle` is `title`; write `title`).
 
-**Fields.** `fields: { <name>: { type, level, aliases } }`. `type` is `text`, `number`, `date` (ISO 8601), `bool` (`true/false/yes/no/1/0`), or `{ ordered: <settings list> }`. `level` is `lead` (default) or `company`. A non-built-in `company` field is read from the `Companies` tab (and enrichment `Extra`); to lift a lead column to the company, use a rollup. Undeclared columns are `text` at lead level. A value that does not parse as its type is absent. A derived name shadows an input column of the same name, and the compiler warns.
+**Fields.** `fields: { <name>: { type, level, aliases } }`. `type` is `text`, `number`, `date` (ISO 8601), `bool` (`true/false/yes/no/1/0`), or `{ ordered: <settings list> }`. `level` is `lead` (default) or `company`. A non-built-in `company` field is read from the `Companies` tab (and enrichment `Extra`, keyed by the field name with or without `company.`; an exact `company.<name>` key wins over `<name>`); an undeclared `company.<name>` is such a fact, as text. To lift a lead column to the company, use a rollup. Declaring a built-in field may add `aliases` but not change its type or level; `status` cannot be declared. Declaring a field whose own name or alias is a built-in header spelling of another field (for example `stage`) is allowed, with a warning, and the rubric's field wins. Undeclared columns are `text` at lead level. A value that does not parse as its type is absent. A date with no time is midnight UTC, and dates compare as instants. A derived name shadows an input column (or, for a company block, a company field) of the same name from that block on, and the compiler warns; `status`, `sources_seen` and `receiver_only` cannot be derived, and neither can a fixed `Ranked` column name (section 4: `lead_id`, `email`, `linkedin_url`, `full_name`, `company_domain`, `account_score`, `contact_score`, `score`, `status`, `lane`, `reasons`, `rubric_version`). Every derived name has one type: all its `then`/`else` values are numbers, or all text, or all booleans (or null). Names in `fields`, `settings`, `company`, `detectors` and `derive` use lowercase letters, digits and underscores, starting with a letter.
 
-**Settings.** `settings: { <name>: <list or scalar> }`. A list is an ordering for `ordered` fields; unknown values sort below all. Conditions refer to a setting as `$<name>`.
+**Settings.** `settings: { <name>: <list or scalar> }`. A list is an ordering for `ordered` fields; unknown values sort below all. `company.funding_stage` ranks by `settings.funding_order`, which a rubric must declare only to compare it with `lt`, `lte`, `gt` or `gte`; the value compared against must be in the list. Conditions refer to a setting as `$<name>`.
 
-**Text matching.** Every text comparison (`eq`, `ne`, `in`, `not_in`, `contains`, and matching a value to an `ordered` list) is case-insensitive after trimming. Matching to an `ordered` list also ignores spaces, hyphens and underscores, so `Series B` matches `series_b`.
+**Text matching.** Every text comparison (`eq`, `ne`, `in`, `not_in`, `contains`, and matching a value to an `ordered` list) is case-insensitive after Unicode NFC normalization and trimming. Matching to an `ordered` list also ignores every Unicode space, hyphen and underscore, so `Series B` matches `series_b`.
 
 **Conditions.** A condition is one of:
 
@@ -365,7 +365,9 @@ Core's `data_quality_note`, `primary_ai_coding_tool` and `visited_domain` aliase
 | `{ detector: D }` | detector D fired for this lead, or for its company when D's subject is company |
 | `{ expr: "<CEL>" }` | a raw CEL expression over the variables below |
 
-Any comparison on an absent value is false, so only `missing` is true for it. `F` is a built-in field, a declared or input column, `company.<name>` for a company field or rollup, or a derived name.
+Any comparison on an absent value is false, so only `missing` is true for it (and `not` of a comparison). A condition on `status` with `eq`, `ne`, `in` or `not_in` may name only the statuses in RFC 6.3, so a typo fails at load (`contains` and raw `expr:` are not checked). `in: []` is never true and `not_in: []` is true for any present value. A raw `expr:` that fails at run time (for example `lead.x` on a lead without `x`) counts as false, with a warning that names the rule but never a lead's values. Detectors are read with `{ detector: D }` (or `detector.D` in `expr:`), not `field:`.
+
+**Cost limit.** Each condition may cost at most 1,000,000 CEL cost units (about one per operation) for one lead. A condition whose estimated worst case is over that fails at load (the estimate takes `lead`, `company` and `detector` at up to 1,000 entries with values of up to 50,000 characters, settings at their sizes in the rubric, and a list written in the expression at its own size); evaluation stops one that reaches it, and it counts as false with a warning. `F` is a built-in field, a declared or input column, `company.<name>` for a company field or rollup, or a derived name.
 
 **CEL variables** (for `expr:`):
 
@@ -377,30 +379,30 @@ Any comparison on an absent value is false, so only `missing` is true for it. `F
 | `status` | `string` | the folded status |
 | `settings` | `map(string, dyn)` | the `settings` block |
 
-Test presence with `has(lead.x)`.
+Test presence with `has(lead.x)`. A company-level condition (a company derive block, an account score rule) has no `lead` and no `status` variable.
 
-**Company rollups.** `company: { <name>: <rollup> }`, computed over a company's leads: `{ any: C }` and `{ all: C }` (bool), `{ count: C }` (number), `{ max: F }` and `{ min: F }` (number or date), `{ first: F }` (the first present value, taking leads oldest first by first seen, as core's "first non-empty wins"). Read as `company.<name>`.
+**Company rollups.** `company: { <name>: <rollup> }`, computed over a company's leads: `{ any: C }` and `{ all: C }` (bool), `{ count: C }` (number), `{ max: F }` and `{ min: F }` (number or date), `{ first: F }` (the first present value, taking leads oldest first by first seen). Read as `company.<name>`.
 
-**Detectors.** `detectors: { <name>: { kind, subject, ... } }`, `subject` is `lead` (default) or `company`. Every window is at most 90 days. A company-subject detector sees every event whose domain is the company, lead events included.
+**Detectors.** `detectors: { <name>: { kind, subject, ... } }`, `subject` is `lead` (default) or `company`. Every `window` and `within` is longer than zero and at most 90 days. A company-subject detector sees every event whose domain is the company, lead events included.
 
 | Kind | Parameters | Fires when |
 |---|---|---|
 | `count_in_window` | `event`, `window`, `min` | at least `min` events of that kind in the window |
 | `first_seen` | `event`, `within` | the first event of that kind ever was within `within` |
-| `change` | `field` (a company fact), `within`, optional `from`, `to` | the fact changed within `within` (by `facts.<f>.at`), matching `from` and `to` when given |
+| `change` | `field` (a stored company fact: not a rollup, `leads_seen` or `domain`), `within`, optional `from`, `to` | the fact changed within `within` (by `facts.<f>.at`), matching `from` and `to` when given |
 | a registered kind | its own parameters under `params:` | as its `Detector` decides |
 
-`event` may end in `*` to match a prefix, for example `visit_*`. Event kinds are compared lowercased.
+`event` may end in `*` (and contain no other `*`) to match a prefix, for example `visit_*`. Event kinds are compared lowercased.
 
 **Derive.** `derive: { <name>: <block> }`, evaluated in file order. A block is a list of rules (lead level) or `{ level, rules }`. A rule is `{ when: C, then: V }`; the last may be `{ else: V }`. The first matching rule wins. `then: null`, or no rule matching and no `else`, gives "no value": later comparisons on it are false and `missing` is true. A company block may read company fields and rollups, company-subject detectors, and earlier company blocks; a lead block may read anything above it. The name `fit_signal` is the verdict's fit signal when a rubric defines it; `tier` and `priority`, when defined, are the names whose changes are logged.
 
 **Conflicts.** `conflicts: [ { field: F } ]`. A lead whose sources gave different non-empty values for F (recorded by merge in `People.conflicts`) is blocked on every lane, with the reason.
 
-**Score.** `score: { account: [ <rule> ], contact: [ <rule> ] }`. A rule is `{ when: C, points: N }`, or a band rule `{ band: F, points: { <threshold>: N, ... } }`, which pays the points of the highest threshold at or below F's number (as core pays for sources or colleagues seen: a fourth adds nothing rather than falling to zero). Account rules may read only company-level values. A lead with no company gets account half 0. The score is the sum of both halves.
+**Score.** `score: { account: [ <rule> ], contact: [ <rule> ] }`. A rule is `{ when: C, points: N }`, or a band rule `{ band: F, points: { <threshold>: N, ... } }`, which pays the points of the highest threshold at or below F's number (a fourth source adds nothing rather than falling to zero); a threshold may appear once (`2` and `2.0` are the same). Account rules may read only company-level values. A lead with no company gets account half 0. The score is the sum of both halves.
 
-**Limits.** `limits: { max_pushes_per_run, max_pushes_per_day, timezone }`, defaults 100, 200, UTC.
+**Limits.** `limits: { max_pushes_per_run, max_pushes_per_day, timezone }`, defaults 100, 200, UTC; `timezone` is an IANA name, and `Local` is refused because it differs between machines.
 
-**Lanes.** `lanes: [ { id, name, kind, priority, when, push } ]`. `id` is required and must never change; `kind` is `cold`, `non-cold` or `export`; a higher `priority` wins; `push` is `<sink>:<destination>`: `apollo:sequence/<sequence name>`, `hubspot:contacts`, `hubspot:deals`, or `export:<anything>` (export lanes only, and only export lanes use `export:`). At load the compiler checks this syntax; that the sink is registered is checked at run start.
+**Lanes.** `lanes: [ { id, name, kind, priority, when, push } ]`. `id` is required, unique ignoring case, and must never change; it starts with a letter or digit and uses letters, digits, `-` and `_`, since it names a table and a file; `name` defaults to the id and `priority` to 0; `when` is required. A cold lane whose `when` is not, and is not an `all` that includes, `{ field: receiver_only, eq: false }` gets a load warning (RFC 7); `kind` is `cold`, `non-cold` or `export`; a higher `priority` wins; `push` is `<sink>:<destination>`: `apollo:sequence/<sequence name>`, `hubspot:contacts`, `hubspot:deals`, or `export:<anything>` (export lanes only, and only export lanes use `export:`). At load the compiler checks this syntax; that the sink is registered is checked at run start.
 
 **Version hash.** `r-` plus the first 16 hex characters of the SHA-256 of the YAML re-marshalled with sorted keys and no comments.
 
@@ -773,6 +775,7 @@ Not public API: these live under `internal/` and may change between releases. Th
 | `internal/check` | S1 | the check framework (12.4) |
 | `internal/config` | S1 | loading `leadscore.yml`, the rubric path, the bundle, `config get` and `set-hosting` (section 3) |
 | `internal/logredact` | S1 | `Redact`, `VendorErrorDetail` (copied) |
+| `internal/duration` | S1 (moved out of `internal/config` by S2) | `Parse`: Go durations plus `d` for days, shared by config and the rubric |
 | `internal/model` | S1 creates it empty; S4 fills it | the in-memory model (12.2) |
 | `internal/store/codec`, `internal/store/sqlite` | S4 | codec and the SQLite store |
 | `internal/store/sheets` | S5 | the Sheets store and lease |
@@ -807,9 +810,31 @@ One Go struct per section 4 table, with typed fields for known columns and an `E
 
 ### 12.3 The evaluator (S2)
 
-- `rules.Compile(yaml) (*Rubric, error)`.
-- `rubric.Evaluate(in Input) (verdicts map[LeadID]Verdict, blocked map[LeadID]string, warnings []string)`. `Input` carries leads (as `LeadRef`), company facts and `leads_seen` per domain, `rules.DetectorResults` (per subject, per detector), and each lead's folded status. `blocked` names leads stopped by `conflicts`, with the reason. Warnings (for example an unparseable number) are written to `Log` by the engine. The evaluator computes nothing merge produces; S3 builds `Input` directly from fixture rows.
-- Accessors: `Fields() []string` (every field the rubric reads), `Aliases() map[string]string`, `ConflictFields() []string`, `Lanes() []Lane`, `Limits() Limits`, `Detectors() []DetectorSpec`, `Version() string`.
+- `rules.Compile(yaml) (*Rubric, error)`. On failure the error is `rules.LoadErrors`, a list of `LoadError{Line, Field, Msg}` in line order (the caller adds the file name); compiling continues past an error where it can, so `rules check` reports them all.
+- `rubric.Evaluate(in Input) Result` and `rubric.EvaluateContext(ctx, in) (Result, error)` (a cancelled `ctx` stops it before the next company or lead, interrupts a running condition, and returns ctx's error). `Input` carries leads (as `LeadRef`, whose `Status` is the folded status), company facts and `leads_seen` per domain, and `rules.DetectorResults` (per subject, per detector). `Result.Blocked` names leads stopped by `conflicts`, with the reason. `Result.Lanes` holds, per lead, the lanes whose `when` holds, highest priority first (file order on a tie), after derive and score; the built-in lane checks, the ledger and limits are S10b's. `Result.Warnings` (for example an unparseable number, or a lane expression that failed) are written to `Log` by the engine; they never carry a lead's values. The evaluator computes nothing merge produces; S3 builds `Input` directly from fixture rows.
+
+```go
+type Input struct {
+    Leads     []api.LeadRef
+    Companies map[string]api.CompanyFacts // by domain; a lead's domain with no entry is a company with only its domain
+    LeadsSeen map[string]int              // company.leads_seen by domain; missing means no value
+    Detectors DetectorResults
+}
+type DetectorResults struct {
+    Leads     map[api.LeadID]map[string]bool // lead-subject detectors that fired
+    Companies map[string]map[string]bool     // company-subject detectors that fired, by domain
+}
+type Result struct {
+    Verdicts map[api.LeadID]api.Verdict
+    Blocked  map[api.LeadID]string
+    Lanes    map[api.LeadID][]string
+    Warnings []string
+}
+```
+
+- Accessors: `Fields() []string` (every input field the rubric reads: lead fields by name, company facts as `company.<name>`; derived names, rollups, `status` and detectors are not listed), `Aliases() map[string]string` (squashed header to field name, `company.<name>` for a company field), `ConflictFields() []string`, `Lanes() []Lane`, `Limits() Limits`, `Detectors() []DetectorSpec`, `Version() string`, `DerivedNames() []string` (file order: the `Ranked` columns), `Warnings() []LoadError` (compile warnings with line and field, which `rules check` prints).
+- The reason renderer: `rubric.Explain(Verdict) string` for `explain` (derived values in rubric order, the score and its halves, then the reasons), and `rules.ReasonsText(Verdict) string` (reasons joined with `; `) for a table cell.
+- The `rubric` check raises `rubric_invalid:compile` when the rubric does not compile.
 
 ### 12.4 The check framework (S1)
 

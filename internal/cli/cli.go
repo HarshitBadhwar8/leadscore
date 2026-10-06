@@ -135,7 +135,7 @@ var commands = []*command{
 		minArgs: 1,
 		maxArgs: 1,
 		help:    "compile a rubric and report errors",
-		slice:   "S2",
+		run:     runRulesCheck,
 	},
 	{
 		path:    []string{"config", "get"},
