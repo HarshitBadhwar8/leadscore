@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -208,6 +209,9 @@ func writeAtomic(path string, data []byte) error {
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	// Sync the folder so the rename itself survives a crash.
+	if !syncsDirs(runtime.GOOS) {
+		return nil
+	}
 	if d, err := os.Open(filepath.Dir(path)); err == nil {
 		syncErr := d.Sync()
 		d.Close()
@@ -217,3 +221,8 @@ func writeAtomic(path string, data []byte) error {
 	}
 	return nil
 }
+
+// syncsDirs reports whether a folder can be fsynced on goos. Windows refuses
+// to sync a directory handle ("Access is denied") and NTFS journals the rename
+// itself, so the folder sync is skipped there.
+func syncsDirs(goos string) bool { return goos != "windows" }

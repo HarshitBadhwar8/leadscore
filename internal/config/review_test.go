@@ -126,3 +126,12 @@ func TestSetHostingKeepsCRLF(t *testing.T) {
 		t.Fatalf("reload: %v %+v", err, c)
 	}
 }
+
+func TestFolderSyncSkippedOnWindows(t *testing.T) {
+	if syncsDirs("windows") {
+		t.Error("Windows cannot fsync a folder; the sync must be skipped there")
+	}
+	if !syncsDirs("linux") || !syncsDirs("darwin") {
+		t.Error("the folder sync must stay on Unix")
+	}
+}
