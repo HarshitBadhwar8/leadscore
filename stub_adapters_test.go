@@ -246,11 +246,9 @@ func TestRunNotBuiltYet(t *testing.T) {
 }
 
 func TestConformanceSuitesAreDeclared(t *testing.T) {
-	t.Run("storetest", func(t *testing.T) {
-		storetest.Run(t, func(t *testing.T) (leadscore.Backend, leadscore.EventLog) {
-			return stubBackend{}, stubEventLog{}
-		})
-	})
+	// storetest is filled (S4) and runs against real stores; here only its
+	// signature is held, since the stubs store nothing.
+	var _ func(*testing.T, func(*testing.T) (leadscore.Backend, leadscore.EventLog)) = storetest.Run
 	t.Run("sinktest", func(t *testing.T) {
 		sinktest.Run(t, sinktest.Harness{
 			New:   func(leadscore.Config) (leadscore.Sink, error) { return stubSink{}, nil },
@@ -259,4 +257,12 @@ func TestConformanceSuitesAreDeclared(t *testing.T) {
 	})
 	_ = []sinktest.FailKind{sinktest.RateLimited, sinktest.Transient, sinktest.Refused, sinktest.Other}
 	_ = storetest.Schema
+}
+
+// The built-in SQLite store registers through the root package, so a custom
+// build that only calls leadscore.Main gets it.
+func TestBuiltInSQLiteStoreRegistered(t *testing.T) {
+	if _, ok := api.BackendFactory("sqlite"); !ok {
+		t.Error("the sqlite backend is not registered by the root package")
+	}
 }

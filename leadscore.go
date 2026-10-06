@@ -18,6 +18,10 @@ import (
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/cli"
+
+	// The built-in stores register here: their packages are internal, so a
+	// custom build cannot import them, and every build gets them this way.
+	_ "github.com/HarshitBadhwar8/leadscore/internal/store/sqlite"
 )
 
 // LeadID is a lead's id: a UUIDv7, minted when a person is first seen.
