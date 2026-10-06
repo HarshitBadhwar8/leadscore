@@ -17,6 +17,7 @@ the task breakdown); the contracts doc is the source of truth for every shape.
 | `internal/check` | the `doctor` check framework and the `secrets` and `rubric` checks |
 | `internal/rules` | the rubric compiler and evaluator: YAML rules compiled to CEL |
 | `internal/logredact` | log redaction: logs carry ids, never emails |
+| `adapters/csv` | the CSV file source (`type: csv`): lead rows, or event rows with `events: true` |
 | `storetest/`, `sinktest/` | conformance suites for plug-in stores and sinks |
 | `examples/` | a made-up example rubric (`rubric.yml`) and a sample lead sheet (`leads.csv`) |
 

@@ -1,0 +1,10 @@
+event,at,email,linkedin_url,domain,page,reject
+visit_pricing,2026-08-20T10:00:00.000Z,priya@acme.example,,,/pricing,
+demo_request,2026-08-20,,https://www.linkedin.com/in/example-sam,,,yes
+sent,2026-08-20T10:00:00Z,priya@acme.example,,,,
+Replied_Positive,2026-08-20T10:00:00Z,priya@acme.example,,,,
+deal_won,2026-08-20T10:00:00Z,,,acme.example,,
+,2026-08-20T10:00:00Z,priya@acme.example,,,,
+visit_docs,,priya@acme.example,,,,
+visit_docs,2026-08-20T10:00:00Z,,,,/docs,
+company_visit,2026-08-20T10:00:00Z,,,initech.example,,
