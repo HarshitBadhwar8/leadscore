@@ -1,0 +1,25 @@
+adapters/csv/csv.go
+  s_9dab9ff7f2c580::t_9e434cf7aa56af 68-75,77-79,84,93-97,102-118,133-134,142,147-159,167,176-178,183-191,214,225,248-249,252-254,273-275,288-296,332,338-339,341,352-364
+adapters/csv/csv_test.go
+  s_9dab9ff7f2c580::t_72e65571219f7f 5,166-168,193-194,205-207,229,272-413
+adapters/csv/testdata/apollo_visitors.csv
+  s_9dab9ff7f2c580::t_9758c4ba23c95f 2
+adapters/csv/testdata/events.csv
+  s_9dab9ff7f2c580::t_433a3af73ce1e0 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8e506a8858dc9cba512071dc5acd10d1750cfe6b",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
