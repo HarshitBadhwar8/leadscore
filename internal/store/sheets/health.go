@@ -2,6 +2,7 @@ package sheets
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -10,7 +11,11 @@ import (
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/config"
+	"github.com/HarshitBadhwar8/leadscore/internal/duration"
 )
+
+// defaultSchedule is the run schedule when Health has no schedule row.
+const defaultSchedule = config.DefaultSchedule
 
 // StaleMessage is what Health!H1 shows when no run succeeded in three
 // schedule intervals; NoSuccessMessage before any run has succeeded.
@@ -27,9 +32,9 @@ const (
 // Before any run has succeeded it shows NoSuccessMessage. The times compared
 // are UTC, so setup sets the spreadsheet's time zone to UTC.
 func Formula(header []string, rows []api.Row) string {
-	value := indexOf(header, "value")
+	value := slices.Index(header, "value")
 	cell := ""
-	schedule := config.DefaultSchedule
+	schedule := defaultSchedule
 	for i, r := range rows {
 		if r == nil || r["kind"] != "result" {
 			continue
@@ -48,9 +53,9 @@ func Formula(header []string, rows []api.Row) string {
 	if cell == "" {
 		return `="` + NoSuccessMessage + `"`
 	}
-	d, err := config.ParseDuration(schedule)
+	d, err := duration.Parse(schedule)
 	if err != nil || d <= 0 {
-		d, _ = config.ParseDuration(config.DefaultSchedule)
+		d, _ = duration.Parse(defaultSchedule)
 	}
 	return fmt.Sprintf(`=IF(NOW()-DATEVALUE(LEFT(%s,10))-TIMEVALUE(MID(%s,12,8))>3*%s,"%s","ok")`,
 		cell, cell, days(d), StaleMessage)
@@ -79,34 +84,45 @@ func FormulaRequest(sheetID int64, formula string) *sheetsapi.Request {
 	}}
 }
 
-// isEventsTab reports a monthly events tab name ("Events 2026-10").
-func isEventsTab(name string) bool {
-	_, ok := eventsMonth(name)
-	return ok
-}
-
 // protectionFor protects a tab the store creates the way setup protected its
 // siblings: an Events tab with the editors of an existing protected Events tab
 // (the receiver and run accounts), any other tool tab with the editors of an
-// existing protected tool tab (the run account). People-owned tabs, and a
+// existing protected tool tab (the run account). When no protected Events tab
+// is left, a new one gets the tool tabs' editors plus receiver, the account
+// appending (it must keep appending to it). People-owned tabs, and a
 // spreadsheet with nothing protected yet, get none.
-func protectionFor(book *sheetsapi.Spreadsheet, name string, sheetID int64) *sheetsapi.Request {
+func protectionFor(book *sheetsapi.Spreadsheet, name string, sheetID int64, receiver string) *sheetsapi.Request {
 	if peopleOwned(name) {
 		return nil
 	}
-	events := isEventsTab(name)
-	for _, sh := range book.Sheets {
-		if sh.Properties == nil || isEventsTab(sh.Properties.Title) != events || peopleOwned(sh.Properties.Title) {
-			continue
-		}
-		for _, pr := range sh.ProtectedRanges {
-			if pr.Editors == nil || len(pr.Editors.Users) == 0 || pr.WarningOnly {
+	editorsOf := func(events bool) ([]string, string) {
+		for _, sh := range book.Sheets {
+			if sh.Properties == nil || isEventsTab(sh.Properties.Title) != events || peopleOwned(sh.Properties.Title) {
 				continue
 			}
-			return protectRequest(sheetID, pr.Editors.Users, pr.Description)
+			for _, pr := range sh.ProtectedRanges {
+				if pr.Editors != nil && len(pr.Editors.Users) > 0 && !pr.WarningOnly {
+					return pr.Editors.Users, pr.Description
+				}
+			}
 		}
+		return nil, ""
 	}
-	return nil
+	events := isEventsTab(name)
+	if users, note := editorsOf(events); users != nil {
+		return protectRequest(sheetID, users, note)
+	}
+	if !events {
+		return nil
+	}
+	users, _ := editorsOf(false)
+	if users == nil {
+		return nil
+	}
+	if receiver != "" && !slices.ContainsFunc(users, func(u string) bool { return strings.EqualFold(u, receiver) }) {
+		users = append(slices.Clone(users), receiver)
+	}
+	return protectRequest(sheetID, users, eventsTabNote)
 }
 
 func protectRequest(sheetID int64, editors []string, description string) *sheetsapi.Request {

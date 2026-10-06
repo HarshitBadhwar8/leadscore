@@ -2,11 +2,14 @@ package sheets
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -20,21 +23,33 @@ import (
 
 // Raw receiver events live in one tab per UTC month of their received time,
 // "Events 2026-10" (RFC 6.6, "Monthly tabs"). Rows are only ever appended, so
-// an event's sequence is its (tab, row): a cursor holds, for every tab read,
-// how many data rows were read from it, written "2026-09:120,2026-10:7". A tab
-// the cursor does not name is read from its first row, so an append during
-// the grace hour to last month's tab is still read. The `seq` column is left
-// empty on Sheets: the position is the sequence.
+// an event's sequence is its (tab, row). Each row's `seq` cell holds a random
+// id, so a read can tell that rows moved. A cursor holds, for every tab read,
+// how many data rows were read from it and the id of the last one, written
+// "2026-09:120:3f9a0c1b2d4e,2026-10:7:9b8a7c6d5e4f". A tab the cursor does not
+// name is read from its first row, so an append during the grace hour to last
+// month's tab is still read.
+
+// deletedMetadataKey marks, in the spreadsheet's developer metadata, a month
+// whose tab DeleteProcessed deleted after every row in it was read. It is
+// written in the same batchUpdate as the delete, so a run that crashed before
+// saving the shorter cursor still reads on: a cursor naming a recorded month
+// skips it instead of failing.
+const deletedMetadataKey = "leadscore.events_deleted"
 
 var monthForm = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}$`)
 
 // EventsTab is the tab holding events received in t's UTC month.
 func EventsTab(t time.Time) string { return model.EventsPrefix + t.UTC().Format("2006-01") }
 
-// eventsMonth returns the month of an events tab name.
+// eventsMonth returns the month of an events tab name ("Events 2026-10";
+// case is ignored, as Sheets ignores it in tab names).
 func eventsMonth(name string) (string, bool) {
-	m, ok := strings.CutPrefix(name, model.EventsPrefix)
-	if !ok || !monthForm.MatchString(m) {
+	if len(name) <= len(model.EventsPrefix) || !strings.EqualFold(name[:len(model.EventsPrefix)], model.EventsPrefix) {
+		return "", false
+	}
+	m := name[len(model.EventsPrefix):]
+	if !monthForm.MatchString(m) {
 		return "", false
 	}
 	if _, err := time.Parse("2006-01", m); err != nil {
@@ -43,7 +58,19 @@ func eventsMonth(name string) (string, bool) {
 	return m, true
 }
 
-type positions map[string]int // month -> data rows read
+// isEventsTab reports a monthly events tab name.
+func isEventsTab(name string) bool {
+	_, ok := eventsMonth(name)
+	return ok
+}
+
+// mark is how far a cursor read one tab: rows read and the last row's id.
+type mark struct {
+	n  int
+	id string
+}
+
+type positions map[string]mark // month -> mark
 
 func parseCursor(c api.Cursor) (positions, error) {
 	pos := positions{}
@@ -51,43 +78,66 @@ func parseCursor(c api.Cursor) (positions, error) {
 		return pos, nil
 	}
 	for _, part := range strings.Split(string(c), ",") {
-		m, n, ok := strings.Cut(part, ":")
-		count, err := strconv.Atoi(n)
-		if _, isTab := eventsMonth(model.EventsPrefix + m); !ok || !isTab || err != nil || count < 0 {
+		f := strings.Split(part, ":")
+		bad := len(f) < 2 || len(f) > 3
+		var n int
+		if !bad {
+			var err error
+			n, err = strconv.Atoi(f[1])
+			_, isTab := eventsMonth(model.EventsPrefix + f[0])
+			bad = err != nil || n < 0 || !isTab
+		}
+		if bad {
 			return nil, fmt.Errorf("event cursor %q is not a Sheets events cursor", c)
 		}
-		pos[m] = count
+		mk := mark{n: n}
+		if len(f) == 3 {
+			mk.id = f[2]
+		}
+		pos[f[0]] = mk
 	}
 	return pos, nil
 }
 
 func (p positions) encode() api.Cursor {
-	months := make([]string, 0, len(p))
-	for m, n := range p {
-		if n > 0 {
-			months = append(months, m)
+	var parts []string
+	for _, m := range slices.Sorted(maps.Keys(p)) {
+		if mk := p[m]; mk.n > 0 {
+			parts = append(parts, m+":"+strconv.Itoa(mk.n)+":"+mk.id)
 		}
-	}
-	sort.Strings(months)
-	parts := make([]string, len(months))
-	for i, m := range months {
-		parts[i] = m + ":" + strconv.Itoa(p[m])
 	}
 	return api.Cursor(strings.Join(parts, ","))
 }
 
-// eventMonths lists the spreadsheet's events tabs by month, oldest first.
-func eventMonths(book *sheetsapi.Spreadsheet) []string {
-	var out []string
+// eventTabs maps each events tab's month to the tab.
+func eventTabs(book *sheetsapi.Spreadsheet) map[string]*sheetsapi.Sheet {
+	out := map[string]*sheetsapi.Sheet{}
 	for _, sh := range book.Sheets {
 		if sh.Properties == nil {
 			continue
 		}
 		if m, ok := eventsMonth(sh.Properties.Title); ok {
-			out = append(out, m)
+			out[m] = sh
 		}
 	}
-	sort.Strings(out)
+	return out
+}
+
+func gridRows(sh *sheetsapi.Sheet) int64 {
+	if gp := sh.Properties.GridProperties; gp != nil {
+		return gp.RowCount
+	}
+	return 0
+}
+
+// deletedMonths are the months DeleteProcessed recorded as deleted.
+func deletedMonths(book *sheetsapi.Spreadsheet) map[string]bool {
+	out := map[string]bool{}
+	for _, md := range book.DeveloperMetadata {
+		if md.MetadataKey == deletedMetadataKey {
+			out[md.MetadataValue] = true
+		}
+	}
 	return out
 }
 
@@ -97,12 +147,19 @@ var eventColumns = func() []string {
 	return d.Columns
 }()
 
+// rowID is a fresh random id for an appended event row.
+func rowID() string {
+	b := make([]byte, 6)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
 // AppendEvents stores a batch in one batchUpdate, so all-or-nothing, each
-// event in the tab of its received time's month, in order. It creates a
-// missing month's tab in the same request, protected like the existing
-// Events tabs. It retries Google's "slow down" until ctx is done; when another
-// writer created the same tab first, it reads the spreadsheet again and
-// appends.
+// event in the tab of its received time's month, in order, each row with a
+// fresh id in `seq`. It creates a missing month's tab (hidden) in the same
+// request, protected like the existing Events tabs. It retries Google's "slow
+// down" until ctx is done; when another writer created the same tab first, it
+// reads the spreadsheet again and appends.
 func (s *Store) AppendEvents(ctx context.Context, events []api.RawEvent) error {
 	if len(events) == 0 {
 		return nil
@@ -112,16 +169,14 @@ func (s *Store) AppendEvents(ctx context.Context, events []api.RawEvent) error {
 		if e.ReceivedAt.IsZero() {
 			return fmt.Errorf("appending events: event %d has no received time", i)
 		}
+		if n := len([]rune(string(e.Body))); n > MaxCellChars {
+			return fmt.Errorf("appending events: event %d's body has %d characters, more than a Sheets cell holds (%d)", i, n, MaxCellChars)
+		}
 		tab := EventsTab(e.ReceivedAt)
 		byMonth[tab] = append(byMonth[tab], rowData(eventColumns, api.Row{
-			"received_at": model.FormatTime(e.ReceivedAt), "kind": e.Kind, "body": string(e.Body),
+			"seq": rowID(), "received_at": model.FormatTime(e.ReceivedAt), "kind": e.Kind, "body": string(e.Body),
 		}))
 	}
-	tabs := make([]string, 0, len(byMonth))
-	for t := range byMonth {
-		tabs = append(tabs, t)
-	}
-	sort.Strings(tabs)
 	for {
 		book, err := s.metaTries(ctx, 0)
 		if err != nil {
@@ -129,14 +184,14 @@ func (s *Store) AppendEvents(ctx context.Context, events []api.RawEvent) error {
 		}
 		ids := sheetIDs(book)
 		var reqs []*sheetsapi.Request
-		for _, name := range tabs {
+		for _, name := range slices.Sorted(maps.Keys(byMonth)) {
 			id := int64(0)
 			if sh := tabOf(book, name); sh != nil {
 				id = sh.Properties.SheetId
 			} else {
 				id = newSheetID(ids)
-				reqs = append(reqs, addTab(id, name, int64(len(eventColumns)), 0), headerCells(id, 0, eventColumns))
-				if pr := protectionFor(book, name, id); pr != nil {
+				reqs = append(reqs, addTab(id, name, int64(len(eventColumns)), true), headerCells(id, 0, eventColumns))
+				if pr := protectionFor(book, name, id, s.callerEmail(ctx)); pr != nil {
 					reqs = append(reqs, pr)
 				}
 			}
@@ -154,18 +209,30 @@ func (s *Store) AppendEvents(ctx context.Context, events []api.RawEvent) error {
 	}
 }
 
+// callerEmail is the signed-in account, as Drive reports it; "" when Drive
+// cannot say. Only a new Events tab with no protected sibling needs it.
+func (s *Store) callerEmail(ctx context.Context) string {
+	about, err := s.svc.Drive.About.Get().Fields("user(emailAddress)").Context(ctx).Do()
+	if err != nil || about.User == nil {
+		return ""
+	}
+	return about.User.EmailAddress
+}
+
 func alreadyExists(err error) bool {
 	var e *googleapi.Error
 	return errors.As(err, &e) && e.Code == http.StatusBadRequest && strings.Contains(e.Message, "already exists")
 }
 
-// metaTries is meta with a chosen retry bound (0: until ctx is done).
+// metaTries reads the spreadsheet's tabs, protection and developer metadata,
+// with a chosen retry bound (0: until ctx is done).
 func (s *Store) metaTries(ctx context.Context, tries int) (*sheetsapi.Spreadsheet, error) {
 	var book *sheetsapi.Spreadsheet
 	err := retry(ctx, tries, func() error {
 		var err error
 		book, err = s.svc.Sheets.Spreadsheets.Get(s.id).
-			Fields("spreadsheetId,properties(title,autoRecalc,timeZone),sheets(properties(sheetId,title,index,gridProperties),protectedRanges)").
+			Fields("spreadsheetId,properties(title,autoRecalc,timeZone),developerMetadata(metadataKey,metadataValue)," +
+				"sheets(properties(sheetId,title,index,hidden,gridProperties),protectedRanges)").
 			Context(ctx).Do()
 		return err
 	})
@@ -178,7 +245,9 @@ func (s *Store) metaTries(ctx context.Context, tries int) (*sheetsapi.Spreadshee
 // ReadEvents returns the events after cursor, tab by tab (oldest month first)
 // and row by row, and the cursor after the last one. Each event's Seq is the
 // cursor just after it. It returns ErrEventsShrank when a tab the cursor names
-// is missing, or no longer holds the last row the cursor says was read.
+// is missing (unless DeleteProcessed recorded deleting it), holds fewer rows
+// than the cursor read, or no longer has the last row read at its place
+// (rows were sorted, inserted or deleted).
 func (s *Store) ReadEvents(ctx context.Context, cursor api.Cursor) ([]api.RawEvent, api.Cursor, error) {
 	pos, err := parseCursor(cursor)
 	if err != nil {
@@ -188,67 +257,69 @@ func (s *Store) ReadEvents(ctx context.Context, cursor api.Cursor) ([]api.RawEve
 	if err != nil {
 		return nil, cursor, err
 	}
-	months := eventMonths(book)
-	present := map[string]bool{}
-	for _, m := range months {
-		present[m] = true
-	}
-	for m, n := range pos {
-		if n > 0 && !present[m] {
+	tabs := eventTabs(book)
+	deleted := deletedMonths(book)
+	for m, mk := range pos {
+		sh := tabs[m]
+		switch {
+		case mk.n == 0:
+		case sh == nil && deleted[m]:
+			delete(pos, m) // read whole, then deleted: nothing more to read there
+		case sh == nil:
 			return nil, cursor, fmt.Errorf("%w: tab %q is gone", api.ErrEventsShrank, model.EventsPrefix+m)
+		case gridRows(sh)-1 < int64(mk.n):
+			return nil, cursor, fmt.Errorf("%w: tab %q holds fewer than the %d rows already read",
+				api.ErrEventsShrank, sh.Properties.Title, mk.n)
 		}
 	}
+	months := slices.Sorted(maps.Keys(tabs))
 	// Read each tab from the last row already read (to check it is still
 	// there) or, for a tab not read yet, from its first data row.
 	ranges := make([]string, len(months))
 	for i, m := range months {
-		start := pos[m] + 1 // sheet row of the last data row read; the header is row 1
-		if pos[m] == 0 {
+		start := pos[m].n + 1 // sheet row of the last data row read; the header is row 1
+		if pos[m].n == 0 {
 			start = 2
 		}
-		ranges[i] = fmt.Sprintf("%s!A%d:%s", QuoteTab(model.EventsPrefix+m), start, colName(len(eventColumns)-1))
+		ranges[i] = fmt.Sprintf("%s!A%d:%s", QuoteTab(tabs[m].Properties.Title), start, colName(len(eventColumns)-1))
 	}
 	vrs, err := s.batchGet(ctx, ranges, func(string) string { return "UNFORMATTED_VALUE" })
 	if err != nil {
 		return nil, cursor, err
 	}
-	cur := positions{}
-	for m, n := range pos {
-		cur[m] = n
-	}
+	cur := maps.Clone(pos)
 	var out []api.RawEvent
 	for i, m := range months {
-		var values [][]any
-		if vrs != nil {
-			values = vrs[i].Values
-		}
+		values := vrs[i].Values
+		title := tabs[m].Properties.Title
 		read := pos[m]
-		if read > 0 {
-			if len(values) == 0 || blankCells(values[0]) {
-				return nil, cursor, fmt.Errorf("%w: tab %q holds fewer than the %d rows already read",
-					api.ErrEventsShrank, model.EventsPrefix+m, read)
+		if read.n > 0 {
+			if len(values) == 0 || blankCells(values[0]) || cellAt(values[0], 0) != read.id {
+				return nil, cursor, fmt.Errorf("%w: rows of tab %q moved (sorted, inserted or deleted) under the cursor",
+					api.ErrEventsShrank, title)
 			}
 			values = values[1:]
 		}
 		for j, cells := range values {
-			cur[m] = read + j + 1
+			cur[m] = mark{n: read.n + j + 1, id: cellAt(cells, 0)}
 			if blankCells(cells) {
 				continue
 			}
-			get := func(c int) string {
-				if c < len(cells) {
-					return cellText(cells[c])
-				}
-				return ""
-			}
-			at, err := model.ParseTime(get(1))
+			at, err := model.ParseTime(cellAt(cells, 1))
 			if err != nil {
-				return nil, cursor, fmt.Errorf("%s row %d received_at: %w", model.EventsPrefix+m, cur[m]+1, err)
+				return nil, cursor, fmt.Errorf("%s row %d received_at: %w", title, cur[m].n+1, err)
 			}
-			out = append(out, api.RawEvent{Seq: cur.encode(), Kind: get(2), ReceivedAt: at, Body: []byte(get(3))})
+			out = append(out, api.RawEvent{Seq: cur.encode(), Kind: cellAt(cells, 2), ReceivedAt: at, Body: []byte(cellAt(cells, 3))})
 		}
 	}
 	return out, cur.encode(), nil
+}
+
+func cellAt(cells []any, c int) string {
+	if c < len(cells) {
+		return cellText(cells[c])
+	}
+	return ""
 }
 
 func blankCells(cells []any) bool {
@@ -265,11 +336,14 @@ func blankCells(cells []any) bool {
 const graceAfterMonth = time.Hour
 
 // DeleteProcessed deletes whole monthly tabs: a tab goes when every row in it
-// is at or below committed, its month ended before olderThan (so every event
-// in it is older), and its month plus the one-hour grace has passed, so no
-// receiver can still append to it. It returns committed without the deleted
-// tabs; the engine saves that cursor. Rows are never deleted one by one: that
-// would move the positions cursors hold.
+// is at or below committed (and its last row is the one committed read), its
+// month ended before olderThan (so every event in it is older), and its month
+// plus the one-hour grace has passed, so no receiver can still append to it.
+// The newest Events tab is never deleted, so a new month's tab always has a
+// protected sibling to copy. Each deleted month is recorded in the same
+// batchUpdate (see deletedMetadataKey). It returns committed without the
+// deleted tabs; the engine saves that cursor. Rows are never deleted one by
+// one: that would move the positions cursors hold.
 func (s *Store) DeleteProcessed(ctx context.Context, committed api.Cursor, olderThan time.Time) (api.Cursor, error) {
 	pos, err := parseCursor(committed)
 	if err != nil {
@@ -279,10 +353,13 @@ func (s *Store) DeleteProcessed(ctx context.Context, committed api.Cursor, older
 	if err != nil {
 		return committed, err
 	}
+	tabs := eventTabs(book)
+	months := slices.Sorted(maps.Keys(tabs))
 	now := s.now()
 	var candidates []string
-	for _, m := range eventMonths(book) {
-		if pos[m] == 0 {
+	for i, m := range months {
+		mk := pos[m]
+		if mk.n == 0 || i == len(months)-1 || gridRows(tabs[m])-1 < int64(mk.n) {
 			continue
 		}
 		start, _ := time.Parse("2006-01", m)
@@ -297,7 +374,7 @@ func (s *Store) DeleteProcessed(ctx context.Context, committed api.Cursor, older
 	}
 	ranges := make([]string, len(candidates))
 	for i, m := range candidates {
-		ranges[i] = QuoteTab(model.EventsPrefix+m) + "!B2:B"
+		ranges[i] = QuoteTab(tabs[m].Properties.Title) + "!A2:B"
 	}
 	vrs, err := s.batchGet(ctx, ranges, func(string) string { return "UNFORMATTED_VALUE" })
 	if err != nil {
@@ -306,11 +383,15 @@ func (s *Store) DeleteProcessed(ctx context.Context, committed api.Cursor, older
 	var reqs []*sheetsapi.Request
 	var gone []string
 	for i, m := range candidates {
-		if len(vrs[i].Values) != pos[m] {
-			continue // rows past the committed cursor (or a shrunk tab): keep it
+		rows, mk := vrs[i].Values, pos[m]
+		if len(rows) != mk.n || cellAt(rows[mk.n-1], 0) != mk.id {
+			continue // rows past the committed cursor, or moved rows: keep it
 		}
-		sh := tabOf(book, model.EventsPrefix+m)
-		reqs = append(reqs, &sheetsapi.Request{DeleteSheet: &sheetsapi.DeleteSheetRequest{SheetId: sh.Properties.SheetId}})
+		reqs = append(reqs,
+			&sheetsapi.Request{DeleteSheet: &sheetsapi.DeleteSheetRequest{SheetId: tabs[m].Properties.SheetId}},
+			&sheetsapi.Request{CreateDeveloperMetadata: &sheetsapi.CreateDeveloperMetadataRequest{
+				DeveloperMetadata: &sheetsapi.DeveloperMetadata{MetadataKey: deletedMetadataKey, MetadataValue: m,
+					Location: &sheetsapi.DeveloperMetadataLocation{Spreadsheet: true}, Visibility: "DOCUMENT"}}})
 		gone = append(gone, m)
 	}
 	if len(reqs) == 0 {

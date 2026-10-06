@@ -9,7 +9,8 @@
 // with data, a tab cannot lose all its non-frozen rows or freeze all its rows,
 // a cell holds at most 50,000 characters, a workbook at most 10 million cells,
 // and a request body at most 10 MB. Reads trim trailing empty rows and cells,
-// and a range naming a missing tab is "Unable to parse range".
+// a range naming a missing tab is "Unable to parse range", and a range
+// starting below the grid "exceeds grid limits". Tab names match ignoring case.
 //
 // Formulas are not evaluated: a formula cell reads back as its formula text.
 package sheets
@@ -49,6 +50,9 @@ type Server struct {
 	calls      map[string]int // by kind: "create", "get", "batchUpdate", "values", "permissions"
 	reads      []string       // "<render> <range>" for every range read
 	shareBlock string         // sharing any spreadsheet answers 403 with this message
+	caller     string         // the signed-in account Drive's about.get reports
+	onBatch    func()         // called before each batchUpdate is applied
+	onRead     func()         // called before each values read
 }
 
 type book struct {
@@ -58,11 +62,14 @@ type book struct {
 	denied     bool   // every call answers 403
 	shareBlock string // permissions.create answers 403 with this message
 	nextRange  int64
+	metadata   []*sheetsapi.DeveloperMetadata
+	noReshare  bool // Drive writersCanShare=false
 }
 
 type tab struct {
 	props     sheetsapi.SheetProperties // GridProperties always set
 	protected []*sheetsapi.ProtectedRange
+	formats   []*sheetsapi.ConditionalFormatRule
 	cells     [][]cell // one slice per grid row; a row may be shorter than the grid
 }
 
@@ -71,6 +78,7 @@ type cell struct {
 	s    string
 	n    float64
 	b    bool
+	note string
 }
 
 // New returns an empty fake.
@@ -137,6 +145,113 @@ func (s *Server) BlockSharing(id, msg string) {
 	}
 }
 
+// SetCaller sets the account Drive's about.get reports as signed in.
+func (s *Server) SetCaller(email string) {
+	s.mu.Lock()
+	s.caller = email
+	s.mu.Unlock()
+}
+
+// OnBatchUpdate sets f to run before each batchUpdate is applied, outside the
+// fake's lock, so it can change the spreadsheet as a person editing it at
+// that moment would.
+func (s *Server) OnBatchUpdate(f func()) {
+	s.mu.Lock()
+	s.onBatch = f
+	s.mu.Unlock()
+}
+
+// OnValuesRead sets f to run before each values get or batchGet, outside the
+// fake's lock.
+func (s *Server) OnValuesRead(f func()) {
+	s.mu.Lock()
+	s.onRead = f
+	s.mu.Unlock()
+}
+
+// InsertRow inserts a row of text at a zero-based row index, as a person
+// inserting a row (or sorting) would, shifting the rows below down.
+func (s *Server) InsertRow(id, title string, at int, values []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t := s.books[id].tabNamed(title)
+	row := make([]cell, len(values))
+	for i, v := range values {
+		if v != "" {
+			row[i] = cell{kind: 's', s: v}
+		}
+	}
+	t.cells = append(t.cells[:at:at], append([][]cell{row}, t.cells[at:]...)...)
+	t.props.GridProperties.RowCount++
+}
+
+// SwapRows swaps two rows (zero-based), as a person sorting a tab would.
+func (s *Server) SwapRows(id, title string, a, b int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t := s.books[id].tabNamed(title)
+	t.cells[a], t.cells[b] = t.cells[b], t.cells[a]
+}
+
+// DeleteTab removes a tab.
+func (s *Server) DeleteTab(id, title string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	b := s.books[id]
+	for i, t := range b.tabs {
+		if strings.EqualFold(t.props.Title, title) {
+			b.tabs = append(b.tabs[:i:i], b.tabs[i+1:]...)
+			return
+		}
+	}
+}
+
+// AddPermission shares a spreadsheet with an account in a role, by hand.
+func (s *Server) AddPermission(id, email, role string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	b := s.books[id]
+	b.perms = append(b.perms, &drive.Permission{Id: fmt.Sprintf("perm-%d", len(b.perms)+1), Type: "user", Role: role, EmailAddress: email})
+}
+
+// WritersCanShare reports Drive's writersCanShare setting for a spreadsheet.
+func (s *Server) WritersCanShare(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return !s.books[id].noReshare
+}
+
+// Note returns a cell's note (A1 form).
+func (s *Server) Note(id, title, a1 string) string {
+	c, _ := s.cellAt(id, title, a1)
+	return c.note
+}
+
+// ConditionalFormats returns a tab's conditional format rules.
+func (s *Server) ConditionalFormats(id, title string) []*sheetsapi.ConditionalFormatRule {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if t := s.books[id].tabNamed(title); t != nil {
+		return append([]*sheetsapi.ConditionalFormatRule(nil), t.formats...)
+	}
+	return nil
+}
+
+func (s *Server) cellAt(id, title, a1 string) (cell, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	b := s.books[id]
+	if b == nil {
+		return cell{}, false
+	}
+	t := b.tabNamed(title)
+	r, err := parseRange(title + "!" + a1)
+	if t == nil || err != nil || r.r0 >= int64(len(t.cells)) || r.c0 >= int64(len(t.cells[r.r0])) {
+		return cell{}, false
+	}
+	return t.cells[r.r0][r.c0], true
+}
+
 // ValueReads returns every range read through values get and batchGet, as
 // "<valueRenderOption> <range>", in order.
 func (s *Server) ValueReads() []string {
@@ -147,18 +262,8 @@ func (s *Server) ValueReads() []string {
 
 // IsFormula reports whether a cell (A1 form) holds a formula rather than text.
 func (s *Server) IsFormula(id, title, a1 string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	b := s.books[id]
-	if b == nil {
-		return false
-	}
-	t := b.tabNamed(title)
-	r, err := parseRange(title + "!" + a1)
-	if t == nil || err != nil || r.r0 >= int64(len(t.cells)) || r.c0 >= int64(len(t.cells[r.r0])) {
-		return false
-	}
-	return t.cells[r.r0][r.c0].kind == 'f'
+	c, _ := s.cellAt(id, title, a1)
+	return c.kind == 'f'
 }
 
 // Calls returns how many calls of a kind were served: "create", "get",
@@ -248,25 +353,8 @@ func (s *Server) Spreadsheet(id string) *sheetsapi.Spreadsheet {
 // Cell returns the text of one cell given in A1 form ("H1"), a formula as its
 // formula text; "" when empty or missing.
 func (s *Server) Cell(id, title, a1 string) string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	b := s.books[id]
-	if b == nil {
-		return ""
-	}
-	t := b.tabNamed(title)
-	if t == nil {
-		return ""
-	}
-	r, err := parseRange(title + "!" + a1)
-	if err != nil || r.r0 < 0 || r.r0 >= int64(len(t.cells)) {
-		return ""
-	}
-	row := t.cells[r.r0]
-	if r.c0 >= int64(len(row)) {
-		return ""
-	}
-	return row[r.c0].text(true)
+	c, _ := s.cellAt(id, title, a1)
+	return c.text()
 }
 
 // Permissions returns the Drive permissions made on a spreadsheet.
@@ -298,6 +386,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
+	hook, readHook := s.onBatch, s.onRead
+	s.mu.Unlock()
+	if hook != nil && r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, ":batchUpdate") {
+		hook()
+	}
+	if readHook != nil && r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/values") {
+		readHook()
+	}
+	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.slowDown > 0 {
 		s.slowDown--
@@ -309,8 +406,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case strings.HasPrefix(path, "/v4/spreadsheets"):
 		s.serveSheets(w, r, strings.TrimPrefix(path, "/v4/spreadsheets"), body)
-	case strings.HasPrefix(path, "/drive/v3/files/"):
-		s.serveDrive(w, r, strings.TrimPrefix(path, "/drive/v3/files/"), body)
+	case strings.HasPrefix(path, "/drive/v3/"):
+		s.serveDrive(w, r, strings.TrimPrefix(path, "/drive/v3/"), body)
 	default:
 		apiError(w, http.StatusNotFound, "NOT_FOUND", "no such method: "+r.Method+" "+path)
 	}
@@ -380,6 +477,11 @@ func (s *Server) serveSheets(w http.ResponseWriter, r *http.Request, rest string
 }
 
 func (s *Server) serveDrive(w http.ResponseWriter, r *http.Request, rest string, body []byte) {
+	if rest == "about" || strings.HasPrefix(rest, "about?") {
+		writeJSON(w, &drive.About{User: &drive.User{EmailAddress: s.caller}})
+		return
+	}
+	rest = strings.TrimPrefix(rest, "files/")
 	idEsc, tail, _ := strings.Cut(rest, "/")
 	id, _ := url.PathUnescape(idEsc)
 	b := s.books[id]
@@ -394,6 +496,18 @@ func (s *Server) serveDrive(w http.ResponseWriter, r *http.Request, rest string,
 	if tail == "" && r.Method == http.MethodDelete {
 		delete(s.books, id)
 		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if tail == "" && r.Method == http.MethodPatch {
+		var f drive.File
+		if err := json.Unmarshal(body, &f); err != nil {
+			apiError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+			return
+		}
+		if strings.Contains(string(body), "writersCanShare") {
+			b.noReshare = !f.WritersCanShare
+		}
+		writeJSON(w, &drive.File{Id: id, WritersCanShare: !b.noReshare})
 		return
 	}
 	if tail != "permissions" {
@@ -471,7 +585,7 @@ func (s *Server) create(w http.ResponseWriter, body []byte) {
 		}
 		t := nb.tabs[len(nb.tabs)-1]
 		for _, d := range sh.Data {
-			if err := t.write(d.StartRow, d.StartColumn, d.RowData, true, false); err != nil {
+			if err := t.write(d.StartRow, d.StartColumn, d.RowData, true, true); err != nil {
 				apiError(w, http.StatusBadRequest, "INVALID_ARGUMENT", fmt.Sprintf("Invalid sheets[%d]: %v", i, err))
 				return
 			}
@@ -526,6 +640,7 @@ func (b *book) clone() *book {
 		nb.tabs[i] = t.copy()
 	}
 	nb.perms = append([]*drive.Permission(nil), b.perms...)
+	nb.metadata = append([]*sheetsapi.DeveloperMetadata(nil), b.metadata...)
 	return &nb
 }
 
@@ -534,6 +649,7 @@ func (t *tab) copy() *tab {
 	gp := *t.props.GridProperties
 	c.props.GridProperties = &gp
 	c.protected = append([]*sheetsapi.ProtectedRange(nil), t.protected...)
+	c.formats = append([]*sheetsapi.ConditionalFormatRule(nil), t.formats...)
 	c.cells = make([][]cell, len(t.cells))
 	copy(c.cells, t.cells) // rows are replaced, never changed in place (see setRow)
 	return c
@@ -564,8 +680,6 @@ func (b *book) apply(rq *sheetsapi.Request) (*sheetsapi.Response, error) {
 		for j, t := range b.tabs {
 			t.props.Index = int64(j)
 		}
-	case rq.UpdateSheetProperties != nil:
-		return reply, b.updateSheetProps(rq.UpdateSheetProperties)
 	case rq.UpdateSpreadsheetProperties != nil:
 		p := rq.UpdateSpreadsheetProperties.Properties
 		if p == nil {
@@ -587,7 +701,7 @@ func (b *book) apply(rq *sheetsapi.Request) (*sheetsapi.Response, error) {
 		}
 	case rq.UpdateCells != nil:
 		u := rq.UpdateCells
-		values, formats, err := cellFields(u.Fields)
+		values, notes, err := cellFields(u.Fields)
 		if err != nil {
 			return nil, fmt.Errorf("updateCells: %w", err)
 		}
@@ -604,12 +718,12 @@ func (b *book) apply(rq *sheetsapi.Request) (*sheetsapi.Response, error) {
 		if t == nil {
 			return nil, fmt.Errorf("updateCells: No grid with id: %d", sheetID)
 		}
-		if err := t.write(row, col, u.Rows, values, formats); err != nil {
+		if err := t.write(row, col, u.Rows, values, notes); err != nil {
 			return nil, fmt.Errorf("updateCells: %w", err)
 		}
 	case rq.AppendCells != nil:
 		a := rq.AppendCells
-		values, formats, err := cellFields(a.Fields)
+		values, notes, err := cellFields(a.Fields)
 		if err != nil {
 			return nil, fmt.Errorf("appendCells: %w", err)
 		}
@@ -621,7 +735,7 @@ func (b *book) apply(rq *sheetsapi.Request) (*sheetsapi.Response, error) {
 		if need := start + int64(len(a.Rows)); need > t.props.GridProperties.RowCount {
 			t.grow(need, 0)
 		}
-		if err := t.write(start, 0, a.Rows, values, formats); err != nil {
+		if err := t.write(start, 0, a.Rows, values, notes); err != nil {
 			return nil, fmt.Errorf("appendCells: %w", err)
 		}
 	case rq.DeleteDimension != nil:
@@ -644,6 +758,24 @@ func (b *book) apply(rq *sheetsapi.Request) (*sheetsapi.Response, error) {
 		default:
 			return nil, fmt.Errorf("appendDimension: bad dimension %q", a.Dimension)
 		}
+	case rq.AddConditionalFormatRule != nil:
+		rule := rq.AddConditionalFormatRule.Rule
+		if rule == nil || len(rule.Ranges) == 0 {
+			return nil, fmt.Errorf("addConditionalFormatRule: no rule or ranges")
+		}
+		t := b.tabByID(rule.Ranges[0].SheetId)
+		if t == nil {
+			return nil, fmt.Errorf("addConditionalFormatRule: No grid with id: %d", rule.Ranges[0].SheetId)
+		}
+		t.formats = append(t.formats, rule)
+	case rq.CreateDeveloperMetadata != nil:
+		md := rq.CreateDeveloperMetadata.DeveloperMetadata
+		if md == nil || md.MetadataKey == "" || md.Location == nil || !md.Location.Spreadsheet {
+			return nil, fmt.Errorf("createDeveloperMetadata: the fake supports spreadsheet-level metadata with a key only")
+		}
+		c := *md
+		c.MetadataId = int64(len(b.metadata) + 1)
+		b.metadata = append(b.metadata, &c)
 	case rq.AddProtectedRange != nil:
 		pr := rq.AddProtectedRange.ProtectedRange
 		if pr == nil || pr.Range == nil {
@@ -701,46 +833,9 @@ func (b *book) addSheet(p *sheetsapi.SheetProperties) error {
 	t := newTab(id, title, rows, cols)
 	t.props.GridProperties.FrozenRowCount = frozen
 	t.props.TabColorStyle = p.TabColorStyle
+	t.props.Hidden = p.Hidden
 	t.props.Index = int64(len(b.tabs))
 	b.tabs = append(b.tabs, t)
-	return nil
-}
-
-func (b *book) updateSheetProps(u *sheetsapi.UpdateSheetPropertiesRequest) error {
-	p := u.Properties
-	if p == nil {
-		return fmt.Errorf("updateSheetProperties: no properties")
-	}
-	t := b.tabByID(p.SheetId)
-	if t == nil {
-		return fmt.Errorf("updateSheetProperties: No grid with id: %d", p.SheetId)
-	}
-	gp := p.GridProperties
-	if gp == nil {
-		gp = &sheetsapi.GridProperties{}
-	}
-	for _, f := range fieldList(u.Fields) {
-		switch f {
-		case "title":
-			if o := b.tabNamed(p.Title); o != nil && o != t {
-				return fmt.Errorf("A sheet with the name \"%s\" already exists. Please enter another name.", p.Title)
-			}
-			t.props.Title = p.Title
-		case "gridProperties.frozenRowCount":
-			t.props.GridProperties.FrozenRowCount = gp.FrozenRowCount
-		case "gridProperties.rowCount":
-			t.resize(gp.RowCount, t.props.GridProperties.ColumnCount)
-		case "gridProperties.columnCount":
-			t.resize(t.props.GridProperties.RowCount, gp.ColumnCount)
-		case "tabColorStyle":
-			t.props.TabColorStyle = p.TabColorStyle
-		default:
-			return fmt.Errorf("updateSheetProperties: unsupported field %q", f)
-		}
-	}
-	if t.props.GridProperties.FrozenRowCount >= t.props.GridProperties.RowCount {
-		return fmt.Errorf("updateSheetProperties: You can't freeze all visible rows on the sheet.")
-	}
 	return nil
 }
 
@@ -789,23 +884,28 @@ func (b *book) deleteDimension(r *sheetsapi.DimensionRange) error {
 	return nil
 }
 
-func cellFields(fields string) (values, formats bool, err error) {
+// cellFields reads an updateCells or appendCells field mask: whether it
+// writes values and notes. Formats are accepted and not kept.
+func cellFields(fields string) (values, notes bool, err error) {
+	any := false
 	for _, f := range fieldList(fields) {
 		switch {
 		case f == "*":
-			values, formats = true, true
+			values, notes = true, true
 		case f == "userEnteredValue":
 			values = true
+		case f == "note":
+			notes = true
 		case f == "userEnteredFormat" || strings.HasPrefix(f, "userEnteredFormat."):
-			formats = true
 		default:
 			return false, false, fmt.Errorf("unsupported field %q", f)
 		}
+		any = true
 	}
-	if !values && !formats {
+	if !any {
 		return false, false, fmt.Errorf("fields is required")
 	}
-	return values, formats, nil
+	return values, notes, nil
 }
 
 func fieldList(fields string) []string {
@@ -819,8 +919,8 @@ func fieldList(fields string) []string {
 }
 
 // write sets cells from rows starting at (row, col). With values, a cell with
-// no userEnteredValue is cleared. Formats are accepted and not kept.
-func (t *tab) write(row, col int64, rows []*sheetsapi.RowData, values, _ bool) error {
+// no userEnteredValue is cleared; with notes, its note is set.
+func (t *tab) write(row, col int64, rows []*sheetsapi.RowData, values, notes bool) error {
 	gp := t.props.GridProperties
 	for i, rd := range rows {
 		r := row + int64(i)
@@ -831,14 +931,26 @@ func (t *tab) write(row, col int64, rows []*sheetsapi.RowData, values, _ bool) e
 			return fmt.Errorf("Range (%s!R%dC%d:R%dC%d) exceeds grid limits. Max rows: %d, max columns: %d",
 				t.props.Title, r+1, col+1, r+1, col+int64(len(rd.Values)), gp.RowCount, gp.ColumnCount)
 		}
-		if !values {
+		if !values && !notes {
 			continue
 		}
 		cur := t.cells[r]
 		nr := make([]cell, max(int64(len(cur)), col+int64(len(rd.Values))))
 		copy(nr, cur)
 		for j, cd := range rd.Values {
-			var c cell
+			c := nr[col+int64(j)]
+			if notes {
+				c.note = ""
+				if cd != nil {
+					c.note = cd.Note
+				}
+			}
+			if !values {
+				nr[col+int64(j)] = c
+				continue
+			}
+			note := c.note
+			c = cell{note: note}
 			if cd != nil && cd.UserEnteredValue != nil {
 				v := cd.UserEnteredValue
 				switch {
@@ -847,14 +959,14 @@ func (t *tab) write(row, col int64, rows []*sheetsapi.RowData, values, _ bool) e
 						return fmt.Errorf("Your input contains more than the maximum of %d characters in a single cell.", MaxCellChars)
 					}
 					if *v.StringValue != "" {
-						c = cell{kind: 's', s: *v.StringValue}
+						c.kind, c.s = 's', *v.StringValue
 					}
 				case v.NumberValue != nil:
-					c = cell{kind: 'n', n: *v.NumberValue}
+					c.kind, c.n = 'n', *v.NumberValue
 				case v.BoolValue != nil:
-					c = cell{kind: 'b', b: *v.BoolValue}
+					c.kind, c.b = 'b', *v.BoolValue
 				case v.FormulaValue != nil:
-					c = cell{kind: 'f', s: *v.FormulaValue}
+					c.kind, c.s = 'f', *v.FormulaValue
 				}
 			}
 			nr[col+int64(j)] = c
@@ -911,7 +1023,7 @@ func (b *book) checkCells() error {
 
 func (b *book) tabNamed(title string) *tab {
 	for _, t := range b.tabs {
-		if t.props.Title == title {
+		if strings.EqualFold(t.props.Title, title) {
 			return t
 		}
 	}
@@ -956,8 +1068,10 @@ func (b *book) view(id string) *sheetsapi.Spreadsheet {
 			c := *pr
 			sh.ProtectedRanges = append(sh.ProtectedRanges, &c)
 		}
+		sh.ConditionalFormats = append(sh.ConditionalFormats, t.formats...)
 		out.Sheets = append(out.Sheets, sh)
 	}
+	out.DeveloperMetadata = append(out.DeveloperMetadata, b.metadata...)
 	return out
 }
 
@@ -973,6 +1087,10 @@ func (b *book) values(rg, render string) (*sheetsapi.ValueRange, error) {
 		return nil, fmt.Errorf("Unable to parse range: %s", rg)
 	}
 	gp := t.props.GridProperties
+	if r.r0 >= gp.RowCount || r.c0 >= gp.ColumnCount {
+		return nil, fmt.Errorf("Range (%s!%s%d) exceeds grid limits. Max rows: %d, max columns: %d",
+			t.props.Title, colName(r.c0), r.r0+1, gp.RowCount, gp.ColumnCount)
+	}
 	r1, c1 := r.r1, r.c1
 	if r1 < 0 || r1 >= gp.RowCount {
 		r1 = gp.RowCount - 1
@@ -981,7 +1099,7 @@ func (b *book) values(rg, render string) (*sheetsapi.ValueRange, error) {
 		c1 = gp.ColumnCount - 1
 	}
 	vr := &sheetsapi.ValueRange{MajorDimension: "ROWS",
-		Range: fmt.Sprintf("%s!%s%d:%s%d", quoteTitle(r.title), colName(r.c0), r.r0+1, colName(c1), r1+1)}
+		Range: fmt.Sprintf("%s!%s%d:%s%d", quoteTitle(t.props.Title), colName(r.c0), r.r0+1, colName(c1), r1+1)}
 	var rows [][]any
 	lastNonEmpty := -1
 	for i := r.r0; i <= r1; i++ {
@@ -1008,26 +1126,23 @@ func (b *book) values(rg, render string) (*sheetsapi.ValueRange, error) {
 	return vr, nil
 }
 
+// value is a cell as values.get returns it: numbers and booleans typed when
+// unformatted, text otherwise. A formula reads as its formula text.
 func (c cell) value(render string) any {
-	switch render {
-	case "UNFORMATTED_VALUE":
+	if render == "UNFORMATTED_VALUE" {
 		switch c.kind {
 		case 'n':
 			return c.n
 		case 'b':
 			return c.b
 		}
-		return c.text(true)
-	case "FORMULA":
-		return c.text(true)
-	default: // FORMATTED_VALUE
-		return c.text(true)
 	}
+	return c.text()
 }
 
-func (c cell) text(formula bool) string {
+func (c cell) text() string {
 	switch c.kind {
-	case 's':
+	case 's', 'f':
 		return c.s
 	case 'n':
 		return strconv.FormatFloat(c.n, 'f', -1, 64)
@@ -1036,10 +1151,6 @@ func (c cell) text(formula bool) string {
 			return "TRUE"
 		}
 		return "FALSE"
-	case 'f':
-		if formula {
-			return c.s
-		}
 	}
 	return ""
 }
