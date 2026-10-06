@@ -19,6 +19,7 @@ the task breakdown); the contracts doc is the source of truth for every shape.
 | `internal/store/codec` | maps the model to table writes; loads a store and checks its schema version |
 | `internal/store/sqlite` | the built-in SQLite store (WAL, lease row, event log) |
 | `internal/logredact` | log redaction: logs carry ids, never emails |
+| `adapters/csv` | the CSV file source (`type: csv`): lead rows, or event rows with `events: true` |
 | `storetest/`, `sinktest/` | conformance suites for plug-in stores and sinks |
 
 ## Build and test
