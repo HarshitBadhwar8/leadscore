@@ -274,7 +274,7 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error)
 func Main()
 ```
 
-**Conformance suites** (public packages, declared in S1 with skipped bodies and filled by S4 and S10b):
+**Conformance suites** (public packages, declared in S1 with skipped bodies and filled by S4 and S10b). They import `internal/api`, not the root, so the signatures name `api.X`; these are the same types as `leadscore.X` (the root aliases them), so a caller passes `leadscore` values unchanged:
 
 ```go
 package storetest
@@ -292,7 +292,7 @@ var Schema []Table // every section 4 tool table, in section 4 order
 // one winner (also on an expired lease), release by a non-owner refused, OpTrim,
 // DeleteProcessed dropping a partition, and ErrEventsShrank (a cursor saved from
 // one store read against a fresh store).
-func Run(t *testing.T, open func(t *testing.T) (leadscore.Backend, leadscore.EventLog))
+func Run(t *testing.T, open func(t *testing.T) (api.Backend, api.EventLog))
 
 package sinktest
 type FailKind int
@@ -307,7 +307,7 @@ type Vendor interface {
     Fail(step string, kind FailKind) // make the next call to that step fail this way
 }
 type Harness struct {
-    New    func(cfg leadscore.Config) (leadscore.Sink, error)
+    New    func(cfg api.Config) (api.Sink, error)
     Vendor Vendor // a fake the sink is pointed at
     Dests  []string
 }

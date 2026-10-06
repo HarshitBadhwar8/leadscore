@@ -39,9 +39,13 @@ type StepKey = api.StepKey
 type InputRow = api.InputRow
 
 // Event is something that happened to a person or a company. ID is empty from
-// sources (the engine sets it). Email and LinkedInURL are the person keys, both
-// empty for a company-only event. At and ReceivedAt are UTC. Origin is
-// "receiver", "polling", "hubspot", "apollo_lookup", or a source id.
+// sources (the engine sets it). Kind is a section 5.3 kind, or empty with
+// Attrs["reject"] set for a rejected source row. Email and LinkedInURL are the
+// person keys, both empty for a company-only event. Domain is the person's
+// employer domain, or the company for a company-only event. At and ReceivedAt
+// are UTC. Origin is "receiver", "polling", "hubspot", "apollo_lookup", or a
+// source id. Attrs is kind-specific: stage, label, message_id, page, deal_id,
+// contact_id, full_name, title, company, reject.
 type Event = api.Event
 
 // RawEvent is one stored receiver request. Seq is assigned by the store on
@@ -50,12 +54,19 @@ type Event = api.Event
 // store keeps. Body has the secret already removed.
 type RawEvent = api.RawEvent
 
-// CompanyFacts is what an enricher learned about a company domain. Employees is
-// nil when unknown; NotFound means the vendor had no record (retried after max age).
+// CompanyFacts is what an enricher learned about a company domain. Region is
+// the vendor's country, trimmed, with no bucketing. FundingStage is one of the
+// section 6 values, or empty. Employees is nil when unknown. Extra holds other
+// facts; the Apollo enricher writes latest_funding_at. NotFound means the vendor
+// had no record (retried after max age).
 type CompanyFacts = api.CompanyFacts
 
 // LeadRef is what engines and adapters see of a lead. Emails holds every email
-// for the lead and every lead merged into it, primary first. Verdict is nil
+// for the lead and every lead merged into it, primary first. Domain is the
+// company domain, empty when the lead has none. Status is the folded status.
+// Fields holds merged fields by resolved name. SourcesSeen counts distinct
+// channels. ConflictFields are fields whose sources disagreed. CompanyDealID is
+// the stored open or won deal at the lead's company, if any. Verdict is nil
 // before scoring.
 type LeadRef = api.LeadRef
 
@@ -198,8 +209,9 @@ type Config = api.Config
 // graceful stop); cancelling ctx is the hard stop.
 type RunOptions = api.RunOptions
 
-// RunResult is a run's outcome. Skipped means another run held the lease;
-// Problems are the open problems written to Health.
+// RunResult is a run's outcome. Healthy is a run that finished, or skipped
+// because another run held the lease (Skipped). Problems are the open problems
+// written to Health. Pushed is the number of pushes made this run.
 type RunResult = api.RunResult
 
 // RegisterSource registers a Source factory under a config `type:`. It panics on

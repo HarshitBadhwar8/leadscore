@@ -64,7 +64,8 @@ var (
 	backends  = newRegistry[func(Config) (Backend, EventLog, error)]("Backend")
 )
 
-// Registering the same type twice panics.
+// Each Register* panics on an empty type, a nil factory, or a type already
+// registered.
 func RegisterSource(typ string, f func(Config) (Source, error)) {
 	sources.register(typ, f, f == nil)
 }
