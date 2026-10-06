@@ -209,12 +209,12 @@ func (c *compiler) cond(n *yaml.Node, a at, sc scope) *condition {
 		c.errf(a, "the condition must be true or false, but gives %s", t)
 		return nil
 	}
-	est, err := env.EstimateCost(ast, sizeEstimator{})
+	est, err := env.EstimateCost(ast, sizeEstimator{settings: c.settings, literalMax: longestLiteral(ast.NativeRep().Expr())})
 	if err != nil || est.Max > costLimit {
 		c.errf(a, "the condition could cost too much to run (estimated over %d steps per lead); simplify it", costLimit)
 		return nil
 	}
-	prg, err := env.Program(ast, cel.EvalOptions(cel.OptOptimize), cel.CostLimit(costLimit), cel.InterruptCheckFrequency(100))
+	prg, err := env.Program(ast, cel.EvalOptions(cel.OptOptimize), cel.CostLimit(runCostLimit), cel.InterruptCheckFrequency(100))
 	if err != nil {
 		c.errf(a, "the condition does not compile: %v", err)
 		return nil

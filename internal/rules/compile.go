@@ -503,13 +503,21 @@ func (c *compiler) compileDetectors(n *yaml.Node, a at) {
 			}
 			return s, sa, true
 		}
+		// dur reads a required duration; a value that is not a single one is
+		// reported by c.duration, not as missing.
+		dur := func(k string) time.Duration {
+			q, ok := vals[k]
+			if !ok || isNull(q.value) {
+				c.errf(pa, "%s needs %s", kindName, k)
+				return 0
+			}
+			return c.duration(q.value, at{q.value, pa.key(k)})
+		}
 		switch kindName {
 		case "count_in_window":
 			c.keysOnly(ps, pa, "kind", "subject", "event", "window", "min")
 			spec.Event = c.event(need("event"))
-			if _, _, ok := need("window"); ok {
-				spec.Window = c.duration(vals["window"].value, at{vals["window"].value, pa.key("window")})
-			}
+			spec.Window = dur("window")
 			if s, sa, ok := need("min"); ok {
 				m, err := strconv.Atoi(s)
 				if err != nil || m < 1 {
@@ -520,9 +528,7 @@ func (c *compiler) compileDetectors(n *yaml.Node, a at) {
 		case "first_seen":
 			c.keysOnly(ps, pa, "kind", "subject", "event", "within")
 			spec.Event = c.event(need("event"))
-			if _, _, ok := need("within"); ok {
-				spec.Within = c.duration(vals["within"].value, at{vals["within"].value, pa.key("within")})
-			}
+			spec.Within = dur("within")
 		case "change":
 			c.keysOnly(ps, pa, "kind", "subject", "field", "within", "from", "to")
 			if f, fa, ok := need("field"); ok {
@@ -537,9 +543,7 @@ func (c *compiler) compileDetectors(n *yaml.Node, a at) {
 				spec.Field = f
 				c.reads["company."+f] = true
 			}
-			if _, _, ok := need("within"); ok {
-				spec.Within = c.duration(vals["within"].value, at{vals["within"].value, pa.key("within")})
-			}
+			spec.Within = dur("within")
 			if s, _, ok := str("from"); ok {
 				spec.From = &s
 			}

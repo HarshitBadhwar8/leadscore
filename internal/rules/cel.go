@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker"
+	celast "github.com/google/cel-go/common/ast"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/common/types/traits"
@@ -149,18 +150,77 @@ func celList(vs []any) string {
 // can never stall a run (contracts section 2).
 const costLimit = 1_000_000
 
-// sizeEstimator gives CEL's cost estimate the largest sizes a run can see: a
-// map or list (lead fields, company facts, settings) of at most 1,000 entries,
-// and text of at most 50,000 characters (a Sheets cell).
-type sizeEstimator struct{}
+// runCostLimit is the limit compiled into each program: costLimit, lowered
+// only by a test that makes the run-time limit fire.
+var runCostLimit uint64 = costLimit
 
-func (sizeEstimator) EstimateSize(n checker.AstNode) *checker.SizeEstimate {
-	if n.Type() != nil && n.Type().Kind() == types.StringKind {
-		return &checker.SizeEstimate{Min: 0, Max: 50_000}
+// Largest sizes a run can see: a lead or company map of 1,000 entries, and a
+// value in one of at most 50,000 characters (a Sheets cell).
+const (
+	maxEntries = 1_000
+	maxText    = 50_000
+)
+
+// sizeEstimator gives CEL's cost estimate real sizes: lead and company values
+// at the largest a run can see, settings at their sizes in this rubric, and
+// items of a list written in the expression at its longest literal string.
+type sizeEstimator struct {
+	settings   map[string]setting
+	literalMax uint64
+}
+
+func (e sizeEstimator) EstimateSize(n checker.AstNode) *checker.SizeEstimate {
+	path := n.Path()
+	if len(path) == 0 {
+		return nil
 	}
-	return &checker.SizeEstimate{Min: 0, Max: 1_000}
+	size := func(max uint64) *checker.SizeEstimate { return &checker.SizeEstimate{Min: 0, Max: max} }
+	switch path[0] {
+	case "lead", "company", "detector":
+		if len(path) == 1 {
+			return size(maxEntries)
+		}
+		return size(maxText)
+	case "settings":
+		if len(path) == 1 {
+			return size(uint64(len(e.settings)))
+		}
+		var longestList, longestText uint64
+		for _, s := range e.settings {
+			longestList = max(longestList, uint64(len(s.list)))
+			longestText = max(longestText, uint64(len(s.scalar.text)))
+			for _, item := range s.list {
+				longestText = max(longestText, uint64(len(item.text)))
+			}
+		}
+		if len(path) == 2 {
+			if s, ok := e.settings[path[1]]; ok {
+				if s.list != nil {
+					return size(uint64(len(s.list)))
+				}
+				return size(uint64(len(s.scalar.text)))
+			}
+			return size(max(longestList, longestText))
+		}
+		return size(longestText)
+	}
+	// An item of a list written in the expression.
+	return size(e.literalMax)
 }
 
 func (sizeEstimator) EstimateCallCost(string, string, *checker.AstNode, []checker.AstNode) *checker.CallEstimate {
 	return nil
+}
+
+// longestLiteral is the length of the longest string literal in an expression.
+func longestLiteral(e celast.Expr) uint64 {
+	var n uint64
+	celast.PreOrderVisit(e, celast.NewExprVisitor(func(x celast.Expr) {
+		if x.Kind() == celast.LiteralKind {
+			if s, ok := x.AsLiteral().Value().(string); ok {
+				n = max(n, uint64(len(s)))
+			}
+		}
+	}))
+	return n
 }

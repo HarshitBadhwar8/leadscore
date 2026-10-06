@@ -106,6 +106,9 @@ func (r *Rubric) run(w *evalRun, in Input) Result {
 	}
 	sort.Strings(domains)
 	for _, domain := range domains {
+		if w.ctx.Err() != nil {
+			return res // EvaluateContext returns the error
+		}
 		cs := &companyState{
 			values:  r.companyValues(domain, in, w),
 			det:     r.detectorMap(in.Detectors.Companies[domain], nil),
@@ -129,6 +132,9 @@ func (r *Rubric) run(w *evalRun, in Input) Result {
 
 	// Leads: lead derive blocks, contact half, conflicts, lanes.
 	for i := range in.Leads {
+		if w.ctx.Err() != nil {
+			return res
+		}
 		l := &in.Leads[i]
 		cs := companies[l.Domain]
 		cvals := map[string]any{}
