@@ -8,9 +8,10 @@ on:
 permissions:
   contents: read
 
-# A newer push to a PR replaces its running checks; runs on main always finish.
+# A newer push to a PR cancels that PR's running checks. Each push to main gets
+# its own group (keyed by commit), so no main build is cancelled or dropped.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || 'pr' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -33,6 +34,8 @@ jobs:
         run: go vet ./...
       - name: test
         run: go test -race ./...
+      - name: build and vet for Windows
+        run: GOOS=windows go build ./... && GOOS=windows go vet ./...
 
   image:
     name: image (linux/amd64, linux/arm64)
