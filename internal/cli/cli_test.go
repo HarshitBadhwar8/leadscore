@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/HarshitBadhwar8/leadscore/internal/logredact"
 )
 
 func run(args ...string) (code int, stdout, stderr string) {
@@ -197,5 +199,47 @@ func TestEveryCommandIsReachable(t *testing.T) {
 		if c.run == nil && c.slice == "" {
 			t.Errorf("command %q has neither a body nor an owning slice", c.name())
 		}
+	}
+}
+
+// failWith runs a command that fails with an error naming a home-folder path
+// and an email: config get on a missing file under /Users/x.
+func failWith(t *testing.T) string {
+	t.Helper()
+	code, _, stderr := run("--config", "/Users/x/leadscore.yml", "config", "get", "hosting.run_account")
+	if code != exitFail {
+		t.Fatalf("exit %d, want 1", code)
+	}
+	return stderr
+}
+
+func TestErrorsUnredactedLocally(t *testing.T) {
+	t.Setenv("K_SERVICE", "")
+	t.Setenv("CLOUD_RUN_JOB", "")
+	if got := failWith(t); !strings.Contains(got, "/Users/x/leadscore.yml") {
+		t.Errorf("a local error must show the operator's own path, got %q", got)
+	}
+}
+
+func TestErrorsRedactedInsideCloudRun(t *testing.T) {
+	for _, v := range []string{"K_SERVICE", "CLOUD_RUN_JOB"} {
+		t.Run(v, func(t *testing.T) {
+			t.Setenv("K_SERVICE", "")
+			t.Setenv("CLOUD_RUN_JOB", "")
+			t.Setenv(v, "leadscore")
+			got := failWith(t)
+			if strings.Contains(got, "/Users/x/") || !strings.Contains(got, "~/leadscore.yml") {
+				t.Errorf("inside Cloud Run stderr is a log and must be redacted, got %q", got)
+			}
+		})
+	}
+}
+
+func TestMainMasksKeyValuesFromTheEnvironment(t *testing.T) {
+	t.Setenv("APOLLO_API_KEY", "apollo-test-value-123")
+	t.Cleanup(func() { logredact.MaskEnvSecrets(func(string) string { return "" }) })
+	run("help")
+	if got := logredact.Redact("call failed with key apollo-test-value-123"); strings.Contains(got, "apollo-test-value-123") {
+		t.Errorf("after Main starts, Redact must mask APOLLO_API_KEY's value, got %q", got)
 	}
 }

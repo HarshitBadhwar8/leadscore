@@ -179,14 +179,21 @@ func (inv *invocation) configOptions() config.Options {
 	return config.Options{ConfigPath: inv.flags["config"], RubricPath: inv.flags["rubric"]}
 }
 
-// fail prints a local command's error as is. These errors name the operator's
-// own files and keys, which they need to see to fix them; vendor response text
-// is reduced with logredact.VendorErrorDetail where it is read, before it can
-// reach an error. Logs (not this terminal output) go through logredact.Redact.
+// fail prints a command's error. Locally the error goes to the operator's own
+// terminal unredacted: it names their files and keys, which they need to see
+// to fix them. Inside Cloud Run (K_SERVICE or CLOUD_RUN_JOB set) stderr is
+// Cloud Logging, so it is redacted like every other log line. Vendor response
+// text is reduced with logredact.VendorErrorDetail where it is read.
 func (inv *invocation) fail(err error) int {
-	fmt.Fprintf(inv.stderr, "leadscore %s: %s\n", inv.cmd.name(), err)
+	msg := err.Error()
+	if inCloudRun() {
+		msg = logredact.Redact(msg)
+	}
+	fmt.Fprintf(inv.stderr, "leadscore %s: %s\n", inv.cmd.name(), msg)
 	return exitFail
 }
+
+func inCloudRun() bool { return os.Getenv("K_SERVICE") != "" || os.Getenv("CLOUD_RUN_JOB") != "" }
 
 var errHelp = errors.New("help requested")
 
