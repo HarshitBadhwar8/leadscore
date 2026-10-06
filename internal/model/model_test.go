@@ -106,7 +106,7 @@ func TestPutChecksTheRowType(t *testing.T) {
 }
 
 func TestUnknownTablePanics(t *testing.T) {
-	for _, name := range []string{"Events", "Leads", "Export "} {
+	for _, name := range []string{"Events", "Leads"} {
 		func() {
 			defer func() {
 				if recover() == nil {
@@ -149,5 +149,71 @@ func TestIndexes(t *testing.T) {
 	m.Discard()
 	if len(m.People) != 0 || len(m.IdentitiesOf("L1")) != 0 || len(m.PeopleAt("y.example")) != 0 {
 		t.Error("Discard must empty the indexes with the tables")
+	}
+}
+
+// Lane ids follow section 2 (letters, digits, "-", "_", starting with a letter
+// or digit) and are unique ignoring case: anything else would share a SQLite
+// table with another lane. Put refuses it with an error and records nothing.
+func TestExportLaneRule(t *testing.T) {
+	m := New()
+	for _, lane := range []string{"", "my lane", "-x", "_x", "a.b", "a/b", "ünï"} {
+		if err := m.Put(ExportTable(lane), ExportRow{LeadID: "L1"}); err == nil {
+			t.Errorf("Put(Export %q) must be refused", lane)
+		}
+	}
+	if len(m.Exports) != 0 || len(m.Writes()) != 0 {
+		t.Fatalf("refused puts recorded something: %v %v", m.Exports, m.Writes())
+	}
+	if err := m.Put(ExportTable("warm-1_A"), ExportRow{LeadID: "L1"}); err != nil {
+		t.Fatalf("a valid lane id: %v", err)
+	}
+	// A lane recorded in State (loaded or put) blocks its case variants.
+	m.SetState(ExportLaneKey+"Cold", "yes")
+	for _, lane := range []string{"cold", "COLD", "WARM-1_a"} {
+		if err := m.Put(ExportTable(lane), ExportRow{LeadID: "L2"}); err == nil {
+			t.Errorf("Put(Export %q) must be refused: differs from a recorded lane only by case", lane)
+		}
+	}
+	if err := m.Put(ExportTable("Cold"), ExportRow{LeadID: "L2"}); err != nil {
+		t.Errorf("the recorded lane itself: %v", err)
+	}
+	// Delete and Trim on a refused lane write nothing.
+	before := len(m.Writes())
+	m.Delete(ExportTable("cold"), []string{"L2"})
+	m.Trim(ExportTable("my lane"), "updated_at", time.Now())
+	if len(m.Writes()) != before || len(m.Exports["Cold"]) != 1 {
+		t.Errorf("Delete/Trim on a refused lane changed something: %v", m.Writes())
+	}
+}
+
+// Encoding an export table alone carries its export_lane record, so the table
+// is never committed without it; encoding State too does not repeat it.
+func TestExportLaneTravelsWithItsTable(t *testing.T) {
+	m := New()
+	if err := m.Put(ExportTable("warm"), ExportRow{LeadID: "L1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Put(ExportTable("warm2"), ExportRow{LeadID: "L1"}); err != nil {
+		t.Fatal(err)
+	}
+	w := m.Writes(ExportTable("warm"))
+	if len(w) != 2 || w[1].Table != TableState || len(w[1].Rows) != 1 || w[1].Rows[0]["key"] != "export_lane:warm" {
+		t.Fatalf("Writes(Export warm) = %+v; want the table and only its export_lane row", w)
+	}
+	m.Committed(w)
+	if w := m.Writes(ExportTable("warm")); len(w) != 0 {
+		t.Errorf("after commit: %+v", w)
+	}
+	n := 0
+	for _, x := range m.Writes(ExportTable("warm2"), TableState) {
+		for _, r := range x.Rows {
+			if r["key"] == "export_lane:warm2" {
+				n++
+			}
+		}
+	}
+	if n != 1 {
+		t.Errorf("export_lane:warm2 encoded %d times, want once", n)
 	}
 }

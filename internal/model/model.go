@@ -10,6 +10,7 @@ package model
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -158,7 +159,16 @@ func (m *Model) Load(table string, rows []api.Row) error {
 // in UTC cut to milliseconds, JSON numbers as float64, empty unknown columns
 // dropped. The first row put in an export table records its lane in State
 // (export_lane:<lane id>), so codec.Load finds the table after the lane is gone.
-func (m *Model) Put(table string, row Row) {
+//
+// Put returns an error, and records nothing, for an export table whose lane id
+// breaks the section 2 rule (letters, digits, "-" and "_", starting with a
+// letter or digit) or matches an already recorded lane only ignoring case:
+// such tables would share one SQLite table. A row of the wrong type for the
+// table is a programming error and panics.
+func (m *Model) Put(table string, row Row) error {
+	if err := m.checkExportLane(table); err != nil {
+		return err
+	}
 	tr := m.track(table)
 	if row == nil || row.table() != tr.def.Name {
 		panic(fmt.Sprintf("model: Put(%q) with a %T", table, row))
@@ -171,7 +181,7 @@ func (m *Model) Put(table string, row Row) {
 	if tr.def.Key == nil {
 		m.appendTyped(tr, norm)
 		tr.added = append(tr.added, enc)
-		return
+		return nil
 	}
 	k := keyOf(tr.def, enc)
 	m.setTyped(tr, k, norm)
@@ -179,6 +189,28 @@ func (m *Model) Put(table string, row Row) {
 	if lane, ok := strings.CutPrefix(table, ExportPrefix); ok && m.StateValue(ExportLaneKey+lane) == "" {
 		m.SetState(ExportLaneKey+lane, "yes")
 	}
+	return nil
+}
+
+var laneIDForm = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
+
+// checkExportLane refuses an export table whose lane id breaks the section 2
+// rule, or that matches a recorded lane only ignoring case. Other tables pass.
+func (m *Model) checkExportLane(table string) error {
+	lane, ok := strings.CutPrefix(table, ExportPrefix)
+	if !ok {
+		return nil
+	}
+	if !laneIDForm.MatchString(lane) {
+		return fmt.Errorf("export table %q: a lane id holds only letters, digits, \"-\" and \"_\", starting with a letter or digit", table)
+	}
+	for k := range m.State {
+		rec, ok := strings.CutPrefix(string(k), ExportLaneKey)
+		if ok && rec != lane && strings.EqualFold(rec, lane) {
+			return fmt.Errorf("export table %q: lane %q differs from the recorded lane %q only by case", table, lane, rec)
+		}
+	}
+	return nil
 }
 
 // ExportLaneKey prefixes the State key that records an export table's lane:
@@ -188,7 +220,13 @@ const ExportLaneKey = "export_lane:"
 // Delete records a deleted row, by its key in section 4 key order. Overrides
 // rows are deleted by all four columns (person, action, value, note), which
 // removes every row that matches. Log rows cannot be deleted, only trimmed.
+//
+// On an export table that Put refuses (see Put) it does nothing: no row can
+// exist there.
 func (m *Model) Delete(table string, key []string) {
+	if m.checkExportLane(table) != nil {
+		return
+	}
 	tr := m.track(table)
 	if tr.name == TableLog {
 		panic("model: Log is only appended and trimmed")
@@ -277,7 +315,11 @@ func (m *Model) rediffList(tr *tracked) {
 
 // Trim records a retention trim: rows whose column holds a time before before
 // are removed now, and codec.Encode writes an OpTrim. An empty column is kept.
+// On an export table that Put refuses it does nothing.
 func (m *Model) Trim(table, column string, before time.Time) {
+	if m.checkExportLane(table) != nil {
+		return
+	}
 	tr := m.track(table)
 	cut := FormatTime(before)
 	old := func(r api.Row) bool { return r[column] != "" && r[column] < cut }
@@ -338,9 +380,39 @@ func (m *Model) Writes(tables ...string) []api.TableWrite {
 			}
 			continue
 		}
-		out = append(out, tr.writes(m, prefix, hasPrefix)...)
+		w := tr.writes(m, prefix, hasPrefix)
+		out = append(out, w...)
+		// An export table's first rows travel with their export_lane record,
+		// so no commit can create the table without recording its lane.
+		if lane, ok := strings.CutPrefix(name, ExportPrefix); ok && len(w) > 0 && !covers(tables, ExportLaneKey+lane) {
+			for _, sw := range m.Writes(TableState + ":" + ExportLaneKey + lane) {
+				var rows []api.Row
+				for _, r := range sw.Rows {
+					if r["key"] == ExportLaneKey+lane {
+						rows = append(rows, r)
+					}
+				}
+				if len(rows) > 0 {
+					sw.Rows = rows
+					out = append(out, sw)
+				}
+			}
+		}
 	}
 	return out
+}
+
+// covers reports whether the named tables already encode State key k.
+func covers(tables []string, k string) bool {
+	for _, t := range tables {
+		if t == TableState {
+			return true
+		}
+		if p, ok := strings.CutPrefix(t, TableState+":"); ok && strings.HasPrefix(k, p) {
+			return true
+		}
+	}
+	return false
 }
 
 func (tr *tracked) writes(m *Model, prefix string, hasPrefix bool) []api.TableWrite {

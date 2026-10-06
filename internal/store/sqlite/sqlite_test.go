@@ -267,21 +267,36 @@ func TestRefusedNames(t *testing.T) {
 	}
 }
 
-// Lane ids may hold letters, digits, "-" and "_"; distinct ids map to
-// distinct SQLite tables (ids differing only by case are refused by the rubric).
+// Lane ids hold letters, digits, "-" and "_" and are unique ignoring case
+// (section 2; the model refuses the rest). Over such ids TableName is one to
+// one: two lanes share a SQLite table exactly when they match ignoring case,
+// which the model refuses.
 func TestTableNameOneToOne(t *testing.T) {
-	seen := map[string]string{}
-	for _, lane := range []string{"a-b", "a_b", "ab", "a__b", "a--b", "a-_b", "a_-b", "facts", "applied"} {
-		got := TableName(model.ExportTable(lane))
-		if prev, dup := seen[got]; dup {
-			t.Errorf("lanes %q and %q both map to %s", prev, lane, got)
+	lanes := []string{"a-b", "a_b", "ab", "a__b", "a--b", "a-_b", "a_-b", "facts", "applied", "Warm", "warm",
+		"my_lane", "my-lane", "A1", "a1", "rows", "x"}
+	for i, a := range lanes {
+		for _, b := range lanes[i+1:] {
+			same := TableName(model.ExportTable(a)) == TableName(model.ExportTable(b))
+			if same != strings.EqualFold(a, b) {
+				t.Errorf("lanes %q and %q: same table = %v", a, b, same)
+			}
 		}
-		seen[got] = lane
+		for _, d := range model.Tables {
+			if !d.Pattern && TableName(d.Name) == TableName(model.ExportTable(a)) {
+				t.Errorf("lane %q shares %s with table %s", a, TableName(d.Name), d.Name)
+			}
+		}
 	}
-	for _, d := range model.Tables {
-		if prev, dup := seen[TableName(d.Name)]; dup && !d.Pattern {
-			t.Errorf("table %s and lane %q share %s", d.Name, prev, TableName(d.Name))
-		}
+	// The colliding cases the model refuses, so they never reach the store.
+	m := model.New()
+	if err := m.Put(model.ExportTable("my lane"), model.ExportRow{LeadID: "L1"}); err == nil {
+		t.Error(`lane "my lane" (TableName export_my_lane, like my_lane) must be refused`)
+	}
+	if err := m.Put(model.ExportTable("warm"), model.ExportRow{LeadID: "L1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Put(model.ExportTable("Warm"), model.ExportRow{LeadID: "L1"}); err == nil {
+		t.Error(`lane "Warm" after "warm" must be refused`)
 	}
 }
 
@@ -315,6 +330,31 @@ func TestFileMode(t *testing.T) {
 		}
 		if mode := fi.Mode().Perm(); mode != 0o600 {
 			t.Errorf("%s mode = %o, want 600", filepath.Base(p), mode)
+		}
+	}
+}
+
+func TestExistingFileMadeOwnerOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no Unix file modes")
+	}
+	path := filepath.Join(t.TempDir(), "leadscore.db")
+	for _, p := range []string{path, path + "-wal"} {
+		if err := os.WriteFile(p, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(p, 0o644); err != nil { // past the umask
+			t.Fatal(err)
+		}
+	}
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for _, p := range []string{path, path + "-wal"} {
+		if fi, err := os.Stat(p); err != nil || fi.Mode().Perm() != 0o600 {
+			t.Errorf("%s mode = %v, %v; want 600", filepath.Base(p), fi.Mode().Perm(), err)
 		}
 	}
 }

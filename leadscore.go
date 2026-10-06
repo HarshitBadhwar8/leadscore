@@ -136,7 +136,9 @@ type RunLease = api.RunLease
 // taken over; it must be a real compare-and-swap, so two callers can never both
 // hold it. Commit applies every write all-or-nothing (one Sheets batchUpdate,
 // one SQL transaction); it rejects an OpUpsert or OpDelete with no Key before
-// applying anything; it creates a missing table, and appends a missing column,
+// applying anything; an OpAppend to a keyed section 4 table of a key the table
+// already holds (or that the same commit already wrote) fails the whole commit;
+// it creates a missing table, and appends a missing column,
 // the first time a write names it; it returns ErrTooLarge rather than splitting.
 type Backend = api.Backend
 
@@ -170,7 +172,7 @@ type TableWrite = api.TableWrite
 
 const (
 	OpReplace = api.OpReplace // rewrite the whole table
-	OpAppend  = api.OpAppend  // add rows
+	OpAppend  = api.OpAppend  // add rows; on a keyed section 4 table, a key the table already holds fails the commit
 	OpUpsert  = api.OpUpsert  // insert or update by Key columns
 	OpDelete  = api.OpDelete  // delete rows matching Key columns
 	OpTrim    = api.OpTrim    // delete rows whose Column is before Before

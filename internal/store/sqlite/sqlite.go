@@ -62,11 +62,17 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("sqlite store: %q is not a plain file path (no \"?\", no \"file:\")", path)
 	}
 	// Create the file owner-only before SQLite opens it; SQLite gives the -wal
-	// and -shm files the same mode.
+	// and -shm files it creates the same mode.
 	if f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600); err == nil {
 		f.Close()
 	} else if !errors.Is(err, os.ErrExist) {
 		return nil, fmt.Errorf("sqlite store %s: %w", path, err)
+	}
+	// An existing file (and its -wal and -shm) is made owner-only too.
+	for _, p := range []string{path, path + "-wal", path + "-shm"} {
+		if err := os.Chmod(p, 0o600); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("sqlite store %s: %w", p, err)
+		}
 	}
 	// _txlock=immediate takes the write lock when a transaction begins, so two
 	// writers queue on the busy timeout instead of failing to upgrade a lock.

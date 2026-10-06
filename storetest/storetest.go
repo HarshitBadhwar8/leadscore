@@ -293,7 +293,8 @@ func commitAllOrNothing(t *testing.T, open func(t *testing.T) (api.Backend, api.
 
 // commitRollsBack fails a commit in its last write, at apply time rather than
 // in validation: an OpAppend to a keyed table of a key the store already
-// holds. Nothing from that commit may remain.
+// holds, or one the same commit already wrote (contracts section 1, OpAppend).
+// Nothing from that commit may remain.
 func commitRollsBack(t *testing.T, open func(t *testing.T) (api.Backend, api.EventLog)) {
 	b, _ := open(t)
 	ctx := t.Context()
@@ -318,6 +319,21 @@ func commitRollsBack(t *testing.T, open func(t *testing.T) (api.Backend, api.Eve
 	if err != nil {
 		t.Fatal(err)
 	}
+	sameRows(t, "Seen events after a rolled-back commit", got, seed, []string{"event_key"})
+
+	// A key written twice in one commit fails it the same way.
+	err = b.Commit(ctx, []api.TableWrite{
+		{Table: model.TableState, Op: api.OpReplace, Rows: []api.Row{{"key": "k", "value": "v"}}},
+		{Table: model.TableSeenEvents, Op: api.OpAppend, Rows: []api.Row{{"event_key": "e3"}}},
+		{Table: model.TableSeenEvents, Op: api.OpAppend, Rows: []api.Row{{"event_key": "e3"}}},
+	})
+	if err == nil {
+		t.Fatal("appending one key twice in a commit must fail it")
+	}
+	if rows, err := b.ReadTable(ctx, model.TableState); err != nil || len(rows) != 0 {
+		t.Errorf("State after a rolled-back commit = %v, %v; want nothing", rows, err)
+	}
+	got, _ = b.ReadTable(ctx, model.TableSeenEvents)
 	sameRows(t, "Seen events after a rolled-back commit", got, seed, []string{"event_key"})
 }
 
