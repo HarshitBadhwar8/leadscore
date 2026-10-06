@@ -70,7 +70,7 @@ func (s *Source) ID() string { return s.id }
 var (
 	maxFileBytes int64 = 100 << 20  // 100 MB
 	maxColumns         = 1000       // header columns
-	maxCells           = 10_000_000 // data rows times header columns
+	maxCells           = 10_000_000 // cells, each row counted at least as wide as the header
 )
 
 // Fetch reads the whole file. A plain source returns rows; an events source
@@ -124,10 +124,25 @@ type record struct {
 
 var bom = []byte("\xEF\xBB\xBF")
 
+var errCROnly = errors.New("line endings are CR only; save the file as CSV UTF-8")
+
 // parse splits the file into headers and data records. Lines whose cells are
 // all empty are dropped: a spreadsheet export often ends with them.
 func parse(data []byte) ([]string, []record, error) {
 	data = bytes.TrimPrefix(data, bom)
+	// Go's reader splits lines on \n only, so a file saved with old Mac line
+	// endings reads as one long row. A \r not followed by \n means CR endings.
+	for i := bytes.IndexByte(data, '\r'); i >= 0; i = nextCR(data, i) {
+		if i+1 == len(data) || data[i+1] != '\n' {
+			return nil, nil, errCROnly
+		}
+	}
+	// Bound the cells before parsing: the reader allocates a whole line's
+	// cells at once, so a line of millions of commas must be refused unread.
+	// Commas inside quotes count too; overcounting only errs safe.
+	if n := bytes.Count(data, []byte{','}) + bytes.Count(data, []byte{'\n'}); n > maxCells {
+		return nil, nil, cellsError()
+	}
 	r := stdcsv.NewReader(bytes.NewReader(data))
 	r.FieldsPerRecord = -1 // ragged rows: merge decides whether a row is usable
 	// Leading spaces are trimmed, as core does, so `a, "b"` reads; this is the
@@ -144,13 +159,6 @@ func parse(data []byte) ([]string, []record, error) {
 	if err := checkUTF8(headers, 1); err != nil {
 		return nil, nil, err
 	}
-	for _, h := range headers {
-		// Go's reader splits lines on \n only, so a file saved with old Mac
-		// line endings reads as one long header row and no data.
-		if strings.ContainsAny(h, "\r\n") {
-			return nil, nil, errors.New("line endings are CR only; save the file as CSV UTF-8")
-		}
-	}
 	if blank(headers) {
 		return nil, nil, errors.New("the header row (line 1) is blank; the first line must name the columns")
 	}
@@ -158,8 +166,9 @@ func parse(data []byte) ([]string, []record, error) {
 		return nil, nil, fmt.Errorf("the header row has %d columns, more than the %d a csv source reads", len(headers), maxColumns)
 	}
 	var out []record
+	cells := 0 // what the rows will hold: every row is padded to the headers
 	for {
-		cells, err := r.Read()
+		rec, err := r.Read()
 		if errors.Is(err, io.EOF) {
 			return headers, out, nil
 		}
@@ -167,17 +176,38 @@ func parse(data []byte) ([]string, []record, error) {
 			return nil, nil, explain(err)
 		}
 		line, _ := r.FieldPos(0)
-		if err := checkUTF8(cells, line); err != nil {
+		if err := checkUTF8(rec, line); err != nil {
 			return nil, nil, err
 		}
-		if blank(cells) {
+		if blank(rec) {
 			continue
 		}
-		if (len(out)+1)*len(headers) > maxCells {
-			return nil, nil, fmt.Errorf("the file has more than %d cells (rows times columns), the most a csv source reads; split it", maxCells)
+		if cells += max(len(rec), len(headers)); cells > maxCells {
+			return nil, nil, cellsError()
 		}
-		out = append(out, record{line: line, cells: cells})
+		if len(rec) > len(headers) {
+			// Cells past the last header have no name. The reader's strings
+			// share one line-long buffer, so copy the kept cells to free it.
+			kept := make([]string, len(headers))
+			for i := range kept {
+				kept[i] = strings.Clone(rec[i])
+			}
+			rec = kept
+		}
+		out = append(out, record{line: line, cells: rec})
 	}
+}
+
+func nextCR(data []byte, i int) int {
+	j := bytes.IndexByte(data[i+1:], '\r')
+	if j < 0 {
+		return -1
+	}
+	return i + 1 + j
+}
+
+func cellsError() error {
+	return fmt.Errorf("the file has more than %d cells, the most a csv source reads; split it", maxCells)
 }
 
 // explain adds the fix to a quoting error, the one parse error a person
@@ -327,7 +357,7 @@ func (s *Source) toEvents(headers []string, records []record) ([]api.Event, erro
 		}
 
 		// An Apollo visitor export has no event column: each row is a visit.
-		kind := "visit_" + s.id
+		kind := visitKind(s.id)
 		if hasEventCol {
 			kind = strings.ToLower(get(colEvent))
 		}
@@ -350,6 +380,19 @@ func (s *Source) toEvents(headers []string, records []record) ([]api.Event, erro
 		events = append(events, e)
 	}
 	return events, nil
+}
+
+// visitKind is the kind of an Apollo visitor export's rows: visit_<source id>,
+// lowercased, with any character outside a-z, 0-9 and _ made _, so it obeys
+// the kind rule like a kind read from a cell.
+func visitKind(sourceID string) string {
+	b := []byte("visit_" + strings.ToLower(sourceID))
+	for i, c := range b {
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_') {
+			b[i] = '_'
+		}
+	}
+	return string(b)
 }
 
 // plainKind reports a kind made only of a-z, 0-9 and _, so look-alike letters

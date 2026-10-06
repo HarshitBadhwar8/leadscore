@@ -411,3 +411,47 @@ func TestRowsShareOneHeadersSlice(t *testing.T) {
 		t.Fatal("rows must share one Headers slice, not a copy each")
 	}
 }
+
+// Cells past the header are counted too, so one ragged line of commas cannot
+// make the reader allocate millions of cells (the bound runs before parsing).
+func TestRaggedRowsCountTowardTheCellLimit(t *testing.T) {
+	huge := "a\nx" + strings.Repeat(",", maxCells) + "\n"
+	if err := fetchErr(t, huge); err == nil || !strings.Contains(err.Error(), "cells") {
+		t.Fatalf("a %d-cell ragged row must fail; err = %v", maxCells+1, err)
+	}
+	setLimit(t, &maxCells, 100)
+	wide := "x" + strings.Repeat(",y", 30) + "\n" // 31 cells under a 1-column header
+	if err := fetchErr(t, "a\n"+strings.Repeat(wide, 4)); err == nil || !strings.Contains(err.Error(), "more than 100 cells") {
+		t.Fatalf("124 ragged cells must fail; err = %v", err)
+	}
+}
+
+// A ragged row keeps only the cells under a header, in their own slice.
+func TestRaggedRowKeepsOnlyHeaderCells(t *testing.T) {
+	_, recs, err := parse([]byte("a,b\nx,y,z,w\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := recs[0].cells; len(got) != 2 || cap(got) != 2 || got[0] != "x" || got[1] != "y" {
+		t.Fatalf("cells = %q (cap %d), want [x y] in a slice of its own", got, cap(got))
+	}
+}
+
+func TestLineEndings(t *testing.T) {
+	// A quoted header holding a newline is valid CSV.
+	rows, _ := fetch(t, newSource(t, api.Config{"id": "x", "path": writeFile(t, "email,\"Notes\nfield\"\r\na@x.example,hi\r\n")}))
+	if len(rows) != 1 || rows[0].Columns["Notes\nfield"] != "hi" {
+		t.Fatalf("rows = %#v", rows)
+	}
+	// An LF header with CR-only data rows is still CR endings.
+	if err := fetchErr(t, "email,name\na@x.example,A\rb@x.example,B\r"); err == nil || !strings.Contains(err.Error(), "CR only") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestVisitKindObeysTheKindRule(t *testing.T) {
+	_, events := fetch(t, newSource(t, api.Config{"id": "My-Site", "path": "testdata/apollo_visitors.csv", "events": true}))
+	if events[0].Kind != "visit_my_site" {
+		t.Fatalf("kind = %q, want visit_my_site", events[0].Kind)
+	}
+}
