@@ -1,0 +1,61 @@
+internal/rules/review_test.go
+  s_9dab9ff7f2c580::t_381d9fdd4c8caf 1-146
+docs/design/oss-outbound-engine-contracts.md
+  s_9dab9ff7f2c580::t_718aa42601e912 323,344,346,350,365-367,379,381,383,389,392,398,400,402,775,807,820-825,828
+examples/leads.csv
+  s_9dab9ff7f2c580::t_ae746e9c4b3662 2
+examples/rubric.yml
+  s_9dab9ff7f2c580::t_1fe3d1cbee04de 10,29,43,51-59,69-72,77-79,98-102,125-128
+go.mod
+  s_9dab9ff7f2c580::t_2cc6f8902930d3 7-8
+internal/cli/rules.go
+  s_9dab9ff7f2c580::t_e160dfbff38f1c 21-22,25,29-31,33,40-49
+internal/cli/rules_test.go
+  s_9dab9ff7f2c580::t_7c051a33400b8e 17,23
+internal/config/duration.go
+  s_9dab9ff7f2c580::t_65f283b3f1d726 6-7,10-11
+internal/duration/duration.go
+  s_9dab9ff7f2c580::t_e72d064327e149 1-45
+internal/rules/bands.go
+  s_9dab9ff7f2c580::t_64e82b41d1c61f 7-8
+internal/rules/cel.go
+  s_9dab9ff7f2c580::t_df8f6594a467d6 10,145-166
+internal/rules/compile.go
+  s_9dab9ff7f2c580::t_6c0f215546716c 5,16,19-26,71-73,95-134,165-169,181,204-208,268,333-336,398,401-403,452,509,522,530-534,565-572,670-671,673-676
+internal/rules/compile_test.go
+  s_9dab9ff7f2c580::t_eabbc2c51c61a0 6,139-184,269-272,282,308,337-346
+internal/rules/cond.go
+  s_9dab9ff7f2c580::t_a5ccbc160d6808 5,12-13,90,105-107,116,128-130,138-152,195,212-217,222,255-256,260,274,286,295,299,308,310,312-313,318,323,327,329,334,337,340,343,348,352,366,373,375,377,379,391,393,395,397,401,405,410,413,416,420,423-426,428,435,437,441,443,445,447,450,453-455,479,544,610-616
+internal/rules/eval.go
+  s_9dab9ff7f2c580::t_1a40b80741fbb1 4,6-7,15-28,31-36,39-46,49-51,56,73-77,86,110,114,116,123,126,157,167,169,173,178,181,183,190,222,226-230,256,259,280,335,356,385,406-407,409-412,417,423-433,435
+internal/rules/eval_test.go
+  s_9dab9ff7f2c580::t_d4bfd5ec949542 5,24,34-35,66,93-112,127-128,130-158,276,286,298,330-331,342,348,356
+internal/rules/example_test.go
+  s_9dab9ff7f2c580::t_eaf9c0ffe25fa2 110-113,138-153
+internal/rules/fields.go
+  s_9dab9ff7f2c580::t_c24d9c8cc8882c 10,12,97-99,101-102,105
+internal/rules/parity_test.go
+  s_9dab9ff7f2c580::t_4e52c3830cb87c 9-10,25
+internal/rules/rollup_test.go
+  s_9dab9ff7f2c580::t_eceedea6552335 9-14,17,19-21,24-29,33,36,38-39,41-47,51-55,57-62,64-65,70-79,84,86,88-89,94-98,100-103,105-106
+internal/rules/rules.go
+  s_9dab9ff7f2c580::t_d871a08345ac6c 54,98,149-151
+internal/rules/sections.go
+  s_9dab9ff7f2c580::t_6bac673026c847 9,120-123,180-182,232-234,236,260-265,269-271,278-299
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "965c14f95c57940b889ac4eef82c6e4c2c18a34f",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
