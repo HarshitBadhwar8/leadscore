@@ -1,0 +1,67 @@
+README.md
+  s_9dab9ff7f2c580::t_1be34a5ba51b30 17,24,45-46,49-67
+docs/design/oss-outbound-engine-contracts.md
+  s_9dab9ff7f2c580::t_3f92d7a29be8ac 469,474,479,481,483,626,735,737,865-868,870-871
+docs/design/oss-outbound-engine.md
+  s_9dab9ff7f2c580::t_4f0193df4c9b04 354
+go.mod
+  s_9dab9ff7f2c580::t_5056841779eb0d 7
+internal/check/overrides.go
+  s_9dab9ff7f2c580::t_4dbc125031b387 1-143
+internal/check/overrides_test.go
+  s_9dab9ff7f2c580::t_86b2c9c6c39e76 1-136
+internal/cli/cli.go
+  s_9dab9ff7f2c580::t_c39d5d88eab645 96,104,112,120
+internal/cli/overrides.go
+  s_9dab9ff7f2c580::t_aed6c8f1ae077c 1-129
+internal/cli/overrides_test.go
+  s_9dab9ff7f2c580::t_a9f7f202d7f920 1-120
+internal/merge/apply.go
+  s_9dab9ff7f2c580::t_c94003f170dce9 1-603
+internal/merge/emaildomain.go
+  s_9dab9ff7f2c580::t_e7c9de394558c1 1-68
+internal/merge/emailshape.go
+  s_9dab9ff7f2c580::t_6e976ac7937a1c 1-63
+internal/merge/emailshape_test.go
+  s_9dab9ff7f2c580::t_502fefb60a8392 1-115
+internal/merge/merge_test.go
+  s_9dab9ff7f2c580::t_09d3e93522b6a0 1-771
+internal/merge/normalize.go
+  s_9dab9ff7f2c580::t_cfadadb52d8b39 1-338
+internal/merge/normalize_test.go
+  s_9dab9ff7f2c580::t_6ab9681bd6c2c6 1-174
+internal/merge/overrides.go
+  s_9dab9ff7f2c580::t_26f8035b297a77 1-364
+internal/merge/overrides_test.go
+  s_9dab9ff7f2c580::t_0ac2b894ec286e 1-173
+internal/merge/person.go
+  s_9dab9ff7f2c580::t_de8642b9dcfa7e 1-397
+internal/merge/review_test.go
+  s_9dab9ff7f2c580::t_14d465bd0a1a9e 1-334
+internal/model/rows.go
+  s_9dab9ff7f2c580::t_e14fd590e85aa0 109,286,396-397
+internal/model/tables.go
+  s_9dab9ff7f2c580::t_c9ff371767b4af 63
+internal/rules/eval.go
+  s_9dab9ff7f2c580::t_b4091b7099d5cc 198-199,233-234
+internal/rules/parity_test.go
+  s_9dab9ff7f2c580::t_52314f4de662a1 1,4-9,12-14,16-21,24-43,45,47-191,196-200,205,209-223,225-436
+internal/rules/review_test.go
+  s_9dab9ff7f2c580::t_6995c6f7304255 147-175
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9c7d534daba42e901445dfeb9a7b4a50021a2245",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
