@@ -16,3 +16,6 @@
 .idea/
 .vscode/
 .DS_Store
+
+# Local agent tooling state
+.claude/
