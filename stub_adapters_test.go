@@ -123,6 +123,8 @@ func TestStubAdaptersRegister(t *testing.T) {
 		t.Error("source not registered")
 	} else if s, err := f(cfg); err != nil || s.ID() != "stub" {
 		t.Errorf("source factory = %v, %v", s, err)
+	} else if rows, _, _, err := s.Fetch(context.Background(), ""); err != nil || len(rows) != 1 {
+		t.Errorf("Fetch = %v, %v", rows, err)
 	}
 	if f, ok := api.EnricherFactory("stub"); !ok {
 		t.Error("enricher not registered")
@@ -131,16 +133,26 @@ func TestStubAdaptersRegister(t *testing.T) {
 	} else if _, err := e.Enrich(context.Background(), []string{"a.example"}, 1); !errors.Is(err, leadscore.ErrRateLimited) {
 		t.Errorf("Enrich err = %v", err)
 	}
-	if _, ok := api.PollerFactory("stub"); !ok {
+	if f, ok := api.PollerFactory("stub"); !ok {
 		t.Error("poller not registered")
+	} else if p, err := f(cfg); err != nil || p == nil {
+		t.Errorf("poller factory = %v, %v", p, err)
+	} else if _, err := p.Poll(context.Background(), time.Now().Add(-time.Hour)); err != nil {
+		t.Errorf("Poll err = %v", err)
 	}
-	if _, ok := api.LookupFactory("stub"); !ok {
+	if f, ok := api.LookupFactory("stub"); !ok {
 		t.Error("lookup not registered")
+	} else if l, err := f(cfg); err != nil || l == nil {
+		t.Errorf("lookup factory = %v, %v", l, err)
+	} else if _, failed, err := l.Lookup(context.Background(), []leadscore.LeadRef{{ID: "L1"}}); err != nil || failed == nil {
+		t.Errorf("Lookup = %v, %v", failed, err)
 	}
 	if f, ok := api.SinkFactory("stub"); !ok {
 		t.Error("sink not registered")
 	} else if s, _ := f(cfg); s == nil {
 		t.Error("sink factory returned nil")
+	} else if steps := s.Steps("sequence/x"); len(steps) != 2 {
+		t.Errorf("Steps = %v", steps)
 	} else {
 		id, err := s.Do(context.Background(), leadscore.StepRequest{
 			Key: leadscore.StepKey{LeadID: "L1", LaneID: "warm", Step: "contact"}, Dest: "sequence/x"})
@@ -148,8 +160,12 @@ func TestStubAdaptersRegister(t *testing.T) {
 			t.Errorf("Do = %q, %v", id, err)
 		}
 	}
-	if _, ok := api.DetectorFactory("stub"); !ok {
+	if f, ok := api.DetectorFactory("stub"); !ok {
 		t.Error("detector not registered")
+	} else if d, err := f(leadscore.Config{}); err != nil || d == nil {
+		t.Errorf("detector factory = %v, %v", d, err)
+	} else if fired, _ := d.Evaluate(leadscore.Subject{Domain: "a.example"}, []leadscore.Event{{Kind: "visit_pricing"}}, time.Now()); !fired || d.Name() != "stub" {
+		t.Errorf("Evaluate fired=%v name=%q", fired, d.Name())
 	}
 	if f, ok := api.BackendFactory("stub"); !ok {
 		t.Error("backend not registered")
@@ -158,8 +174,23 @@ func TestStubAdaptersRegister(t *testing.T) {
 		if err != nil || b == nil || log == nil {
 			t.Fatalf("backend factory = %v, %v, %v", b, log, err)
 		}
-		if _, ok := b.(leadscore.LeaseInspector); !ok {
+		if li, ok := b.(leadscore.LeaseInspector); !ok {
 			t.Error("the optional LeaseInspector must be found by type assertion")
+		} else if _, _, err := li.LeaseInfo(context.Background()); err != nil {
+			t.Errorf("LeaseInfo err = %v", err)
+		}
+		lease, err := b.Lease(context.Background(), "run-1", time.Minute)
+		if err != nil || lease.Check(context.Background()) != nil || lease.Release(context.Background()) != nil {
+			t.Errorf("lease round trip failed: %v", err)
+		}
+		if err := log.AppendEvents(context.Background(), []leadscore.RawEvent{{Kind: "apollo_reply"}}); err != nil {
+			t.Errorf("AppendEvents err = %v", err)
+		}
+		if _, next, err := log.ReadEvents(context.Background(), "c1"); err != nil || next != "c1" {
+			t.Errorf("ReadEvents = %q, %v", next, err)
+		}
+		if got, err := log.DeleteProcessed(context.Background(), "c1", time.Now()); err != nil || got != "c1" {
+			t.Errorf("DeleteProcessed = %q, %v", got, err)
 		}
 		err = b.Commit(context.Background(), []leadscore.TableWrite{
 			{Table: "People", Op: leadscore.OpUpsert, Rows: []leadscore.Row{{"lead_id": "L1"}}},
