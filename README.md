@@ -14,7 +14,10 @@ the task breakdown); the contracts doc is the source of truth for every shape.
 | `cmd/leadscore/` | the CLI binary |
 | `internal/api` | the public types (re-exported by the root), the built-in header aliases |
 | `internal/config` | loading `leadscore.yml`, `config get`, `config set-hosting` |
-| `internal/check` | the `doctor` check framework and the `secrets` and `rubric` checks |
+| `internal/check` | the `doctor` check framework and the `secrets`, `store` and `rubric` checks |
+| `internal/model` | the in-memory model of the store's tables |
+| `internal/store/codec` | maps the model to table writes; loads a store and checks its schema version |
+| `internal/store/sqlite` | the built-in SQLite store (WAL, lease row, event log) |
 | `internal/rules` | the rubric compiler and evaluator: YAML rules compiled to CEL |
 | `internal/logredact` | log redaction: logs carry ids, never emails |
 | `adapters/csv` | the CSV file source (`type: csv`): lead rows, or event rows with `events: true` |
