@@ -70,6 +70,9 @@ sources: [ { id: leads, type: sheetsource, tabs: [Leads] } ]
 enrich: { type: apollo }
 sinks: { apollo: { mailbox_id: m }, hubspot: { pipeline: Sales, stage: New } }
 `)
+	hosted := load(t, "version: 1\nstore: { type: sqlite }\nenrich: { type: apollo }\nhosting: { project: p }\n")
+	apolloMissing := []Problem{{Key: "secret_missing:APOLLO_API_KEY", Message: "APOLLO_API_KEY is not set; enrich needs it",
+		Fix: "add APOLLO_API_KEY to Secret Manager or .env"}}
 	tests := []struct {
 		name string
 		cfg  *config.Config
@@ -94,6 +97,10 @@ sinks: { apollo: { mailbox_id: m }, hubspot: { pipeline: Sales, stage: New } }
 		}},
 		{"plug-in types need no built-in key", load(t, "version: 1\nstore: { type: sqlite }\nsinks: { mysink: {} }\n"), nil, nil},
 		{"no config", nil, nil, nil},
+		{"hosted, run locally: keys come from Secret Manager", hosted, nil, nil},
+		{"hosted, inside a Cloud Run job: checked", hosted, map[string]string{"CLOUD_RUN_JOB": "leadscore-run"}, apolloMissing},
+		{"hosted, inside the Cloud Run service: checked", hosted, map[string]string{"K_SERVICE": "leadscore-receiver"}, apolloMissing},
+		{"hosting block without a project: checked", load(t, "version: 1\nstore: { type: sqlite }\nenrich: { type: apollo }\nhosting: { region: r }\n"), nil, apolloMissing},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

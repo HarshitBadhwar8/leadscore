@@ -10,8 +10,10 @@ import (
 func init() { Register(secrets{getenv: os.Getenv}) }
 
 // adapterKeyVariables names the key variable each built-in vendor adapter
-// reads (RFC 6.13). The receiver's secret is the receiver-secret check's, not
-// this one's. Stores sign in through Google's standard credentials and need none.
+// reads (RFC 6.13). S8 owns the apollo entry and S11 the hubspot one; a slice
+// that changes its adapter's key keeps its entry here. The receiver's secret is
+// the receiver-secret check's, not this one's. Stores sign in through Google's
+// standard credentials and need none.
 var adapterKeyVariables = map[string]string{
 	"apollo":  "APOLLO_API_KEY",
 	"hubspot": "HUBSPOT_TOKEN",
@@ -25,6 +27,14 @@ func (secrets) InRun() bool  { return true }
 
 func (s secrets) Run(_ context.Context, env Env) []Problem {
 	if env.Config == nil {
+		return nil
+	}
+	// A local command on a hosted install reads empty keys from Secret Manager
+	// (contracts section 3), so an empty variable is not missing there; S14b
+	// extends this check to Secret Manager. Inside Cloud Run the variables are
+	// filled from Secret Manager, so they are checked as usual.
+	inCloudRun := s.getenv("K_SERVICE") != "" || s.getenv("CLOUD_RUN_JOB") != ""
+	if env.Config.Hosted() && !inCloudRun {
 		return nil
 	}
 	// Variable -> the config places that need it, so one problem names every user.

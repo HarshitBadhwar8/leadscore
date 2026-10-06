@@ -818,7 +818,7 @@ type Problem struct{ Key, Message, Fix string; Warning bool } // Key in the sect
 func Register(c Check)
 ```
 
-A problem is written to `Health` under `Problem.Key` as given, and cleared when a later run of the same check stops returning it. Owners: S1 `secrets`; S2 registers `rubric` (compile), and S10a adds the field part to that same check (`Fields()` against the loaded columns in `Env.Model`); S4 `store` (SQLite cases) and S5 its Sheets cases, `sheets`, `sheet-access`; S6 `overrides` (raising `status_conflict:<lead>` and `override_unmatched:<row>`) and `duplicates`; S8 `apollo-key`; S10b `pushes` and the ledger part of `store`; S11 `hubspot`; S12 `apollo-sequences`; S14a `receiver-secret`; S14b `hosting`; S15 `receiver-silence`; S16 `rubric-version`, `receivers`, `lease`, `pushes-enabled`.
+A problem is written to `Health` under `Problem.Key` as given, and cleared when a later run of the same check stops returning it. Owners: S1 `secrets`; S2 registers `rubric` (compile), and S10a adds the field part to that same check (`Fields()` against the loaded columns in `Env.Model`); S4 `store` (SQLite cases) and S5 its Sheets cases, `sheets`, `sheet-access`; S6 `overrides` (raising `status_conflict:<lead>` and `override_unmatched:<row>`) and `duplicates`; S8 `apollo-key`; S10b `pushes` and the ledger part of `store`; S11 `hubspot`; S12 `apollo-sequences`; S14a `receiver-secret`; S14b `hosting`; S15 `receiver-silence`; S16 `rubric-version`, `receivers`, `lease`, `pushes-enabled`. S14b extends `secrets` for Secret Manager keys (a local command on a hosted install, where S1's check skips the environment variables).
 
 ### 12.5 Merge owns persons, aliases and row ids (S6)
 
