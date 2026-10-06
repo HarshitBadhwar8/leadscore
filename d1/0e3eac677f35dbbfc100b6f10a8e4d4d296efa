@@ -1,0 +1,21 @@
+.github/workflows/ci.yml
+  s_28e5c721690f52::t_0627322326bda1 11-12,14,37-38
+ci_test.go
+  s_28e5c721690f52::t_b2754cb4e05e42 1-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d10e3eac677f35dbbfc100b6f10a8e4d4d296efa",
+  "prompts": {},
+  "sessions": {
+    "s_28e5c721690f52": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "da9242c6-61ec-4654-be3b-55ff7ec11668",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
