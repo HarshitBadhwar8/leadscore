@@ -8,8 +8,6 @@ import (
 	"testing"
 	"time"
 
-	sheetsapi "google.golang.org/api/sheets/v4"
-
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
 	"github.com/HarshitBadhwar8/leadscore/internal/store/codec"
@@ -29,8 +27,9 @@ var (
 // TestLiveSheets is S5's measurement proof (RFC 8.4, LEADSCORE_LIVE_SHEETS):
 // it creates a scratch spreadsheet in real Google Sheets, saves 20,000 leads
 // and a year of synthetic events, and checks a run's load of them takes
-// under a minute. It also checks that text Sheets would otherwise reinterpret
-// round-trips exactly. It signs in with Google's standard credentials, or
+// under a minute. It builds the spreadsheet from the setup template, checks
+// that text Sheets would otherwise reinterpret round-trips exactly, and that
+// Health!H1 reads "ok" after a fresh last_success_at. It signs in with Google's standard credentials, or
 // with the service-account key file LEADSCORE_LIVE_SHEETS names, and deletes
 // the spreadsheet at the end.
 func TestLiveSheets(t *testing.T) {
@@ -48,7 +47,7 @@ func TestLiveSheets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	liveCheck(ctx, t, svc, liveFull)
+	liveCheck(ctx, t, svc, liveFull, true)
 }
 
 // The live check's own code, run small against the fakes so it is known to
@@ -58,20 +57,27 @@ func TestLiveCheckOnFakes(t *testing.T) {
 	// A small request cap makes the save split its commits, as the real size does.
 	defer func(old int) { sheets.MaxCommitBytes = old }(sheets.MaxCommitBytes)
 	sheets.MaxCommitBytes = 20_000
-	liveCheck(t.Context(), t, mustConnect(t, f), liveSize{leads: 40, days: 70, perDay: 6})
+	f.Sheets.SetCaller("live@p.iam.gserviceaccount.com")
+	liveCheck(t.Context(), t, mustConnect(t, f), liveSize{leads: 40, days: 70, perDay: 6}, false)
 	if n := f.Sheets.Calls("batchUpdate"); n < 20 {
 		t.Errorf("only %d batchUpdates: the save did not split", n)
 	}
 }
 
-func liveCheck(ctx context.Context, t *testing.T, svc *sheets.Services, size liveSize) {
+// liveCheck runs the check; formulas says the backend evaluates formulas (the
+// fake does not).
+func liveCheck(ctx context.Context, t *testing.T, svc *sheets.Services, size liveSize, formulas bool) {
 	liveLeads, liveEventDays, liveEventsDay := size.leads, size.days, size.perDay
-	book, err := svc.Sheets.Spreadsheets.Create(&sheetsapi.Spreadsheet{Properties: &sheetsapi.SpreadsheetProperties{
-		Title: "leadscore live check " + time.Now().UTC().Format(time.RFC3339)}}).Context(ctx).Do()
+	about, err := svc.Drive.About.Get().Fields("user(emailAddress)").Context(ctx).Do()
+	if err != nil || about.User == nil || about.User.EmailAddress == "" {
+		t.Fatalf("who is signed in: %v", err)
+	}
+	me := about.User.EmailAddress
+	id, err := sheets.Create(ctx, svc, sheets.Template{Title: "leadscore live check " + time.Now().UTC().Format(time.RFC3339),
+		Accounts: sheets.Accounts{Run: me, Receiver: me}, Now: time.Now()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	id := book.SpreadsheetId
 	t.Logf("scratch spreadsheet https://docs.google.com/spreadsheets/d/%s", id)
 	t.Cleanup(func() {
 		if err := svc.Drive.Files.Delete(id).SupportsAllDrives(true).Do(); err != nil {
@@ -97,6 +103,20 @@ func liveCheck(ctx context.Context, t *testing.T, svc *sheets.Services, size liv
 		if r["value"] != tricky[i] {
 			t.Errorf("value %q came back as %q", tricky[i], r["value"])
 		}
+	}
+
+	// The staleness formula reads "ok" after a fresh success.
+	health := []api.Row{{"kind": "result", "key": "schedule", "value": "15m"},
+		{"kind": "result", "key": "last_success_at", "value": model.FormatTime(time.Now())}}
+	if err := s.Commit(ctx, []api.TableWrite{{Table: model.TableHealth, Op: api.OpUpsert, Key: []string{"kind", "key"}, Rows: health}}); err != nil {
+		t.Fatal(err)
+	}
+	h1, err := svc.Sheets.Spreadsheets.Values.Get(id, "Health!H1").ValueRenderOption("FORMATTED_VALUE").Context(ctx).Do()
+	if err != nil || len(h1.Values) != 1 {
+		t.Fatalf("Health!H1: %v", err)
+	}
+	if formulas && h1.Values[0][0] != "ok" {
+		t.Errorf("Health!H1 = %v after a fresh success, want ok", h1.Values[0][0])
 	}
 
 	// Save: 20,000 leads with their identities, applied rows, outcomes and

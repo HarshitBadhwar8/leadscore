@@ -20,6 +20,9 @@ func fakeGoogle(t *testing.T) (*fakesheets.Server, string) {
 	fs := fakesheets.New()
 	srv := httptest.NewServer(gcs.Route(gcs.New(), fs))
 	t.Cleanup(srv.Close)
+	old := testGoogleClient
+	testGoogleClient = srv.Client()
+	t.Cleanup(func() { testGoogleClient = old })
 	return fs, srv.URL
 }
 
@@ -113,15 +116,28 @@ func TestSetupSheetView(t *testing.T) {
 	dir := t.TempDir()
 	key := filepath.Join(dir, "key.json")
 	os.WriteFile(key, []byte(`{"client_email":"one@p.iam.gserviceaccount.com"}`), 0o600)
-	path := writeConfig(t, "version: 1\nstore: { type: sqlite, path: "+filepath.Join(dir, "x.db")+
-		", credentials: "+key+", base_url: "+url+" }\n")
+	rubric, err := os.ReadFile("../../examples/rubric.yml") // its export lane: nurture
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(dir, "rubric.yml"), rubric, 0o600)
+	path := filepath.Join(dir, "leadscore.yml")
+	os.WriteFile(path, []byte("version: 1\nstore: { type: sqlite, path: "+filepath.Join(dir, "x.db")+
+		", credentials: "+key+", base_url: "+url+" }\n"), 0o600)
 	code, _, stderr := run("setup", "sheet", "--view", "--config", path)
 	if code != exitOK {
 		t.Fatalf("exit %d: %s", code, stderr)
 	}
 	c, _ := config.Load(config.Options{ConfigPath: path})
-	if c.Store.ViewSpreadsheet == "" || len(fs.Spreadsheet(c.Store.ViewSpreadsheet).Sheets) != 2 {
-		t.Errorf("view_spreadsheet = %q", c.Store.ViewSpreadsheet)
+	if c.Store.ViewSpreadsheet == "" {
+		t.Fatal("view_spreadsheet not written")
+	}
+	var tabs []string
+	for _, sh := range fs.Spreadsheet(c.Store.ViewSpreadsheet).Sheets {
+		tabs = append(tabs, sh.Properties.Title)
+	}
+	if strings.Join(tabs, ",") != "Ranked,Health,Export nurture" {
+		t.Errorf("view tabs = %v; want Ranked, Health and the rubric's export lane", tabs)
 	}
 	// --view on a Sheets store, and plain setup on SQLite, are refused.
 	sheetsPath := writeConfig(t, strings.Replace(hostedConfig, "%s", url, 1))
@@ -152,4 +168,14 @@ func TestSetupSheetSignsInAsPerson(t *testing.T) {
 func keepPersonClient(t *testing.T) {
 	old := personClient
 	t.Cleanup(func() { personClient = old })
+}
+
+// A base_url in a real leadscore.yml (no test client) is refused: it would
+// send the team's data to whatever address the file names.
+func TestSetupSheetRefusesFileBaseURL(t *testing.T) {
+	path := writeConfig(t, strings.Replace(hostedConfig, "%s", "http://127.0.0.1:9", 1))
+	code, _, stderr := run("setup", "sheet", "--config", path)
+	if code != exitFail || !strings.Contains(stderr, "base_url") {
+		t.Errorf("exit %d, stderr %q", code, stderr)
+	}
 }

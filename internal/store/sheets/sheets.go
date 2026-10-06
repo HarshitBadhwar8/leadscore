@@ -67,13 +67,23 @@ type Services struct {
 	Storage *storage.Service
 }
 
+// ReadOnlyScopes are what a reader of the team's tabs needs (sheetsource).
+var ReadOnlyScopes = []string{sheetsapi.SpreadsheetsReadonlyScope}
+
 // Connect builds the clients from an adapter block (`store`, or a Sheet-tab
-// source's entry). With `base_url` set, every client points there and skips
-// authentication (tests and fakes). Otherwise `_http_client`, when set, is an
-// already-authenticated client (setup signs in as the person); else the store
-// signs in with `credentials` (a service-account key file) or, when that is
-// empty, Google's standard credential loading.
-func Connect(ctx context.Context, cfg api.Config) (*Services, error) {
+// source's entry), signing in with scopes (Scopes when none are given). With
+// `base_url` set, every client points there and skips authentication; only
+// tests set it, together with `_http_client` (RunWith adds both), so a
+// `base_url` without a client, as a file could carry, is refused: it would
+// send the team's data to whatever address the file names. Otherwise
+// `_http_client`, when set, is an already-authenticated client (setup signs
+// in as the person); else the store signs in with `credentials` (a
+// service-account key file) or, when that is empty, Google's standard
+// credential loading.
+func Connect(ctx context.Context, cfg api.Config, scopes ...string) (*Services, error) {
+	if len(scopes) == 0 {
+		scopes = Scopes
+	}
 	base, _ := cfg["base_url"].(string)
 	base = strings.TrimRight(base, "/")
 	client, _ := cfg["_http_client"].(*http.Client)
@@ -82,7 +92,7 @@ func Connect(ctx context.Context, cfg api.Config) (*Services, error) {
 	switch {
 	case base != "":
 		if client == nil {
-			client = http.DefaultClient
+			return nil, errors.New("`base_url` is for tests only and needs a test HTTP client; remove it from leadscore.yml")
 		}
 		common = append(common, option.WithHTTPClient(client))
 		endpoint = func(path string) []option.ClientOption {
@@ -94,7 +104,7 @@ func Connect(ctx context.Context, cfg api.Config) (*Services, error) {
 		if cred, _ := cfg["credentials"].(string); cred != "" {
 			common = append(common, option.WithAuthCredentialsFile(option.ServiceAccount, cred))
 		}
-		common = append(common, option.WithScopes(Scopes...))
+		common = append(common, option.WithScopes(scopes...))
 	}
 	sh, err := sheetsapi.NewService(ctx, append(common, endpoint("/")...)...)
 	if err != nil {
@@ -173,8 +183,7 @@ func renderOption(name string) string {
 func QuoteTab(name string) string { return "'" + strings.ReplaceAll(name, "'", "''") + "'" }
 
 // ReadTable returns every row of a tab, skipping blank rows; a missing tab
-// returns no rows and no error. Columns are the header cells up to the first
-// empty one.
+// returns no rows and no error. Columns are the named header cells.
 func (s *Store) ReadTable(ctx context.Context, name string) ([]api.Row, error) {
 	var vr *sheetsapi.ValueRange
 	err := retry(ctx, readTries, func() error {
@@ -203,26 +212,29 @@ func (s *Store) ReadTable(ctx context.Context, name string) ([]api.Row, error) {
 // staleness formula, not a column of the table.
 const healthFormulaColumn = 7
 
-// headerOf reads the header row: its cells up to the first empty one (for
-// Health, also stopping before the formula cell).
+// headerOf reads the header row by position: a column's name, or "" for a
+// column with no name (its cells are not part of the table). Trailing empty
+// cells are dropped; for Health the formula cell and anything after it too.
 func headerOf(name string, values [][]any) []string {
 	if len(values) == 0 {
 		return nil
 	}
 	var h []string
 	for i, v := range values[0] {
-		t := cellText(v)
-		if t == "" || (name == model.TableHealth && i >= healthFormulaColumn) {
+		if name == model.TableHealth && i >= healthFormulaColumn {
 			break
 		}
-		h = append(h, t)
+		h = append(h, cellText(v))
+	}
+	for len(h) > 0 && h[len(h)-1] == "" {
+		h = h[:len(h)-1]
 	}
 	return h
 }
 
 // dataRows turns the rows after the header into Rows by header, one per sheet
 // row; a blank row is nil, so positions are kept. When a header is written
-// twice, the first column's value is kept.
+// twice, the first column's value is kept; unnamed columns are skipped.
 func dataRows(header []string, values [][]any) []api.Row {
 	if len(values) <= 1 {
 		return nil
@@ -232,6 +244,9 @@ func dataRows(header []string, values [][]any) []api.Row {
 		r := make(api.Row, len(header))
 		blank := true
 		for j, h := range header {
+			if h == "" {
+				continue
+			}
 			if _, seen := r[h]; seen {
 				continue
 			}

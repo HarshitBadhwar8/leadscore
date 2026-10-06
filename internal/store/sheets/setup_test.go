@@ -25,7 +25,7 @@ var testAccounts = sheets.Accounts{Run: "run@p.iam.gserviceaccount.com", Receive
 func TestCreateTemplate(t *testing.T) {
 	f := newFakeGoogle(t)
 	now := time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC)
-	id, err := sheets.Create(t.Context(), mustConnect(t, f), "leadscore", false, testAccounts, now)
+	id, err := sheets.Create(t.Context(), mustConnect(t, f), sheets.Template{Title: "leadscore", Accounts: testAccounts, Now: now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,8 +57,20 @@ func TestCreateTemplate(t *testing.T) {
 			d, _ := model.Def(name)
 			width = int64(len(d.Columns))
 		}
-		if gp.ColumnCount != width || gp.FrozenRowCount != 1 || gp.RowCount != 2 {
-			t.Errorf("%s grid = %d x %d, %d frozen; want 2 x %d, 1 frozen", name, gp.RowCount, gp.ColumnCount, gp.FrozenRowCount, width)
+		rows := int64(2)
+		if name == "Leads" || name == "Companies" || name == "Overrides" {
+			rows = 1000 // room to type
+		}
+		if gp.ColumnCount != width || gp.FrozenRowCount != 1 || gp.RowCount != rows {
+			t.Errorf("%s grid = %d x %d, %d frozen; want %d x %d, 1 frozen", name, gp.RowCount, gp.ColumnCount, gp.FrozenRowCount, rows, width)
+		}
+		hidden := !slices.Contains([]string{"Ranked", "Health", "Leads", "Companies", "Overrides", "Outcomes", "Pushes", "Log"}, name)
+		if sh.Properties.Hidden != hidden {
+			t.Errorf("%s hidden = %v, want %v", name, sh.Properties.Hidden, hidden)
+		}
+		colored := slices.Contains([]string{"Ranked", "Health", "Leads", "Companies", "Overrides"}, name)
+		if (sh.Properties.TabColorStyle != nil) != colored {
+			t.Errorf("%s tab color = %+v", name, sh.Properties.TabColorStyle)
 		}
 		var editors []string
 		for _, pr := range sh.ProtectedRanges {
@@ -85,6 +97,21 @@ func TestCreateTemplate(t *testing.T) {
 	if got := f.Sheets.Cell(id, "Overrides", "A1") + f.Sheets.Cell(id, "Overrides", "D1"); got != "personnote" {
 		t.Errorf("Overrides header starts %q", got)
 	}
+	for _, c := range []struct{ tab, cell, want string }{
+		{"Overrides", "B1", "same_as"}, {"Overrides", "C1", "resubscribe"}, {"Companies", "A1", "acme.com"}, {"Health", "H1", "STALE"},
+	} {
+		if note := f.Sheets.Note(id, c.tab, c.cell); !strings.Contains(note, c.want) {
+			t.Errorf("%s!%s note = %q, want it to mention %q", c.tab, c.cell, note, c.want)
+		}
+	}
+	if rules := f.Sheets.ConditionalFormats(id, "Health"); len(rules) != 1 ||
+		rules[0].BooleanRule.Condition.Type != "TEXT_STARTS_WITH" || rules[0].BooleanRule.Condition.Values[0].UserEnteredValue != "STALE" ||
+		rules[0].Ranges[0].StartColumnIndex != 7 {
+		t.Errorf("Health conditional formats = %+v", rules)
+	}
+	if f.Sheets.WritersCanShare(id) {
+		t.Error("editors must not be able to re-share the spreadsheet")
+	}
 
 	// The first run loads it and saves into it.
 	s, err := sheets.Open(t.Context(), f.cfg(id))
@@ -108,13 +135,18 @@ func TestCreateTemplate(t *testing.T) {
 // The SQLite view holds only Ranked and Health, protected for its one account.
 func TestCreateView(t *testing.T) {
 	f := newFakeGoogle(t)
-	id, err := sheets.Create(t.Context(), mustConnect(t, f), "leadscore view", true, sheets.Accounts{Run: "one@p.iam.gserviceaccount.com"}, time.Now())
+	id, err := sheets.Create(t.Context(), mustConnect(t, f), sheets.Template{Title: "leadscore view", View: true,
+		Accounts: sheets.Accounts{Run: "one@p.iam.gserviceaccount.com"}, Now: time.Now(), ExportLanes: []string{"warm"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	book := f.Sheets.Spreadsheet(id)
-	if len(book.Sheets) != 2 || book.Sheets[0].Properties.Title != "Ranked" || book.Sheets[1].Properties.Title != "Health" {
-		t.Fatalf("view tabs = %v", book.Sheets)
+	var names []string
+	for _, sh := range book.Sheets {
+		names = append(names, sh.Properties.Title)
+	}
+	if !slices.Equal(names, []string{"Ranked", "Health", "Export warm"}) {
+		t.Fatalf("view tabs = %v", names)
 	}
 	for _, sh := range book.Sheets {
 		if len(sh.ProtectedRanges) != 1 || !slices.Equal(sh.ProtectedRanges[0].Editors.Users, []string{"one@p.iam.gserviceaccount.com"}) {
@@ -128,7 +160,7 @@ func TestCreateView(t *testing.T) {
 func TestShare(t *testing.T) {
 	f := newFakeGoogle(t)
 	svc := mustConnect(t, f)
-	id, err := sheets.Create(t.Context(), svc, "leadscore", false, testAccounts, time.Now())
+	id, err := sheets.Create(t.Context(), svc, sheets.Template{Title: "leadscore", Accounts: testAccounts, Now: time.Now()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +168,7 @@ func TestShare(t *testing.T) {
 		t.Fatal(err)
 	}
 	shared, err := sheets.SharedWith(t.Context(), svc, id)
-	if err != nil || !shared[testAccounts.Run] || !shared[testAccounts.Receiver] {
+	if err != nil || shared[testAccounts.Run] != "writer" || shared[testAccounts.Receiver] != "writer" {
 		t.Errorf("shared with %v, %v", shared, err)
 	}
 	for _, p := range f.Sheets.Permissions(id) {
@@ -162,11 +194,14 @@ func TestRepair(t *testing.T) {
 	_, err := svc.Sheets.Spreadsheets.BatchUpdate(id, &sheetsapi.BatchUpdateSpreadsheetRequest{Requests: []*sheetsapi.Request{
 		{UpdateSpreadsheetProperties: &sheetsapi.UpdateSpreadsheetPropertiesRequest{
 			Properties: &sheetsapi.SpreadsheetProperties{AutoRecalc: "ON_CHANGE", TimeZone: "Asia/Kolkata"}, Fields: "autoRecalc,timeZone"}},
+		// A warning-only range does not stop the run account's neighbours editing.
+		{AddProtectedRange: &sheetsapi.AddProtectedRangeRequest{ProtectedRange: &sheetsapi.ProtectedRange{
+			Range: &sheetsapi.GridRange{SheetId: tabNamed(t, f.Sheets.Spreadsheet(id), "People").Properties.SheetId}, WarningOnly: true}}},
 	}}).Do()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sheets.Repair(t.Context(), svc, id, false, testAccounts); err != nil {
+	if err := sheets.Repair(t.Context(), svc, id, testAccounts); err != nil {
 		t.Fatal(err)
 	}
 	book := f.Sheets.Spreadsheet(id)
@@ -176,8 +211,11 @@ func TestRepair(t *testing.T) {
 	if got := f.Sheets.Cell(id, "Health", "H1"); !strings.Contains(got, "LEFT(C2,10)") {
 		t.Errorf("Health!H1 after repair = %q", got)
 	}
-	if p := tabNamed(t, book, "People").ProtectedRanges; len(p) != 1 {
-		t.Errorf("People protection after repair = %+v", p)
+	if p := tabNamed(t, book, "People").ProtectedRanges; len(p) != 2 || p[1].WarningOnly {
+		t.Errorf("People protection after repair = %+v; a warning-only range must get a real one beside it", p)
+	}
+	if f.Sheets.WritersCanShare(id) {
+		t.Error("repair must stop editors re-sharing")
 	}
 	if rows, _ := s.ReadTable(t.Context(), "People"); len(rows) != 1 {
 		t.Errorf("repair changed rows: %v", rows)

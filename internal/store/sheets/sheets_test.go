@@ -266,8 +266,8 @@ func TestMonthlyEventTabs(t *testing.T) {
 	f := newFakeGoogle(t)
 	f.GCS.CreateBucket("lease")
 	oct := time.Date(2026, 10, 31, 23, 59, 0, 0, time.UTC)
-	id, err := sheets.Create(t.Context(), mustConnect(t, f), "leadscore", false,
-		sheets.Accounts{Run: "run@p.iam.gserviceaccount.com", Receiver: "recv@p.iam.gserviceaccount.com"}, oct)
+	id, err := sheets.Create(t.Context(), mustConnect(t, f), sheets.Template{Title: "leadscore",
+		Accounts: sheets.Accounts{Run: "run@p.iam.gserviceaccount.com", Receiver: "recv@p.iam.gserviceaccount.com"}, Now: oct})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -332,8 +332,8 @@ func mustConnect(t *testing.T, f *fakeGoogle) *sheets.Services {
 // tool tabs setup made: for the run account only. People-owned tabs are not.
 func TestNewToolTabCopiesProtection(t *testing.T) {
 	f := newFakeGoogle(t)
-	id, err := sheets.Create(t.Context(), mustConnect(t, f), "leadscore", false,
-		sheets.Accounts{Run: "run@p.iam.gserviceaccount.com", Receiver: "recv@p.iam.gserviceaccount.com"}, time.Now())
+	id, err := sheets.Create(t.Context(), mustConnect(t, f), sheets.Template{Title: "leadscore",
+		Accounts: sheets.Accounts{Run: "run@p.iam.gserviceaccount.com", Receiver: "recv@p.iam.gserviceaccount.com"}, Now: time.Now()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -393,5 +393,183 @@ func TestOpenNeedsSpreadsheet(t *testing.T) {
 	b, l, err := factory(f.cfg(f.Sheets.NewSpreadsheet("x")))
 	if err != nil || b == nil || l == nil {
 		t.Errorf("the sheets backend factory = %v, %v, %v", b, l, err)
+	}
+}
+
+// A person sorts Overrides between the store's check and its batchUpdate,
+// so the delete by position hits the wrong row (here, someone's
+// `unsubscribed` status). The store notices after the write, puts that row
+// back, and fails the commit; the next try deletes the intended row.
+func TestOverridesDeleteSurvivesASort(t *testing.T) {
+	f := newFakeGoogle(t)
+	s := openStore(t, f)
+	id := s.SpreadsheetID()
+	if err := f.Sheets.Put(id, model.TableOverrides, [][]any{
+		{"person", "action", "value", "note"},
+		{"a@x.example", "retry", "", "done"},
+		{"b@x.example", "status", "unsubscribed", "asked by email"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	f.Sheets.OnBatchUpdate(func() {
+		f.Sheets.OnBatchUpdate(nil)
+		f.Sheets.SwapRows(id, model.TableOverrides, 1, 2)
+	})
+	del := api.TableWrite{Table: model.TableOverrides, Op: api.OpDelete, Key: []string{"person", "action", "value", "note"},
+		Rows: []api.Row{{"person": "a@x.example", "action": "retry", "value": "", "note": "done"}}}
+	err := s.Commit(t.Context(), []api.TableWrite{del})
+	if err == nil || !strings.Contains(err.Error(), "put back") {
+		t.Fatalf("Commit = %v; want a failure that put the row back", err)
+	}
+	if got := overridesPeople(t, s); !slices.Equal(got, []string{"a@x.example", "b@x.example"}) {
+		t.Fatalf("Overrides after the race = %v; the unsubscribed row must be back", got)
+	}
+	// The next try deletes the intended row only.
+	commit(t, s, del)
+	if got := overridesPeople(t, s); !slices.Equal(got, []string{"b@x.example"}) {
+		t.Errorf("Overrides after the retry = %v", got)
+	}
+}
+
+// A row typed at the instant of the write is deleted in place of the
+// intended row: the store cannot know it, but the intended row is still
+// there, so the commit fails and says to check the tab.
+func TestOverridesDeleteInsertAtWrite(t *testing.T) {
+	f := newFakeGoogle(t)
+	s := openStore(t, f)
+	id := s.SpreadsheetID()
+	f.Sheets.Put(id, model.TableOverrides, [][]any{{"person", "action", "value", "note"}, {"a@x.example", "retry", "", ""}, {"b@x.example", "retry", "", ""}})
+	f.Sheets.OnBatchUpdate(func() {
+		f.Sheets.OnBatchUpdate(nil)
+		f.Sheets.InsertRow(id, model.TableOverrides, 1, []string{"c@x.example", "status", "blocked", ""})
+	})
+	err := s.Commit(t.Context(), []api.TableWrite{{Table: model.TableOverrides, Op: api.OpDelete,
+		Key: []string{"person", "action"}, Rows: []api.Row{{"person": "a@x.example", "action": "retry"}}}})
+	if err == nil || !strings.Contains(err.Error(), "check the tab") {
+		t.Errorf("Commit = %v", err)
+	}
+}
+
+// Overrides edited between the commit's read and its pre-send check: nothing
+// is written.
+func TestOverridesChangedBeforeSend(t *testing.T) {
+	f := newFakeGoogle(t)
+	s := openStore(t, f)
+	id := s.SpreadsheetID()
+	f.Sheets.Put(id, model.TableOverrides, [][]any{{"person", "action", "value", "note"}, {"a@x.example", "retry", "", ""}})
+	reads := 0
+	f.Sheets.OnValuesRead(func() {
+		if reads++; reads == 2 { // the pre-send check
+			f.Sheets.InsertRow(id, model.TableOverrides, 1, []string{"z@x.example", "status", "blocked", ""})
+		}
+	})
+	defer f.Sheets.OnValuesRead(nil)
+	before := f.Sheets.Calls("batchUpdate")
+	err := s.Commit(t.Context(), []api.TableWrite{{Table: model.TableOverrides, Op: api.OpDelete,
+		Key: []string{"person", "action"}, Rows: []api.Row{{"person": "a@x.example", "action": "retry"}}}})
+	if err == nil || f.Sheets.Calls("batchUpdate") != before {
+		t.Errorf("Commit = %v with %d batchUpdates; want a refusal with none", err, f.Sheets.Calls("batchUpdate")-before)
+	}
+	if got := overridesPeople(t, s); !slices.Equal(got, []string{"a@x.example", "z@x.example"}) {
+		t.Errorf("Overrides = %v", got)
+	}
+}
+
+func overridesPeople(t *testing.T, s *sheets.Store) []string {
+	t.Helper()
+	rows, err := s.ReadTable(t.Context(), model.TableOverrides)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, r := range rows {
+		out = append(out, r["person"])
+	}
+	slices.Sort(out)
+	return out
+}
+
+// Only the cells an upsert changes are written, so a team's formula in an
+// extra column of the row survives.
+func TestUpsertWritesOnlyChangedCells(t *testing.T) {
+	f := newFakeGoogle(t)
+	s := openStore(t, f)
+	commit(t, s, api.TableWrite{Table: model.TablePushes, Op: api.OpUpsert, Key: []string{"lead_id", "lane_id", "step"},
+		Rows: []api.Row{{"lead_id": "L1", "lane_id": "warm", "step": "contact", "state": "pending"}}})
+	id := s.SpreadsheetID()
+	sid := tabNamed(t, f.Sheets.Spreadsheet(id), model.TablePushes).Properties.SheetId
+	formula := `=LEN(A2)`
+	_, err := s.Services().Sheets.Spreadsheets.BatchUpdate(id, &sheetsapi.BatchUpdateSpreadsheetRequest{Requests: []*sheetsapi.Request{
+		{AppendDimension: &sheetsapi.AppendDimensionRequest{SheetId: sid, Dimension: "COLUMNS", Length: 1}},
+		{UpdateCells: &sheetsapi.UpdateCellsRequest{Start: &sheetsapi.GridCoordinate{SheetId: sid, RowIndex: 1, ColumnIndex: 13},
+			Rows:   []*sheetsapi.RowData{{Values: []*sheetsapi.CellData{{UserEnteredValue: &sheetsapi.ExtendedValue{FormulaValue: &formula}}}}},
+			Fields: "userEnteredValue"}},
+	}}).Do()
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit(t, s, api.TableWrite{Table: model.TablePushes, Op: api.OpUpsert, Key: []string{"lead_id", "lane_id", "step"},
+		Rows: []api.Row{{"lead_id": "L1", "lane_id": "warm", "step": "contact", "state": "done", "vendor_id": "v1"}}})
+	if !f.Sheets.IsFormula(id, model.TablePushes, "N2") {
+		t.Error("the team's formula in N2 was overwritten")
+	}
+	if got := f.Sheets.Cell(id, model.TablePushes, "F2"); got != "done" {
+		t.Errorf("state = %q", got)
+	}
+}
+
+// A key column a person deleted does not shift the other key columns' names:
+// a duplicate append is still caught.
+func TestDuplicateAppendWithAKeyColumnGone(t *testing.T) {
+	f := newFakeGoogle(t)
+	s := openStore(t, f)
+	commit(t, s, api.TableWrite{Table: model.TableAppliedRows, Op: api.OpAppend, Rows: []api.Row{{"row_id": "r1", "row_hash": "h"}}})
+	id := s.SpreadsheetID()
+	sid := tabNamed(t, f.Sheets.Spreadsheet(id), model.TableAppliedRows).Properties.SheetId
+	_, err := s.Services().Sheets.Spreadsheets.BatchUpdate(id, &sheetsapi.BatchUpdateSpreadsheetRequest{Requests: []*sheetsapi.Request{
+		{DeleteDimension: &sheetsapi.DeleteDimensionRequest{Range: &sheetsapi.DimensionRange{SheetId: sid, Dimension: "COLUMNS", StartIndex: 0, EndIndex: 1}}},
+	}}).Do()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = s.Commit(t.Context(), []api.TableWrite{{Table: model.TableAppliedRows, Op: api.OpAppend, Rows: []api.Row{{"row_id": "r1"}}}})
+	if err == nil {
+		t.Error("appending a key the table holds must fail, with source_id's column gone")
+	}
+}
+
+// A new column goes after the last used column, not into an unnamed column
+// that holds a person's stray data.
+func TestNewColumnAfterLastUsed(t *testing.T) {
+	f := newFakeGoogle(t)
+	s := openStore(t, f)
+	id := s.SpreadsheetID()
+	f.Sheets.Put(id, "Custom", [][]any{{"a", "b"}, {"1", "2", "", "stray"}})
+	commit(t, s, api.TableWrite{Table: "Custom", Op: api.OpAppend, Rows: []api.Row{{"a": "3", "new_col": "x"}}})
+	if got := f.Sheets.Cell(id, "Custom", "E1"); got != "new_col" {
+		t.Errorf("E1 = %q, want new_col", got)
+	}
+	if got := f.Sheets.Cell(id, "Custom", "C1") + f.Sheets.Cell(id, "Custom", "D2"); got != "stray" {
+		t.Errorf("C1 and D2 = %q; the unnamed column must be left alone", got)
+	}
+	rows, _ := s.ReadTable(t.Context(), "Custom")
+	if len(rows) != 2 || rows[1]["new_col"] != "x" {
+		t.Errorf("Custom = %v", rows)
+	}
+}
+
+// A value longer than a cell holds is refused before anything is sent,
+// naming the tab's row and column.
+func TestCellTooLong(t *testing.T) {
+	f := newFakeGoogle(t)
+	s := openStore(t, f)
+	before := f.Sheets.Calls("batchUpdate")
+	err := s.Commit(t.Context(), []api.TableWrite{{Table: model.TableLog, Op: api.OpAppend,
+		Rows: []api.Row{{"at": "x", "message": strings.Repeat("é", 50_001)}}}})
+	if err == nil || !strings.Contains(err.Error(), "Log") || !strings.Contains(err.Error(), "column message") {
+		t.Errorf("Commit = %v", err)
+	}
+	if f.Sheets.Calls("batchUpdate") != before {
+		t.Error("a too-long value was sent")
 	}
 }

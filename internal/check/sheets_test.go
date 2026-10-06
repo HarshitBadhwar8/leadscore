@@ -39,7 +39,7 @@ func newSheetsFixture(t *testing.T) *sheetsFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := sheets.Create(t.Context(), svc, "leadscore", false, hostedAccounts, time.Now())
+	id, err := sheets.Create(t.Context(), svc, sheets.Template{Title: "leadscore", Accounts: hostedAccounts, Now: time.Now()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,6 +81,12 @@ func TestSheetAccess(t *testing.T) {
 	ps := (sheetAccess{}).Run(ctx, Env{Config: f.cfg})
 	if got := keys(ps); len(got) != 1 || got[0] != "sheet-access:other@p.iam.gserviceaccount.com" {
 		t.Errorf("unshared receiver: %v", got)
+	}
+	// Shared, but only to read: not an editor.
+	f.cfg.Hosting.ReceiverAccount = "reader"
+	f.fs.AddPermission(f.id, "reader@p.iam.gserviceaccount.com", "reader")
+	if got := keys((sheetAccess{}).Run(ctx, Env{Config: f.cfg})); len(got) != 1 || got[0] != "sheet-access:reader@p.iam.gserviceaccount.com" {
+		t.Errorf("a reader receiver: %v", got)
 	}
 	// This account cannot open it at all.
 	f.fs.Deny(f.id, true)

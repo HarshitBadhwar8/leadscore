@@ -96,7 +96,7 @@ func (s *Source) Fetch(ctx context.Context, _ api.Cursor) ([]api.InputRow, []api
 		}
 		return nil, events, "", nil
 	}
-	return s.toRows(headers, records), nil, "", nil
+	return Rows(s.id, headers, records), nil, "", nil
 }
 
 // readFile reads at most maxFileBytes, and fails rather than truncating.
@@ -241,12 +241,12 @@ func blank(cells []string) bool {
 	return true
 }
 
-// toRows returns one InputRow per record. Every header gets a column, empty
-// when the row is short, so a ragged row and the same row padded with empty
-// cells hash alike in merge. Cells past the last header have no name and are
+// Rows returns one InputRow per record; the Sheet-tab source uses it too.
+// Every header gets a column, empty when the row is short, so a ragged row
+// and the same row padded with empty cells hash alike in merge. Cells past the last header have no name and are
 // dropped. When a header is written twice, the first column's value is kept.
 // All rows share one Headers slice, which callers must not change.
-func (s *Source) toRows(headers []string, records []record) []api.InputRow {
+func Rows(sourceID string, headers []string, records []EventRecord) []api.InputRow {
 	rows := make([]api.InputRow, 0, len(records))
 	for _, rec := range records {
 		cols := make(map[string]string, len(headers))
@@ -256,7 +256,7 @@ func (s *Source) toRows(headers []string, records []record) []api.InputRow {
 			}
 			cols[h] = cell(rec.Cells, i)
 		}
-		rows = append(rows, api.InputRow{SourceID: s.id, Headers: headers, Columns: cols})
+		rows = append(rows, api.InputRow{SourceID: sourceID, Headers: headers, Columns: cols})
 	}
 	return rows
 }

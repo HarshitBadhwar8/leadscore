@@ -83,7 +83,7 @@ func New(cfg api.Config) (api.Source, error) {
 		}
 		events = b
 	}
-	svc, err := sheets.Connect(context.Background(), cfg)
+	svc, err := sheets.Connect(context.Background(), cfg, sheets.ReadOnlyScopes...)
 	if err != nil {
 		return nil, fmt.Errorf("sheetsource %q: %w", id, err)
 	}
@@ -127,20 +127,7 @@ func (s *Source) Fetch(ctx context.Context, _ api.Cursor) ([]api.InputRow, []api
 			events = append(events, evs...)
 			continue
 		}
-		for _, rec := range records {
-			cols := make(map[string]string, len(headers))
-			for j, h := range headers {
-				if _, seen := cols[h]; seen {
-					continue
-				}
-				v := ""
-				if j < len(rec.Cells) {
-					v = rec.Cells[j]
-				}
-				cols[h] = v
-			}
-			rows = append(rows, api.InputRow{SourceID: s.id, Headers: headers, Columns: cols})
-		}
+		rows = append(rows, csv.Rows(s.id, headers, records)...)
 	}
 	return rows, events, "", nil
 }

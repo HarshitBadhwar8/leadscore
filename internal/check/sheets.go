@@ -84,9 +84,9 @@ func (sheetAccess) Run(ctx context.Context, env Env) []Problem {
 	}
 	var out []Problem
 	for _, a := range []string{acc.Run, acc.Receiver} {
-		if a != "" && !shared[strings.ToLower(a)] {
+		if a != "" && !sheets.CanEdit(shared[strings.ToLower(a)]) {
 			out = append(out, Problem{Key: "sheet-access:" + a,
-				Message: fmt.Sprintf("the spreadsheet %s is not shared with %s", t.id, a),
+				Message: fmt.Sprintf("the spreadsheet %s is not shared with %s as an editor", t.id, a),
 				Fix:     "leadscore setup sheet --repair, or " + fix})
 		}
 	}

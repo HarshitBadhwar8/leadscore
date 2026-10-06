@@ -11,6 +11,7 @@ import (
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/config"
+	"github.com/HarshitBadhwar8/leadscore/internal/rules"
 	"github.com/HarshitBadhwar8/leadscore/internal/store/sheets"
 )
 
@@ -50,6 +51,11 @@ func (b bearer) RoundTrip(r *http.Request) (*http.Response, error) {
 // setupNow is the clock that names the first Events tab.
 var setupNow = time.Now
 
+// testGoogleClient is the HTTP client tests give the Google clients when
+// leadscore.yml points `base_url` at a fake; nil outside tests, so a
+// `base_url` in a real file is refused (sheets.Connect).
+var testGoogleClient *http.Client
+
 // runSetupSheet is `leadscore setup sheet [--view] [--repair]` (contracts
 // section 9.1 step 6, and 9.2 for the view).
 func runSetupSheet(inv *invocation) int {
@@ -78,7 +84,11 @@ func runSetupSheet(inv *invocation) int {
 	for k, v := range c.Store.Block {
 		block[k] = v
 	}
-	if base, _ := block["base_url"].(string); base == "" {
+	if base, _ := block["base_url"].(string); base != "" {
+		if testGoogleClient != nil {
+			block["_http_client"] = testGoogleClient
+		}
+	} else {
 		client, err := personClient(ctx)
 		if err != nil {
 			return inv.fail(err)
@@ -94,14 +104,14 @@ func runSetupSheet(inv *invocation) int {
 		if id == "" {
 			return inv.fail(fmt.Errorf("store.%s is not set; run `leadscore setup sheet` first", key))
 		}
-		if err := sheets.Repair(ctx, svc, id, isView, acc); err != nil {
+		if err := sheets.Repair(ctx, svc, id, acc); err != nil {
 			return inv.fail(err)
 		}
 		if err := sheets.Share(ctx, svc, id, acc); err != nil {
 			return inv.fail(shareError(err))
 		}
 		fmt.Fprintf(inv.stdout, "repaired %s: hourly recalculation, UTC, tab protection, the Health formula, and sharing with %s\n",
-			sheetURL(id), strings.Join(accountList(acc), " and "))
+			sheetURL(id), strings.Join(acc.List(), " and "))
 		return exitOK
 	}
 
@@ -111,11 +121,14 @@ func runSetupSheet(inv *invocation) int {
 	if c.Bundle {
 		return inv.fail(fmt.Errorf("%s is a hosted bundle; run setup sheet against leadscore.yml, then `leadscore config push`", c.Path))
 	}
-	title := "leadscore"
+	tmpl := sheets.Template{Title: "leadscore", View: isView, Accounts: acc, Now: setupNow()}
 	if isView {
-		title = "leadscore view"
+		tmpl.Title = "leadscore view"
+		if tmpl.ExportLanes, err = exportLanes(c); err != nil {
+			return inv.fail(err)
+		}
 	}
-	newID, err := sheets.Create(ctx, svc, title, isView, acc, setupNow())
+	newID, err := sheets.Create(ctx, svc, tmpl)
 	if newID != "" {
 		// The spreadsheet exists, so record it even if a later step failed:
 		// --repair then finishes the job instead of a second spreadsheet.
@@ -134,7 +147,7 @@ func runSetupSheet(inv *invocation) int {
 	if err := sheets.Share(ctx, svc, newID, acc); err != nil {
 		return inv.fail(fmt.Errorf("%w; then run `leadscore setup sheet --repair`", shareError(err)))
 	}
-	fmt.Fprintf(inv.stdout, "shared it with %s\n", strings.Join(accountList(acc), " and "))
+	fmt.Fprintf(inv.stdout, "shared it with %s\n", strings.Join(acc.List(), " and "))
 	return exitOK
 }
 
@@ -145,12 +158,24 @@ func shareError(err error) error {
 		"to allow sharing this file with the service accounts (gserviceaccount.com)", err)
 }
 
-func accountList(a sheets.Accounts) []string {
-	out := []string{a.Run}
-	if a.Receiver != "" && a.Receiver != a.Run {
-		out = append(out, a.Receiver)
+// exportLanes reads the rubric's export lane ids, for the view's export tabs
+// (contracts section 9.2).
+func exportLanes(c *config.Config) ([]string, error) {
+	src, err := c.Rubric()
+	if err != nil {
+		return nil, err
 	}
-	return out
+	r, err := rules.Compile(src)
+	if err != nil {
+		return nil, fmt.Errorf("the view needs the rubric's export lanes, and the rubric does not compile: %w", err)
+	}
+	var out []string
+	for _, l := range r.Lanes() {
+		if l.Kind == "export" {
+			out = append(out, l.ID)
+		}
+	}
+	return out, nil
 }
 
 func sheetURL(id string) string { return "https://docs.google.com/spreadsheets/d/" + id }
