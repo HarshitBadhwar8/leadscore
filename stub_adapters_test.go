@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -238,10 +240,11 @@ func TestReExportsAreTheSameValues(t *testing.T) {
 	}
 }
 
-func TestRunNotBuiltYet(t *testing.T) {
-	_, err := leadscore.Run(context.Background(), leadscore.RunOptions{Stop: make(chan struct{})})
-	if err == nil {
-		t.Fatal("Run must report it is not built yet")
+func TestRunFailsWithoutConfig(t *testing.T) {
+	_, err := leadscore.Run(context.Background(), leadscore.RunOptions{
+		ConfigPath: filepath.Join(t.TempDir(), "missing.yml"), Stop: make(chan struct{})})
+	if err == nil || !strings.Contains(err.Error(), "reading config") {
+		t.Fatalf("a run with no leadscore.yml must fail loading it, got %v", err)
 	}
 }
 

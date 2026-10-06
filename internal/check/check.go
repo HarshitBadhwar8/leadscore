@@ -27,6 +27,10 @@ type Env struct {
 	Model  *model.Model // nil when doctor could not load the store
 	Store  api.Backend
 	Events api.EventLog
+	// Columns are the raw input headers the run fetched this time, so the
+	// rubric check counts a column every row leaves empty as loaded. Nil in
+	// doctor, which reads only the model.
+	Columns []string
 }
 
 // Problem is written to Health under Key as given, and cleared when a later run
