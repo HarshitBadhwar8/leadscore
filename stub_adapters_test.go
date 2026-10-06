@@ -1,0 +1,231 @@
+package leadscore_test
+
+// The S1 proof: a stub adapter of every kind compiles against the public API
+// and registers through it, exactly as an external adapter package would.
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/HarshitBadhwar8/leadscore"
+	"github.com/HarshitBadhwar8/leadscore/internal/api"
+	"github.com/HarshitBadhwar8/leadscore/sinktest"
+	"github.com/HarshitBadhwar8/leadscore/storetest"
+)
+
+type stubSource struct{}
+
+func (stubSource) ID() string { return "stub" }
+func (stubSource) Fetch(ctx context.Context, cursor leadscore.Cursor) ([]leadscore.InputRow, []leadscore.Event, leadscore.Cursor, error) {
+	return []leadscore.InputRow{{SourceID: "stub", Headers: []string{"Email"}, Columns: map[string]string{"Email": "x"}}},
+		nil, cursor, nil
+}
+
+type stubEnricher struct{}
+
+func (stubEnricher) Enrich(ctx context.Context, domains []string, budget int) ([]leadscore.CompanyFacts, error) {
+	return nil, leadscore.ErrRateLimited
+}
+
+type stubPoller struct{}
+
+func (stubPoller) Poll(ctx context.Context, since time.Time) ([]leadscore.Event, error) {
+	return nil, nil
+}
+
+type stubLookup struct{}
+
+func (stubLookup) Lookup(ctx context.Context, leads []leadscore.LeadRef) ([]leadscore.Event, map[leadscore.LeadID]error, error) {
+	return nil, map[leadscore.LeadID]error{}, nil
+}
+
+type stubSink struct{}
+
+func (stubSink) Steps(dest string) []string { return []string{"contact", "enroll"} }
+func (stubSink) Do(ctx context.Context, req leadscore.StepRequest) (string, error) {
+	return string(req.Key.LeadID) + "/" + req.Key.Step, nil
+}
+
+type stubDetector struct{}
+
+func (stubDetector) Name() string { return "stub" }
+func (stubDetector) Evaluate(s leadscore.Subject, events []leadscore.Event, now time.Time) (bool, []leadscore.EventID) {
+	return len(events) > 0, nil
+}
+
+type stubLease struct{}
+
+func (stubLease) Check(ctx context.Context) error   { return nil }
+func (stubLease) Release(ctx context.Context) error { return nil }
+
+type stubBackend struct{}
+
+func (stubBackend) ReadTable(ctx context.Context, name string) ([]leadscore.Row, error) {
+	return nil, nil
+}
+func (stubBackend) Lease(ctx context.Context, owner string, ttl time.Duration) (leadscore.RunLease, error) {
+	return stubLease{}, nil
+}
+func (stubBackend) Commit(ctx context.Context, writes []leadscore.TableWrite) error {
+	for _, w := range writes {
+		if (w.Op == leadscore.OpUpsert || w.Op == leadscore.OpDelete) && len(w.Key) == 0 {
+			return fmt.Errorf("%s: no key", w.Table)
+		}
+	}
+	return nil
+}
+func (stubBackend) LeaseInfo(ctx context.Context) (string, time.Time, error) {
+	return "", time.Time{}, nil
+}
+
+type stubEventLog struct{}
+
+func (stubEventLog) AppendEvents(ctx context.Context, events []leadscore.RawEvent) error { return nil }
+func (stubEventLog) ReadEvents(ctx context.Context, cursor leadscore.Cursor) ([]leadscore.RawEvent, leadscore.Cursor, error) {
+	return nil, cursor, nil
+}
+func (stubEventLog) DeleteProcessed(ctx context.Context, committed leadscore.Cursor, olderThan time.Time) (leadscore.Cursor, error) {
+	return committed, nil
+}
+
+// Compile-time proof that each stub satisfies its interface.
+var (
+	_ leadscore.Source         = stubSource{}
+	_ leadscore.Enricher       = stubEnricher{}
+	_ leadscore.Poller         = stubPoller{}
+	_ leadscore.Lookup         = stubLookup{}
+	_ leadscore.Sink           = stubSink{}
+	_ leadscore.Detector       = stubDetector{}
+	_ leadscore.RunLease       = stubLease{}
+	_ leadscore.Backend        = stubBackend{}
+	_ leadscore.LeaseInspector = stubBackend{}
+	_ leadscore.EventLog       = stubEventLog{}
+)
+
+func init() {
+	leadscore.RegisterSource("stub", func(leadscore.Config) (leadscore.Source, error) { return stubSource{}, nil })
+	leadscore.RegisterEnricher("stub", func(leadscore.Config) (leadscore.Enricher, error) { return stubEnricher{}, nil })
+	leadscore.RegisterPoller("stub", func(leadscore.Config) (leadscore.Poller, error) { return stubPoller{}, nil })
+	leadscore.RegisterLookup("stub", func(leadscore.Config) (leadscore.Lookup, error) { return stubLookup{}, nil })
+	leadscore.RegisterSink("stub", func(leadscore.Config) (leadscore.Sink, error) { return stubSink{}, nil })
+	leadscore.RegisterDetector("stub", func(params leadscore.Config) (leadscore.Detector, error) { return stubDetector{}, nil })
+	leadscore.RegisterBackend("stub", func(leadscore.Config) (leadscore.Backend, leadscore.EventLog, error) {
+		return stubBackend{}, stubEventLog{}, nil
+	})
+}
+
+func TestStubAdaptersRegister(t *testing.T) {
+	cfg := leadscore.Config{"type": "stub"}
+	if f, ok := api.SourceFactory("stub"); !ok {
+		t.Error("source not registered")
+	} else if s, err := f(cfg); err != nil || s.ID() != "stub" {
+		t.Errorf("source factory = %v, %v", s, err)
+	}
+	if f, ok := api.EnricherFactory("stub"); !ok {
+		t.Error("enricher not registered")
+	} else if e, _ := f(cfg); e == nil {
+		t.Error("enricher factory returned nil")
+	} else if _, err := e.Enrich(context.Background(), []string{"a.example"}, 1); !errors.Is(err, leadscore.ErrRateLimited) {
+		t.Errorf("Enrich err = %v", err)
+	}
+	if _, ok := api.PollerFactory("stub"); !ok {
+		t.Error("poller not registered")
+	}
+	if _, ok := api.LookupFactory("stub"); !ok {
+		t.Error("lookup not registered")
+	}
+	if f, ok := api.SinkFactory("stub"); !ok {
+		t.Error("sink not registered")
+	} else if s, _ := f(cfg); s == nil {
+		t.Error("sink factory returned nil")
+	} else {
+		id, err := s.Do(context.Background(), leadscore.StepRequest{
+			Key: leadscore.StepKey{LeadID: "L1", LaneID: "warm", Step: "contact"}, Dest: "sequence/x"})
+		if err != nil || id != "L1/contact" {
+			t.Errorf("Do = %q, %v", id, err)
+		}
+	}
+	if _, ok := api.DetectorFactory("stub"); !ok {
+		t.Error("detector not registered")
+	}
+	if f, ok := api.BackendFactory("stub"); !ok {
+		t.Error("backend not registered")
+	} else {
+		b, log, err := f(cfg)
+		if err != nil || b == nil || log == nil {
+			t.Fatalf("backend factory = %v, %v, %v", b, log, err)
+		}
+		if _, ok := b.(leadscore.LeaseInspector); !ok {
+			t.Error("the optional LeaseInspector must be found by type assertion")
+		}
+		err = b.Commit(context.Background(), []leadscore.TableWrite{
+			{Table: "People", Op: leadscore.OpUpsert, Rows: []leadscore.Row{{"lead_id": "L1"}}},
+		})
+		if err == nil {
+			t.Error("stub Commit must refuse an OpUpsert with no Key")
+		}
+		if b.Commit(context.Background(), []leadscore.TableWrite{
+			{Table: "Log", Op: leadscore.OpTrim, Column: "at", Before: time.Now()},
+		}) != nil {
+			t.Error("OpTrim write refused")
+		}
+	}
+}
+
+func TestRegisterTwicePanicsThroughTheRoot(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("registering the same type twice must panic")
+		}
+	}()
+	leadscore.RegisterSink("stub", func(leadscore.Config) (leadscore.Sink, error) { return stubSink{}, nil })
+}
+
+// The root names are the internal ones, so errors.Is and type identity hold across the two.
+func TestReExportsAreTheSameValues(t *testing.T) {
+	pairs := []struct{ root, internal error }{
+		{leadscore.ErrRateLimited, api.ErrRateLimited},
+		{leadscore.ErrTransient, api.ErrTransient},
+		{leadscore.ErrRefused, api.ErrRefused},
+		{leadscore.ErrTooLarge, api.ErrTooLarge},
+		{leadscore.ErrLeaseHeld, api.ErrLeaseHeld},
+		{leadscore.ErrLeaseLost, api.ErrLeaseLost},
+		{leadscore.ErrEventsShrank, api.ErrEventsShrank},
+	}
+	for _, p := range pairs {
+		if !errors.Is(fmt.Errorf("wrapped: %w", p.root), p.internal) {
+			t.Errorf("%v is not the internal error", p.root)
+		}
+	}
+	var b api.Backend = stubBackend{}
+	var _ leadscore.Backend = b // identical types: no conversion needed
+	if leadscore.OpTrim != api.OpTrim || leadscore.OpReplace != 0 {
+		t.Error("WriteOp constants differ from the contract order")
+	}
+}
+
+func TestRunNotBuiltYet(t *testing.T) {
+	_, err := leadscore.Run(context.Background(), leadscore.RunOptions{Stop: make(chan struct{})})
+	if err == nil {
+		t.Fatal("Run must report it is not built yet")
+	}
+}
+
+func TestConformanceSuitesAreDeclared(t *testing.T) {
+	t.Run("storetest", func(t *testing.T) {
+		storetest.Run(t, func(t *testing.T) (leadscore.Backend, leadscore.EventLog) {
+			return stubBackend{}, stubEventLog{}
+		})
+	})
+	t.Run("sinktest", func(t *testing.T) {
+		sinktest.Run(t, sinktest.Harness{
+			New:   func(leadscore.Config) (leadscore.Sink, error) { return stubSink{}, nil },
+			Dests: []string{"sequence/x"},
+		})
+	})
+	_ = []sinktest.FailKind{sinktest.RateLimited, sinktest.Transient, sinktest.Refused, sinktest.Other}
+	_ = storetest.Schema
+}
