@@ -6,7 +6,7 @@
 
 ## 1. Public Go API
 
-The public surface is the root package `leadscore`. To avoid an import cycle with the engine, the types, errors, registry and the built-in alias table are defined in `internal/api` and re-exported from the root as type aliases and thin function wrappers; godoc shows them on the root package. Built-in adapters register in their `init` functions; a custom build imports its own adapter package and calls `leadscore.Main()` (RFC section 6.2). The module path during development is `github.com/HarshitBadhwar8/leadscore`; S19 rewrites it to `github.com/tetriz-ai/leadscore`.
+The public surface is the root package `leadscore`. To avoid an import cycle with the engine, the types, errors and registry are defined in `internal/api` and re-exported from the root as type aliases and thin function wrappers, each with a doc comment repeating its contract. The built-in alias table and the header squash function (section 2) also live in `internal/api` but stay internal: they are not part of the public surface. Built-in adapters register in their `init` functions; a custom build imports its own adapter package and calls `leadscore.Main()` (RFC section 6.2). The module path during development is `github.com/HarshitBadhwar8/leadscore`; S19 rewrites it to `github.com/tetriz-ai/leadscore`.
 
 ```go
 package leadscore
@@ -241,7 +241,7 @@ type EventLog interface {
 
 type Config = map[string]any // an adapter's block from leadscore.yml (which block: section 3)
 
-// Registering the same type twice panics.
+// Each Register* panics on an empty type, a nil factory, or a type already registered.
 func RegisterSource(typ string, f func(Config) (Source, error))
 func RegisterEnricher(typ string, f func(Config) (Enricher, error))
 func RegisterPoller(typ string, f func(Config) (Poller, error))
@@ -475,7 +475,7 @@ Every tool table is created with exactly these columns, in this order (`storetes
 
 **Company fact origins**, highest first: `companies_tab`, `enrichment`, `input`. `facts` holds the winner. A source never replaces a fact from a higher origin. A refresh with an unchanged value leaves `facts.<f>` and `previous.<f>` alone (only `enriched_at` moves); a changed value moves the old entry to `previous` and sets `at` to the fetch time.
 
-**`Health` rows.** Results: `last_result` (`healthy` or `unhealthy`), `last_run_at`, `last_success_at`, `run_id`, `rubric_version`, `schedule`. Problems: key `<kind>:<id>`, exactly as the check or hook gives it, for example `push_failed:<lead>:<lane>:<step>`, `namesake:<lead>`, `status_conflict:<lead>`, `override_unmatched:<row>`, `receiver_only_push:<lead>`, `silent:<kind>`, `skipped_runs`, `ledger_shrank`, `view_write_failed`. Each run rewrites the problem rows: it keeps `first_seen_at` for a problem still open and deletes resolved ones. On Sheets, cell `H1` of the `Health` tab (outside the table, the one exception to exact width) holds the staleness formula, rewritten each run: `=IF(NOW()-DATEVALUE(LEFT(<last_success_at cell>,10))-TIMEVALUE(MID(<last_success_at cell>,12,8))>3*<schedule in days>,"STALE: no successful run in 3 intervals","ok")`.
+**`Health` rows.** Results: `last_result` (`healthy` or `unhealthy`), `last_run_at`, `last_success_at`, `run_id`, `rubric_version`, `schedule`. Problems: key `<kind>:<id>`, exactly as the check or hook gives it, for example `push_failed:<lead>:<lane>:<step>`, `namesake:<lead>`, `secret_missing:<variable>`, `status_conflict:<lead>`, `override_unmatched:<row>`, `receiver_only_push:<lead>`, `silent:<kind>`, `skipped_runs`, `ledger_shrank`, `view_write_failed`. Each run rewrites the problem rows: it keeps `first_seen_at` for a problem still open and deletes resolved ones. On Sheets, cell `H1` of the `Health` tab (outside the table, the one exception to exact width) holds the staleness formula, rewritten each run: `=IF(NOW()-DATEVALUE(LEFT(<last_success_at cell>,10))-TIMEVALUE(MID(<last_success_at cell>,12,8))>3*<schedule in days>,"STALE: no successful run in 3 intervals","ok")`.
 
 **`State` keys.** `schema_version` (`major.minor`), `config_version`, `cursor:<source id>`, `cursor:events`, `last_poll_at`, `first_run_at`, `last_received:<kind>` (received time of the newest event of each kind), `enrich_count:<YYYY-MM-DD>` (UTC), `ledger_rows` (the highest committed ledger row count; never lowered by a run), `key_conflicts` (running count), `opened_by` (the hostname of the `serve` process that last opened a SQLite file), and on SQLite `lease_owner` and `lease_expires_at`. The `store` check (SQLite) fails when the current process is not in a container (no `/.dockerenv`) while `opened_by` names one.
 
