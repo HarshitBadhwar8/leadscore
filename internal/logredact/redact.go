@@ -1,0 +1,148 @@
+// Package logredact masks emails, secrets and home-directory paths in log text,
+// and summarises vendor error bodies without echoing the personal data a vendor
+// sends back. Every stdout and Cloud Logging line passes through it, so logs
+// carry ids, never emails.
+//
+// Copied from Workloom core's backend/pkg/logredact (Redact and
+// VendorErrorDetail only; RedactStruct needs protobuf and is not copied).
+package logredact
+
+import (
+	"regexp"
+	"sort"
+	"strings"
+)
+
+// redactedPlaceholder is the replacement string written wherever a value is
+// fully masked (token regex match, malformed email/path, etc.).
+const redactedPlaceholder = "[REDACTED]"
+
+// tokenPatterns match well-known secret formats anywhere inside a string.
+// Each match is replaced wholesale with redactedPlaceholder.
+var tokenPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)Bearer\s+\S+`),
+	regexp.MustCompile(`ya29\.\S+`),
+	regexp.MustCompile(`gho_\S+`),
+	regexp.MustCompile(`ghp_\S+`),
+	regexp.MustCompile(`ghs_\S+`),
+	regexp.MustCompile(`sk-\S+`),
+	regexp.MustCompile(`xoxb-\S+`),
+	regexp.MustCompile(`xoxp-\S+`),
+	regexp.MustCompile(`xoxa-\S+`),
+	regexp.MustCompile(`eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`), // JWT
+}
+
+var emailRegex = regexp.MustCompile(`[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}`)
+
+// pathUsernameRegex masks "/Users/<name>/" or "/home/<name>/" → "~/", for any
+// single segment after /Users or /home, since the username is not known here.
+var pathUsernameRegex = regexp.MustCompile(`/(Users|home)/[^/]+/`)
+
+// Redact returns s with all known token patterns, emails, and home-dir paths
+// replaced. Used for free-form fields like log messages and event names.
+func Redact(s string) string {
+	for _, p := range tokenPatterns {
+		s = p.ReplaceAllString(s, redactedPlaceholder)
+	}
+	s = emailRegex.ReplaceAllStringFunc(s, maskEmail)
+	s = pathUsernameRegex.ReplaceAllString(s, "~/")
+	return s
+}
+
+func maskEmail(email string) string {
+	at := strings.IndexByte(email, '@')
+	if at <= 0 || at == len(email)-1 {
+		return redactedPlaceholder
+	}
+	local := email[:at]
+	domain := email[at+1:]
+	dot := strings.IndexByte(domain, '.')
+	if dot < 0 {
+		return redactedPlaceholder
+	}
+	domainName := domain[:dot]
+	rest := domain[dot:]
+	if local == "" || domainName == "" {
+		return redactedPlaceholder
+	}
+	return string(local[0]) + "***@" + string(domainName[0]) + "***" + rest
+}
+
+// vendorDiagnosticKeys are response-body fields whose values are machine-issued
+// identifiers rather than prose: safe to carry into an error or a log line. The
+// list is deliberately short. Anything absent from it — including a vendor's
+// human-readable message — is dropped, because a validation message routinely
+// quotes the value that failed validation, and that value is our own submitted
+// payload.
+var vendorDiagnosticKeys = map[string]struct{}{
+	"category":       {},
+	"code":           {},
+	"correlationId":  {},
+	"correlation_id": {},
+	"errorType":      {},
+	"error_code":     {},
+	"requestId":      {},
+	"status":         {},
+}
+
+// maxVendorDiagnosticValue bounds a value admitted as an identifier. A machine id
+// is short and has no spaces; anything longer or containing whitespace is prose
+// wearing an allowlisted key, and is dropped.
+const maxVendorDiagnosticValue = 64
+
+// VendorErrorDetail summarises an external API's error body for an error message
+// or a log line, admitting ONLY machine-issued identifiers.
+//
+// This is an allowlist, not a redaction pass, and that is the point: Redact masks
+// what it recognises (emails, tokens, home paths) and cannot mask what it does
+// not — a name, a job title, a company, a URL. A vendor rejecting a contact or a
+// deal echoes exactly those fields back, so passing its body through Redact
+// leaves most of a person's identity intact. Naming what may leave is the only
+// version of this that holds when the vendor changes its error shape.
+//
+// It scans for the allowlisted keys rather than parsing the body. Parsing would
+// buy nothing here — nesting and types are irrelevant to a fixed set of scalar
+// fields — while a scan cannot fail, so there is no parse outcome to interpret
+// and no branch where a malformed body could fall through to its own raw text.
+//
+// Returns "" when no admitted key is present. The caller should pair it with the
+// HTTP status, which is always safe.
+func VendorErrorDetail(body []byte) string {
+	s := string(body)
+	var kept []string
+	for _, key := range sortedVendorDiagnosticKeys() {
+		m := vendorDiagnosticPattern(key).FindStringSubmatch(s)
+		if m == nil {
+			continue
+		}
+		v := m[1]
+		// Re-validated after matching, not trusted because the key was allowlisted:
+		// a machine id is short and has no whitespace, so prose wearing an
+		// allowlisted key is dropped here.
+		if v == "" || len(v) > maxVendorDiagnosticValue || strings.ContainsAny(v, " \t\n\r") {
+			continue
+		}
+		kept = append(kept, key+"="+v)
+	}
+	// Redact over the allowlist's own output: two independent layers, so an
+	// email-shaped value that ever reached an allowlisted key is still masked.
+	// The allowlist is the control; this is the seatbelt on it.
+	return Redact(strings.Join(kept, " "))
+}
+
+func sortedVendorDiagnosticKeys() []string {
+	keys := make([]string, 0, len(vendorDiagnosticKeys))
+	for k := range vendorDiagnosticKeys {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// vendorDiagnosticPattern matches one allowlisted key's string value. Case
+// -insensitive on the key because vendors differ (correlationId, correlation_id),
+// and the value class is deliberately narrow: no escapes, no quotes, so a value
+// containing either simply does not match and is dropped rather than half-read.
+func vendorDiagnosticPattern(key string) *regexp.Regexp {
+	return regexp.MustCompile(`(?i)"` + regexp.QuoteMeta(key) + `"\s*:\s*"([^"\\]*)"`)
+}
