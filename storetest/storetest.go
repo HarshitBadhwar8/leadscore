@@ -1,11 +1,15 @@
 // Package storetest is the conformance suite a plug-in store runs against
 // itself (contracts section 1). S4 fills Schema and Run.
+//
+// The signatures use internal/api's names, which are the same types as
+// leadscore.Backend and leadscore.EventLog (the root aliases them), so this
+// package never imports the root.
 package storetest
 
 import (
 	"testing"
 
-	"github.com/HarshitBadhwar8/leadscore"
+	"github.com/HarshitBadhwar8/leadscore/internal/api"
 )
 
 type Table struct {
@@ -24,6 +28,9 @@ var Schema []Table // every section 4 tool table, in section 4 order
 // one winner (also on an expired lease), release by a non-owner refused, OpTrim,
 // DeleteProcessed dropping a partition, and ErrEventsShrank (a cursor saved from
 // one store read against a fresh store).
-func Run(t *testing.T, open func(t *testing.T) (leadscore.Backend, leadscore.EventLog)) {
+//
+// Call it from an external test package (package sqlite_test, not package
+// sqlite), so a store inside this module can be tested without an import cycle.
+func Run(t *testing.T, open func(t *testing.T) (api.Backend, api.EventLog)) {
 	t.Skip("built in S4")
 }

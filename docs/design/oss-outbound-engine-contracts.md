@@ -785,6 +785,10 @@ Not public API: these live under `internal/` and may change between releases. Th
 | `adapters/apollo` | S8 owns `client.go` (key, base URL, 30-second timeout, the two call modes) and registration; S9 adds the body parsers, `PolledReplyKey` and `RequiredPaths`; S12 adds sinks, the `Lookup` and the `Poller` | |
 | `adapters/hubspot`, `adapters/csv`, `adapters/sheetsource` | S11, S7, S5 | |
 
+**Import rule.** Inside the module, only `cmd/` and `_test.go` files import the root package; `internal/*`, `adapters/*`, `storetest` and `sinktest` use `internal/api`, whose names the root aliases (so `api.Backend` is `leadscore.Backend`). A root import from anywhere else becomes an import cycle once the root reaches that package; a test in the root package enforces the rule. Code blocks in section 12 therefore write `api.X`.
+
+**Conformance tests** call `storetest.Run` and `sinktest.Run` from an external test package (`package sqlite_test`, `package apollo_test`), never from inside the package under test.
+
 ### 12.2 The in-memory model (S4)
 
 One Go struct per section 4 table, with typed fields for known columns and an `Extra map[string]string` for unknown ones. Keyed tables are held in maps by primary key (key type `[]string` in section 4 key order); keyless tables (`Overrides`, `Log`) are ordered slices. Two indexes: identities by key, and people by company domain.
@@ -811,8 +815,8 @@ type Check interface {
 type Env struct {
     Config *config.Config
     Model  *model.Model // nil when doctor could not load the store
-    Store  leadscore.Backend
-    Events leadscore.EventLog
+    Store  api.Backend
+    Events api.EventLog
 }
 type Problem struct{ Key, Message, Fix string; Warning bool } // Key in the section 4 form <kind>:<id>
 func Register(c Check)
@@ -838,13 +842,13 @@ type Run struct {
     Config       *config.Config
     Rubric       *rules.Rubric
     Model        *model.Model
-    Store        leadscore.Backend
-    Events       leadscore.EventLog
-    Lease        leadscore.RunLease
+    Store        api.Backend
+    Events       api.EventLog
+    Lease        api.RunLease
     DryRun       bool
     Now          func() time.Time
     HTTPClient   *http.Client
-    SourceEvents []leadscore.Event // step 3 source events, set by S10a before Intake
+    SourceEvents []api.Event // step 3 source events, set by S10a before Intake
     NoPush       string            // non-empty: score and save, but push nothing (the reason)
     Problem      func(key, message, fix string, warning bool) // raise an open problem this run
 }
@@ -853,20 +857,20 @@ type Hooks struct {
     Enrich    func(*Run) error                       // step 4 (S8); skipped on dry-run
     Fold      func(*Run) error                       // step 5; default sets every lead to new (S10b)
     Detect    func(*Run) (rules.DetectorResults, error) // step 6, before Evaluate (S9)
-    PrePush   func(*Run, []leadscore.LeadID) error   // step 8 (S10b)
+    PrePush   func(*Run, []api.LeadID) error   // step 8 (S10b)
     Push      func(*Run) error                       // step 9 (S10b)
-    ReRead    func(*Run) (changed []leadscore.LeadID, err error) // before each pushing batch (S15)
+    ReRead    func(*Run) (changed []api.LeadID, err error) // before each pushing batch (S15)
     Export    func(*Run) error                       // after Push, before phase 2, every run (S13)
     AfterSave func(*Run) error                       // after phase 2 committed: CSV rewrite (S13), view (S16)
 }
 func DefaultHooks() Hooks // the production set; each hook slice sets its field here in its own PR
 
 // Owned by S10b, used by S13:
-func Blocked(r *Run, id leadscore.LeadID) (blocked bool, reason string) // blocked on every lane
-func MatchesLane(r *Run, id leadscore.LeadID, laneID string) bool
+func Blocked(r *Run, id api.LeadID) (blocked bool, reason string) // blocked on every lane
+func MatchesLane(r *Run, id api.LeadID, laneID string) bool
 // RunWith is the test entry point: it adds base_url and _http_client to every
 // vendor and store block (section 3) and uses the given clock.
-func RunWith(ctx context.Context, opts leadscore.RunOptions, hooks Hooks, now func() time.Time, client *http.Client) (leadscore.RunResult, error)
+func RunWith(ctx context.Context, opts api.RunOptions, hooks Hooks, now func() time.Time, client *http.Client) (api.RunResult, error)
 ```
 
 - **Wiring.** `leadscore.Run`, `leadscore run`, the `serve` timer and the e2e suite all use `DefaultHooks()`. `leadscore run` closes `Stop` from its own SIGTERM handler; `serve` closes it at shutdown.
