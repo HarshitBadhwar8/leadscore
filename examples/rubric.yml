@@ -1,0 +1,128 @@
+# Example rubric for a made-up company, Dockyard, which sells warehouse
+# scheduling software to mid-size logistics firms in Europe. Copy it and change
+# it to describe your own ideal customer. The format is in the contracts doc,
+# section 2 (docs/design/oss-outbound-engine-contracts.md).
+#
+# Check your edits with:  leadscore rules check rubric.yml
+version: 1
+
+# Columns in your lead sheet. Any column already works as text under its
+# squashed header (lowercase letters and digits: "Job Title" is "jobtitle");
+# declare a column here to give it a type, a nicer name, or more spellings.
+fields:
+  warehouse_software: { type: text, aliases: ["Warehouse software", "WMS"] }
+  fleet_size: { type: number, aliases: ["Fleet size", "Trucks"] }
+  industry: { type: text }
+
+# Lists the rules below refer to as $name.
+settings:
+  funding_order: [pre_seed, seed, series_a, series_b, series_c, series_d_plus]
+  legacy_tools: [spreadsheets, excel, paper, whiteboard]
+  target_industries: [freight forwarding, cold chain, food distribution]
+  home_countries: [Germany, Netherlands, Austria, Switzerland]
+
+# Facts about a company, worked out from all of its leads.
+company:
+  legacy_tool_seen: { any: { field: warehouse_software, in: $legacy_tools } }  # anyone still on spreadsheets or paper
+  largest_fleet: { max: fleet_size }
+  ops_contacts: { count: { field: title, contains: operations } }
+  industry: { first: industry }                                               # the first lead's answer wins
+
+# Signals from website visits (the receiver, or an events sheet).
+detectors:
+  pricing_visits: { kind: count_in_window, event: visit_pricing, window: 14d, min: 2, subject: company }
+  demo_visit: { kind: first_seen, event: visit_demo, within: 7d }
+
+# Labels, worked out top to bottom. In each block the first rule that matches wins.
+derive:
+  fit_signal:                    # does this company look like a Dockyard customer?
+    level: company
+    rules:
+    - when: { field: company.legacy_tool_seen, eq: true }
+      then: yes
+    - when: { field: company.industry, in: $target_industries }
+      then: yes
+    # no else: any other company has no fit signal
+  tier:
+    level: company
+    rules:
+    - when: { field: company.employees, missing: true }
+      then: null                 # headcount unknown: wait for enrichment rather than guess
+    - when: { any: [ { field: company.employees, lt: 50 }, { field: company.employees, gt: 5000 } ] }
+      then: 4                    # too small or too big for us
+    - when: { all: [ { field: fit_signal, eq: yes }, { field: company.largest_fleet, gte: 20 } ] }
+      then: 1
+    - when: { field: fit_signal, eq: yes }
+      then: 2
+    - when: { detector: pricing_visits }
+      then: 2
+    - else: 3
+  priority:
+    level: company
+    rules:
+    - when: { all: [ { field: tier, eq: 1 }, { field: company.region, in: $home_countries } ] }
+      then: A
+    - when: { field: tier, lte: 2 }
+      then: B
+    - else: C
+  hot:                           # a lead-level label: this person looked at the demo page this week
+    - when: { detector: demo_visit }
+      then: true
+    - else: false
+
+# Leads whose sources disagree on these columns are held back until someone checks.
+conflicts:
+  - { field: industry }
+
+# Points for ranking. The account half is about the company; the contact half about the person.
+score:
+  account:
+    - { when: { field: tier, eq: 1 }, points: 40 }
+    - { when: { field: tier, eq: 2 }, points: 25 }
+    - { when: { field: tier, eq: 3 }, points: 10 }
+    - { when: { field: company.region, in: $home_countries }, points: 10 }
+    - { band: company.leads_seen, points: { 2: 5, 3: 10 } }   # 2 people seen: 5; 3 or more: 10
+    - { when: { field: company.ops_contacts, gte: 2 }, points: 5 }
+  contact:
+    - when: { any: [ { field: title, contains: head }, { field: title, contains: director }, { field: title, contains: vp } ] }
+      points: 15
+    - { when: { field: hot, eq: true }, points: 20 }
+    - { when: { field: warm_path, present: true }, points: 10 }
+    - { band: sources_seen, points: { 2: 10 } }
+
+limits: { max_pushes_per_run: 50, max_pushes_per_day: 100, timezone: Europe/Berlin }
+
+# Where leads go. Each lead goes to its highest-priority matching cold lane, once
+# ever. Cold lanes require receiver_only to be false, so a lead known only from
+# a webhook (which anyone holding the receiver secret could forge) is never
+# cold-contacted.
+lanes:
+  - id: demo-followup
+    name: Demo follow-up
+    kind: non-cold
+    priority: 30
+    when: { field: status, eq: replied_positive }
+    push: hubspot:deals
+  - id: hot-visitors
+    name: Hot visitors
+    kind: cold
+    priority: 25
+    when: { all: [ { field: hot, eq: true }, { field: receiver_only, eq: false } ] }
+    push: apollo:sequence/Demo visitors
+  - id: fleet-ops
+    name: Fleet ops intro
+    kind: cold
+    priority: 20
+    when:
+      all:
+        - { field: tier, lte: 2 }
+        - { field: fit_signal, eq: yes }
+        - { field: priority, in: [A, B] }
+        - { field: receiver_only, eq: false }
+    push: apollo:sequence/Fleet ops intro
+  - id: nurture
+    name: Nurture list
+    kind: export
+    priority: 1
+    when: { field: tier, lte: 3 }
+    push: export:nurture
