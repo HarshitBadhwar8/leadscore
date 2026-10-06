@@ -14,13 +14,13 @@ func TestRulesCheck(t *testing.T) {
 	if err := os.WriteFile(good, []byte("version: 1\nlanes: []\nderive:\n  segment:\n    - else: x\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(bad, []byte("version: 1\nlanes:\n  - { id: a, kind: warm, push: export:x }\nlimits: { timezone: Nowhere }\n"), 0o600); err != nil {
+	if err := os.WriteFile(bad, []byte("version: 1\nlanes:\n  - { id: a, kind: warm, push: export:x, when: { field: status, eq: new } }\nlimits: { timezone: Nowhere }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	code, stdout, stderr := run("rules", "check", good)
 	if code != exitOK || stderr != "" || !strings.Contains(stdout, good+": ok (version r-") ||
-		!strings.Contains(stdout, "warning: line 4: derive.segment shadows the input field segment") {
+		!strings.Contains(stdout, ":4: warning: derive.segment: shadows the input field segment from here on") {
 		t.Errorf("good: exit %d, stdout %q, stderr %q", code, stdout, stderr)
 	}
 

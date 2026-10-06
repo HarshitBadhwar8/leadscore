@@ -3,6 +3,7 @@ package rules
 import (
 	"errors"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -135,6 +136,52 @@ func TestLoadErrors(t *testing.T) {
 		{"export on a cold lane", "version: 1\nlanes:\n  - { id: a, kind: cold, push: export:x }\n", 3, "lanes[0].push", "only export lanes"},
 		{"export lane to a vendor", "version: 1\nlanes:\n  - { id: a, kind: export, push: hubspot:contacts }\n", 3, "lanes[0].push", "only export lanes"},
 		{"lane unknown key", "version: 1\nlanes:\n  - { id: a, kind: export, push: export:x, sink: x }\n", 3, "lanes[0].sink", "unknown key"},
+		// Review additions.
+		{"alias node", "version: 1\nlanes: []\nsettings:\n  a: &x [1]\n  b: *x\n", 5, "settings.b", "YAML aliases (*x) are not allowed"},
+		{"duplicate key", "version: 1\nlanes: []\nlimits: { timezone: UTC }\nlimits: { timezone: UTC }\n", 4, "limits", "limits appears twice"},
+		{"duplicate nested key", rubric("derive:\n  x:\n    - { when: { field: title, present: true }, when: { field: email, present: true }, then: 1 }\n"), 5, "derive.x[0].when", "when appears twice"},
+		{"aliases not a list", rubric("fields:\n  x: { aliases: Tool }\n"), 4, "fields.x.aliases", "aliases is a list"},
+		{"empty alias", rubric("fields:\n  x: { aliases: [\"--\"] }\n"), 4, "fields.x.aliases[0]", "at least one letter or digit"},
+		{"declared status", rubric("fields:\n  status: { type: text }\n"), 4, "fields.status", "cannot be declared"},
+		{"change without field", rubric("detectors:\n  d: { kind: change, within: 7d }\n"), 4, "detectors.d", "change needs field"},
+		{"change without within", rubric("detectors:\n  d: { kind: change, field: region }\n"), 4, "detectors.d", "change needs within"},
+		{"change on a rollup", rubric("company:\n  r: { count: { field: title, present: true } }\ndetectors:\n  d: { kind: change, field: company.r, within: 7d }\n"), 6, "detectors.d.field", "worked out each run"},
+		{"change on leads_seen", rubric("detectors:\n  d: { kind: change, field: leads_seen, within: 7d }\n"), 4, "detectors.d.field", "worked out each run"},
+		{"change within over 90 days", rubric("detectors:\n  d: { kind: change, field: region, within: 91d }\n"), 4, "detectors.d.within", "longer than 90 days"},
+		{"params not a mapping", rubric("detectors:\n  d: { kind: my_kind, params: [1] }\n"), 4, "detectors.d.params", "params is a mapping"},
+		{"zero duration", rubric("detectors:\n  d: { kind: first_seen, event: e, within: 0d }\n"), 4, "detectors.d.within", "longer than zero"},
+		{"star inside an event", rubric("detectors:\n  d: { kind: first_seen, event: \"visit_*_page\", within: 1d }\n"), 4, "detectors.d.event", "* may only end an event kind"},
+		{"rollup max on a company field", rubric("company:\n  r: { max: company.employees }\n"), 4, "company.r.max", "reads a lead field"},
+		{"rollup first on status", rubric("company:\n  r: { first: status }\n"), 4, "company.r.first", "reads a lead field"},
+		{"rollup and company block share a name", rubric("company:\n  t: { count: { field: title, present: true } }\nderive:\n  t: { level: company, rules: [ { else: 1 } ] }\n"), 4, "company.t", "also a company-level derived name"},
+		{"then a list", rubric("derive:\n  x:\n    - { when: { field: title, present: true }, then: [1] }\n"), 5, "derive.x[0]", "single value or null"},
+		{"derived Ranked column", rubric("derive:\n  score:\n    - else: 1\n"), 4, "derive.score", "fixed column of the Ranked table"},
+		{"derived email", rubric("derive:\n  email:\n    - else: x\n"), 4, "derive.email", "fixed column of the Ranked table"},
+		{"conflicts on status", rubric("conflicts:\n  - { field: status }\n"), 4, "conflicts[0].field", "names an input field"},
+		{"conflicts on a rollup", rubric("company:\n  r: { count: { field: title, present: true } }\nconflicts:\n  - { field: company.r }\n"), 6, "conflicts[0].field", "names an input field"},
+		{"conflicts not a list", rubric("conflicts: { field: segment }\n"), 3, "conflicts", "conflicts is a list"},
+		{"band with empty points", rubric("score:\n  contact:\n    - { band: sources_seen, points: {} }\n"), 5, "score.contact[0].points", "map thresholds to points"},
+		{"band repeated threshold", rubric("score:\n  contact:\n    - { band: sources_seen, points: { 2: 1, 2.0: 3 } }\n"), 5, "score.contact[0].points.2.0", "threshold 2 appears twice"},
+		{"points without when or band", rubric("score:\n  contact:\n    - { points: 3 }\n"), 5, "score.contact[0]", "needs when (or band)"},
+		{"score half not a list", rubric("score:\n  contact: { points: 3 }\n"), 4, "score.contact", "contact is a list of rules"},
+		{"in not a list", rubric("derive:\n  x:\n    - { when: { field: title, in: cto }, then: 1 }\n"), 5, "derive.x[0].when.in", "needs a list, or a $setting"},
+		{"in a mapping", rubric("derive:\n  x:\n    - { when: { field: title, in: { a: 1 } }, then: 1 }\n"), 5, "derive.x[0].when.in", "needs a list, not a mapping"},
+		{"eq null", rubric("derive:\n  x:\n    - { when: { field: title, eq: null }, then: 1 }\n"), 5, "derive.x[0].when.eq", "a value is required"},
+		{"empty field", rubric("derive:\n  x:\n    - { when: { field: \"\", eq: a }, then: 1 }\n"), 5, "derive.x[0].when.field", "field needs a field name"},
+		{"empty detector", rubric("derive:\n  x:\n    - { when: { detector: \"\" }, then: 1 }\n"), 5, "derive.x[0].when.detector", "needs a detector name"},
+		{"empty expr", rubric("derive:\n  x:\n    - { when: { expr: \" \" }, then: 1 }\n"), 5, "derive.x[0].when.expr", "needs a CEL expression"},
+		{"detector as a field", rubric("detectors:\n  d: { kind: first_seen, event: e, within: 1d }\nderive:\n  x:\n    - { when: { field: detector.d, eq: true }, then: 1 }\n"), 7, "derive.x[0].when.field", "unknown field"},
+		{"header spelling of another field", rubric("derive:\n  x:\n    - { when: { field: jobtitle, present: true }, then: 1 }\n"), 5, "derive.x[0].when.field", "jobtitle is a header spelling of title; write title"},
+		{"company header spelling", rubric("derive:\n  x:\n    - { when: { field: company.headcount, gt: 1 }, then: 1 }\n"), 5, "derive.x[0].when.field", "write company.employees"},
+		{"rubric alias as a field", rubric("fields:\n  uses_tool: { aliases: [Tool] }\nderive:\n  x:\n    - { when: { field: tool, present: true }, then: 1 }\n"), 7, "derive.x[0].when.field", "write uses_tool"},
+		{"raw expr header spelling", rubric("derive:\n  x:\n    - { when: { expr: \"has(lead.jobtitle)\" }, then: 1 }\n"), 5, "derive.x[0].when.expr", "write title"},
+		{"too costly", rubric("derive:\n  x:\n    - when: { expr: \"settings.l.all(a, settings.l.all(b, settings.l.all(c, a != b)))\" }\n      then: 1\n"), 5, "derive.x[0].when", "could cost too much"},
+		{"too costly literal", rubric("derive:\n  x:\n    - when: { expr: \"" + nestedAll(6) + "\" }\n      then: 1\n"), 5, "derive.x[0].when", "could cost too much"},
+		{"limits Local", rubric("limits: { timezone: Local }\n"), 3, "limits.timezone", "unknown timezone"},
+		{"lanes not a list", "version: 1\nlanes: { id: a }\n", 2, "lanes", "lanes is a list"},
+		{"lane without when", "version: 1\nlanes:\n  - { id: a, kind: export, push: export:x }\n", 3, "lanes[0]", "every lane needs when"},
+		{"lane ids differ only in case", "version: 1\nlanes:\n  - { id: Warm, kind: export, when: { field: status, eq: new }, push: export:x }\n  - { id: warm, kind: export, when: { field: status, eq: new }, push: export:y }\n", 4, "lanes[1].id", "used twice (ignoring case)"},
+		{"lane id starts with a hyphen", "version: 1\nlanes:\n  - { id: -a, kind: export, when: { field: status, eq: new }, push: export:x }\n", 3, "lanes[0].id", "letters, digits"},
 		{"lane when error", "version: 1\nlanes:\n  - { id: a, kind: export, push: export:x, when: { field: tier, lte: 2 } }\n", 3, "lanes[0].when.lte", "tier is text"},
 	}
 	for _, tt := range tests {
@@ -219,10 +266,10 @@ func TestLanes(t *testing.T) {
 	r := mustCompile(t, `version: 1
 lanes:
   - { id: q, kind: cold, priority: 10, when: { field: receiver_only, eq: false }, push: "apollo:sequence/Fleet ops: intro" }
-  - { id: c, name: Contacts, kind: non-cold, push: hubspot:contacts }
-  - { id: d, kind: non-cold, push: hubspot:deals }
-  - { id: x, kind: export, push: export:ranked-list }
-  - { id: p, kind: cold, push: mysink:anything/here }
+  - { id: c, name: Contacts, kind: non-cold, when: { field: status, eq: replied_positive }, push: hubspot:contacts }
+  - { id: d, kind: non-cold, when: { field: status, eq: replied_positive }, push: hubspot:deals }
+  - { id: x, kind: export, when: { field: sources_seen, gte: 1 }, push: export:ranked-list }
+  - { id: p, kind: cold, when: { field: receiver_only, eq: false }, push: mysink:anything/here }
 `)
 	got := r.Lanes()
 	if len(got) != 5 {
@@ -232,7 +279,7 @@ lanes:
 		l.Dest != "sequence/Fleet ops: intro" || l.When != "receiver_only = false" {
 		t.Errorf("lane q: %+v", l)
 	}
-	if got[1].Name != "Contacts" || got[1].When != "" {
+	if got[1].Name != "Contacts" || got[1].When != "status = replied_positive" {
 		t.Errorf("lane c: %+v", got[1])
 	}
 	if got[4].Sink != "mysink" || got[4].Dest != "anything/here" {
@@ -258,7 +305,7 @@ func TestVersion(t *testing.T) {
 
 func TestWarnings(t *testing.T) {
 	r := mustCompile(t, rubric("derive:\n  segment:\n    - else: x\n"))
-	if w := r.Warnings(); len(w) != 1 || !strings.Contains(w[0], "derive.segment shadows the input field segment") {
+	if w := r.Warnings(); len(w) != 1 || w[0].Line != 4 || !strings.Contains(w[0].Msg, "shadows the input field segment") {
 		t.Errorf("warnings: %v", w)
 	}
 }
@@ -286,4 +333,14 @@ lanes:
 			t.Errorf("lane %d: %q, want %q", i, l.When, want[i])
 		}
 	}
+}
+
+// nestedAll is depth nested .all() calls over a ten-item list: 10^depth steps.
+func nestedAll(depth int) string {
+	l := "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]"
+	e := "true"
+	for i := 0; i < depth; i++ {
+		e = l + ".all(v" + strconv.Itoa(i) + ", " + e + ")"
+	}
+	return e
 }

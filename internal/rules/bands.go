@@ -4,10 +4,8 @@ package rules
 // not exact counts: a fourth source or colleague adds nothing rather than
 // falling off a cliff to zero, which an exact-match lookup would do. ok is
 // false when no threshold is at or below value (no points).
-//
-// Copied from core's relevance/score.go (accountCorroborationPoints and
-// corroborationPoints, which share this lookup), with float thresholds and an
-// ok flag in place of the -1 sentinel, since a rubric threshold may be negative.
+// A rubric threshold may be negative, so "none matched" is the ok flag, not a
+// sentinel threshold.
 func bandPoints(points map[float64]float64, value float64) (threshold, pts float64, ok bool) {
 	for th, p := range points {
 		if th <= value && (!ok || th > threshold) {

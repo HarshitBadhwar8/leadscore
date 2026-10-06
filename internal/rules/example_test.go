@@ -107,11 +107,11 @@ func TestExampleICP(t *testing.T) {
 	in, ids := exampleInput(t, r)
 	in.Detectors.Leads = map[api.LeadID]map[string]bool{ids["ines.ruiz@solmar.example"]: {"demo_visit": true}}
 
-	verdicts, blocked, warnings := r.Evaluate(in)
-	if len(blocked) != 0 || len(warnings) != 0 {
-		t.Fatalf("blocked %v, warnings %v", blocked, warnings)
+	res := r.Evaluate(in)
+	verdicts, lanes := res.Verdicts, res.Lanes
+	if len(res.Blocked) != 0 || len(res.Warnings) != 0 {
+		t.Fatalf("blocked %v, warnings %v", res.Blocked, res.Warnings)
 	}
-	lanes := r.MatchLanes(in)
 	type want struct {
 		fit, tier, priority any
 		hot                 bool
@@ -135,6 +135,22 @@ func TestExampleICP(t *testing.T) {
 			t.Errorf("%s: got %+v, want %+v\n%s", email, got, w, r.Explain(v))
 		}
 	}
+	// A lead known only from webhooks never matches a cold lane, even when it
+	// otherwise would (RFC 7): Anna again, with a demo visit, from the receiver.
+	anna := ids["anna.weber@kranlogistik.example"]
+	in.Detectors.Leads[anna] = map[string]bool{"demo_visit": true}
+	if got := r.Evaluate(in).Lanes[anna]; !reflect.DeepEqual(got, []string{"hot-visitors", "fleet-ops", "nurture"}) {
+		t.Fatalf("as a sheet lead Anna matches both cold lanes: %v", got)
+	}
+	for i := range in.Leads {
+		if in.Leads[i].ID == anna {
+			in.Leads[i].ReceiverOnly = true
+		}
+	}
+	if got := r.Evaluate(in).Lanes[anna]; !reflect.DeepEqual(got, []string{"nurture"}) {
+		t.Errorf("a receiver-only lead matched %v; cold lanes must require receiver_only false", got)
+	}
+
 	explained := r.Explain(verdicts[ids["anna.weber@kranlogistik.example"]])
 	for _, line := range []string{
 		"tier: 1",

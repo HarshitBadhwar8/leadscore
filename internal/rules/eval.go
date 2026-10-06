@@ -1,7 +1,10 @@
 package rules
 
 import (
+	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -9,43 +12,48 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 )
 
+// Result is one evaluation's output.
+type Result struct {
+	Verdicts map[api.LeadID]api.Verdict
+	// Blocked names leads whose sources disagree on a `conflicts` field, with
+	// the reason; they still get a verdict.
+	Blocked map[api.LeadID]string
+	// Lanes holds the ids of the lanes whose `when` holds for each lead,
+	// highest priority first (file order on a tie). The built-in lane checks,
+	// the ledger and limits are the engine's (S10b), not applied here.
+	Lanes map[api.LeadID][]string
+	// Warnings (a value that does not parse as its declared type, a raw
+	// expression that fails) are given once per run each, for the engine to
+	// write to Log. They name fields and rules, never a lead's values.
+	Warnings []string
+}
+
 // Evaluate runs the rubric over every lead in Input (RFC 6.4, "Evaluation per
 // run"): company rollups and company derive blocks once per company, then each
-// lead's derive blocks, then the account and contact halves of its score.
-// blocked names leads whose sources disagree on a `conflicts` field, with the
-// reason; they still get a verdict. Warnings (a value that does not parse as
-// its declared type, a raw expression that fails) are given once per run each,
-// for the engine to write to Log.
-func (r *Rubric) Evaluate(in Input) (verdicts map[api.LeadID]api.Verdict, blocked map[api.LeadID]string, warnings []string) {
-	res := r.run(in, false)
-	return res.verdicts, res.blocked, res.w.list
+// lead's derive blocks, both halves of its score, and its lanes.
+func (r *Rubric) Evaluate(in Input) Result {
+	res, _ := r.EvaluateContext(context.Background(), in)
+	return res
 }
 
-// MatchLanes evaluates every lane's `when` for every lead in Input, after
-// derive and score, and returns the ids of the lanes each lead matches,
-// highest priority first (file order on a tie). It does not apply the built-in
-// lane checks, the ledger or limits: those are the engine's (S10b). It runs
-// the whole evaluation again, so call it with the same Input as Evaluate.
-func (r *Rubric) MatchLanes(in Input) map[api.LeadID][]string {
-	return r.run(in, true).lanes
+// EvaluateContext is Evaluate stopped by ctx: a cancelled ctx interrupts the
+// condition running and returns ctx's error with no result.
+func (r *Rubric) EvaluateContext(ctx context.Context, in Input) (Result, error) {
+	res := r.run(&evalRun{ctx: ctx, seen: map[string]bool{}}, in)
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	return res, nil
 }
 
-type result struct {
-	verdicts map[api.LeadID]api.Verdict
-	blocked  map[api.LeadID]string
-	lanes    map[api.LeadID][]string
-	w        *warner
-	// companies holds each company's values (facts, rollups, company blocks).
-	companies map[string]map[string]any
-}
-
-// warner keeps each warning once.
-type warner struct {
+// evalRun is one evaluation's context and its warnings, each kept once.
+type evalRun struct {
+	ctx  context.Context
 	seen map[string]bool
 	list []string
 }
 
-func (w *warner) add(key, format string, args ...any) {
+func (w *evalRun) add(key, format string, args ...any) {
 	if w.seen[key] {
 		return
 	}
@@ -62,15 +70,11 @@ type companyState struct {
 	acctWhy []string
 }
 
-func (r *Rubric) run(in Input, withLanes bool) result {
-	res := result{
-		verdicts:  map[api.LeadID]api.Verdict{},
-		blocked:   map[api.LeadID]string{},
-		w:         &warner{seen: map[string]bool{}},
-		companies: map[string]map[string]any{},
-	}
-	if withLanes {
-		res.lanes = map[api.LeadID][]string{}
+func (r *Rubric) run(w *evalRun, in Input) Result {
+	res := Result{
+		Verdicts: map[api.LeadID]api.Verdict{},
+		Blocked:  map[api.LeadID]string{},
+		Lanes:    map[api.LeadID][]string{},
 	}
 
 	// Lead input values, and leads grouped by company oldest first (rollups'
@@ -79,7 +83,7 @@ func (r *Rubric) run(in Input, withLanes bool) result {
 	byDomain := map[string][]int{}
 	for i := range in.Leads {
 		l := &in.Leads[i]
-		leadVals[i] = r.leadValues(l, res.w)
+		leadVals[i] = r.leadValues(l, w)
 		if l.Domain != "" {
 			byDomain[l.Domain] = append(byDomain[l.Domain], i)
 		}
@@ -103,25 +107,24 @@ func (r *Rubric) run(in Input, withLanes bool) result {
 	sort.Strings(domains)
 	for _, domain := range domains {
 		cs := &companyState{
-			values:  r.companyValues(domain, in, res.w),
+			values:  r.companyValues(domain, in, w),
 			det:     r.detectorMap(in.Detectors.Companies[domain], nil),
 			reasons: map[string]string{},
 		}
-		facts := copyMap(cs.values)
+		facts := maps.Clone(cs.values)
 		for _, ro := range r.rollups {
-			if v, ok := r.rollupValue(ro, byDomain[domain], in, leadVals, facts, res.w); ok {
+			if v, ok := r.rollupValue(ro, byDomain[domain], in, leadVals, facts, w); ok {
 				cs.values[ro.name] = v
 			}
 		}
 		act := map[string]any{"company": cs.values, "detector": cs.det, "settings": r.settings}
 		for _, d := range r.derive {
 			if d.company {
-				cs.reasons[d.name] = r.deriveInto(d, act, cs.values, res.w)
+				cs.reasons[d.name] = r.deriveInto(d, act, cs.values, w)
 			}
 		}
-		cs.account, cs.acctWhy = r.scoreHalf(r.account, "account", act, res.w)
+		cs.account, cs.acctWhy = r.scoreHalf(r.account, "account", act, w)
 		companies[domain] = cs
-		res.companies[domain] = cs.values
 	}
 
 	// Leads: lead derive blocks, contact half, conflicts, lanes.
@@ -151,7 +154,7 @@ func (r *Rubric) run(in Input, withLanes bool) result {
 				v.Reasons = append(v.Reasons, cs.reasons[d.name])
 				continue
 			}
-			v.Reasons = append(v.Reasons, r.deriveInto(d, act, lv, res.w))
+			v.Reasons = append(v.Reasons, r.deriveInto(d, act, lv, w))
 			v.Values[d.name] = lv[d.name]
 		}
 		if cs == nil {
@@ -161,31 +164,30 @@ func (r *Rubric) run(in Input, withLanes bool) result {
 			v.Reasons = append(v.Reasons, cs.acctWhy...)
 		}
 		var why []string
-		v.ContactScore, why = r.scoreHalf(r.contact, "contact", act, res.w)
+		v.ContactScore, why = r.scoreHalf(r.contact, "contact", act, w)
 		v.Reasons = append(v.Reasons, why...)
-		res.verdicts[l.ID] = v
+		res.Verdicts[l.ID] = v
 
 		var disagree []string
 		for _, f := range r.conflicts {
-			if contains(l.ConflictFields, f) {
+			if slices.Contains(l.ConflictFields, f) {
 				disagree = append(disagree, f)
 			}
 		}
 		if len(disagree) > 0 {
-			res.blocked[l.ID] = "sources disagree on " + strings.Join(disagree, ", ")
+			res.Blocked[l.ID] = "sources disagree on " + strings.Join(disagree, ", ")
 		}
 
-		if withLanes {
-			res.lanes[l.ID] = r.matchLanes(act, res.w)
-		}
+		res.Lanes[l.ID] = r.matchLanes(act, w)
 	}
+	res.Warnings = w.list
 	return res
 }
 
 // leadValues builds the `lead` map: the built-in lead fields from LeadRef, and
 // every merged field typed per `fields`. A value that does not parse is absent,
 // with a warning once per field.
-func (r *Rubric) leadValues(l *api.LeadRef, w *warner) map[string]any {
+func (r *Rubric) leadValues(l *api.LeadRef, w *evalRun) map[string]any {
 	m := map[string]any{}
 	for name, raw := range l.Fields {
 		if strings.HasPrefix(name, "company.") {
@@ -194,9 +196,6 @@ func (r *Rubric) leadValues(l *api.LeadRef, w *warner) map[string]any {
 		t := ftype{kind: kText}
 		if f, ok := r.leadFields[name]; ok {
 			t = f.typ
-		}
-		if d := r.derivedLead(name); d != nil {
-			w.add("shadow:"+name, "derive.%s shadows the input column %s", name, name)
 		}
 		r.put(m, name, t, raw, w)
 	}
@@ -218,23 +217,17 @@ func (r *Rubric) leadValues(l *api.LeadRef, w *warner) map[string]any {
 	return m
 }
 
-func (r *Rubric) derivedLead(name string) *deriveBlock {
-	for _, d := range r.derive {
-		if d.name == name && !d.company {
-			return d
-		}
-	}
-	return nil
-}
-
 // companyValues builds a company's facts: the built-in facts from
 // CompanyFacts, leads_seen, and every Extra fact typed per `fields`.
-func (r *Rubric) companyValues(domain string, in Input, w *warner) map[string]any {
+func (r *Rubric) companyValues(domain string, in Input, w *evalRun) map[string]any {
 	m := map[string]any{"domain": domain}
 	f, ok := in.Companies[domain]
 	if ok {
-		for name, raw := range f.Extra {
-			name = strings.TrimPrefix(name, "company.")
+		for key, raw := range f.Extra {
+			name, exact := strings.CutPrefix(key, "company.")
+			if _, both := f.Extra["company."+name]; !exact && both {
+				continue // an exact company.<name> key wins over <name>
+			}
 			t := ftype{kind: kText}
 			if def, ok := r.companyFields[name]; ok {
 				if def.builtin {
@@ -260,10 +253,10 @@ func (r *Rubric) companyValues(domain string, in Input, w *warner) map[string]an
 }
 
 // put stores raw as type t, warning once per field when it does not parse.
-func (r *Rubric) put(m map[string]any, name string, t ftype, raw string, w *warner) {
+func (r *Rubric) put(m map[string]any, name string, t ftype, raw string, w *evalRun) {
 	v, ok, bad := parseValue(t, raw)
 	if bad {
-		w.add("parse:"+name, "field %s: %q is not a %s, so it is treated as missing (first seen this run; later ones are not reported)", name, raw, t)
+		w.add("parse:"+name, "field %s: a value is not a %s, so it is treated as missing (reported once per run)", name, t)
 	}
 	if ok {
 		m[name] = v
@@ -284,7 +277,7 @@ func (r *Rubric) detectorMap(company, lead map[string]bool) map[string]bool {
 	return m
 }
 
-func (r *Rubric) rollupValue(ro *rollup, idx []int, in Input, leadVals []map[string]any, facts map[string]any, w *warner) (any, bool) {
+func (r *Rubric) rollupValue(ro *rollup, idx []int, in Input, leadVals []map[string]any, facts map[string]any, w *evalRun) (any, bool) {
 	var count float64
 	var best any
 	for _, i := range idx {
@@ -339,7 +332,7 @@ func less(a, b any) bool {
 // deriveInto runs one derive block: the first matching rule wins; `then: null`,
 // or no rule matching and no else, is "no value" (the key is removed, so a
 // shadowed input column does not show through). It returns the reason.
-func (r *Rubric) deriveInto(d *deriveBlock, act map[string]any, into map[string]any, w *warner) string {
+func (r *Rubric) deriveInto(d *deriveBlock, act map[string]any, into map[string]any, w *evalRun) string {
 	for i, rule := range d.rules {
 		if rule.when != nil && !rule.when.eval(act, w) {
 			continue
@@ -360,7 +353,7 @@ func (r *Rubric) deriveInto(d *deriveBlock, act map[string]any, into map[string]
 }
 
 // scoreHalf sums one half's rules and says why each point was added.
-func (r *Rubric) scoreHalf(rules []*scoreRule, half string, act map[string]any, w *warner) (float64, []string) {
+func (r *Rubric) scoreHalf(rules []*scoreRule, half string, act map[string]any, w *evalRun) (float64, []string) {
 	var total float64
 	var why []string
 	for _, rule := range rules {
@@ -389,7 +382,7 @@ func (r *Rubric) scoreHalf(rules []*scoreRule, half string, act map[string]any, 
 	return total, why
 }
 
-func (r *Rubric) matchLanes(act map[string]any, w *warner) []string {
+func (r *Rubric) matchLanes(act map[string]any, w *evalRun) []string {
 	type hit struct {
 		id       string
 		priority int
@@ -410,24 +403,34 @@ func (r *Rubric) matchLanes(act map[string]any, w *warner) []string {
 
 // eval runs a condition. A failure (only a raw expression can fail, for
 // example on a key a lead lacks) counts as false, with a warning once.
-func (c *condition) eval(act map[string]any, w *warner) bool {
-	out, _, err := c.prg.Eval(act)
+func (c *condition) eval(act map[string]any, w *evalRun) bool {
+	out, _, err := c.prg.ContextEval(w.ctx, act)
 	if err != nil {
-		w.add("eval:"+c.expr, "condition %q failed (%v), so it counts as false; use has() to test for a missing value", c.text, err)
+		if w.ctx.Err() != nil {
+			return false // cancelled; EvaluateContext returns the error
+		}
+		w.add("eval:"+c.expr, "condition %q failed (%s), so it counts as false", c.text, errorCategory(err))
 		return false
 	}
 	b, ok := out.Value().(bool)
 	if !ok {
-		w.add("eval:"+c.expr, "condition %q gave %v, not true or false, so it counts as false", c.text, out.Value())
+		w.add("eval:"+c.expr, "condition %q gave a %s, not true or false, so it counts as false", c.text, out.Type().TypeName())
 		return false
 	}
 	return b
 }
 
-func copyMap(m map[string]any) map[string]any {
-	out := make(map[string]any, len(m))
-	for k, v := range m {
-		out[k] = v
+// errorCategory names a CEL evaluation error without its text, which can
+// quote a lead's values.
+func errorCategory(err error) string {
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "no such key"):
+		return "it reads a value the lead does not have; test it with has() first"
+	case strings.Contains(msg, "cost limit"):
+		return "it ran over the cost limit"
+	case strings.Contains(msg, "no such overload"), strings.Contains(msg, "no matching overload"):
+		return "a value has the wrong type for the operation"
 	}
-	return out
+	return "an evaluation error"
 }

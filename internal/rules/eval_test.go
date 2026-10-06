@@ -2,6 +2,7 @@ package rules
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -20,7 +21,7 @@ func lead(id, domain string, n int, fields map[string]string) api.LeadRef {
 // values evaluates and returns each lead's derived values.
 func values(t *testing.T, r *Rubric, in Input) map[api.LeadID]map[string]any {
 	t.Helper()
-	vs, _, _ := r.Evaluate(in)
+	vs := r.Evaluate(in).Verdicts
 	out := map[api.LeadID]map[string]any{}
 	for id, v := range vs {
 		out[id] = v.Values
@@ -30,8 +31,8 @@ func values(t *testing.T, r *Rubric, in Input) map[api.LeadID]map[string]any {
 
 // derive1 is a rubric with one lead-level block x: 1 when cond holds, else 0.
 func derive1(cond string) string {
-	return "version: 1\nlanes: []\nsettings:\n  funding_order: [pre_seed, seed, series_a, series_b, series_c]\n  titles: [CTO, \"VP Engineering\"]\n" +
-		"fields:\n  fleet: { type: number }\n  joined: { type: date }\n  active: { type: bool }\n" +
+	return "version: 1\nlanes: []\nsettings:\n  funding_order: [pre_seed, seed, series_a, series_b, series_c]\n  titles: [CTO, \"VP Engineering\"]\n  boss: CTO\n  bar: series_b\n" +
+		"fields:\n  fleet: { type: number }\n  joined: { type: date }\n  active: { type: bool }\n  stage: { type: { ordered: funding_order } }\n" +
 		"derive:\n  x:\n    - when: " + cond + "\n      then: 1\n    - else: 0\n"
 }
 
@@ -62,7 +63,7 @@ func TestConditions(t *testing.T) {
 		{"not_in", "{ field: title, not_in: [cfo, ceo] }", map[string]string{"title": "CTO"}, api.CompanyFacts{}, 1},
 		{"not_in on absent is false", "{ field: title, not_in: [cfo] }", nil, api.CompanyFacts{}, 0},
 		{"contains ignores case", "{ field: title, contains: ENGIN }", map[string]string{"title": "VP Engineering"}, api.CompanyFacts{}, 1},
-		{"undeclared column is text", "{ field: primaryaicodingtool, eq: cursor }", map[string]string{"primaryaicodingtool": "Cursor"}, api.CompanyFacts{}, 1},
+		{"undeclared column is text", "{ field: preferredcarrier, eq: dhl }", map[string]string{"preferredcarrier": "DHL"}, api.CompanyFacts{}, 1},
 		{"number lt", "{ field: fleet, lt: 10 }", map[string]string{"fleet": "9"}, api.CompanyFacts{}, 1},
 		{"number gte", "{ field: fleet, gte: 10 }", map[string]string{"fleet": "9.5"}, api.CompanyFacts{}, 0},
 		{"unparseable number is absent", "{ field: fleet, missing: true }", map[string]string{"fleet": "50-200"}, api.CompanyFacts{}, 1},
@@ -89,6 +90,26 @@ func TestConditions(t *testing.T) {
 		{"not of absent is true", "{ not: { field: title, eq: cto } }", nil, api.CompanyFacts{}, 1},
 		{"expr", `{ expr: "has(lead.fleet) && lead.fleet > 3 && company.employees == 5" }`, map[string]string{"fleet": "4"}, api.CompanyFacts{}, 1},
 		{"expr settings", `{ expr: "settings.titles.size() == 2" }`, nil, api.CompanyFacts{}, 1},
+		{"number ne", "{ field: fleet, ne: 5 }", map[string]string{"fleet": "4"}, api.CompanyFacts{}, 1},
+		{"number ne equal", "{ field: fleet, ne: 5 }", map[string]string{"fleet": "5"}, api.CompanyFacts{}, 0},
+		{"date ne", "{ field: joined, ne: 2026-01-01 }", map[string]string{"joined": "2026-01-02"}, api.CompanyFacts{}, 1},
+		{"bool ne", "{ field: active, ne: true }", map[string]string{"active": "no"}, api.CompanyFacts{}, 1},
+		{"number not_in", "{ field: fleet, not_in: [1, 2] }", map[string]string{"fleet": "3"}, api.CompanyFacts{}, 1},
+		{"number not_in hit", "{ field: fleet, not_in: [1, 3] }", map[string]string{"fleet": "3"}, api.CompanyFacts{}, 0},
+		{"bool not_in both", "{ field: active, not_in: [true, false] }", map[string]string{"active": "yes"}, api.CompanyFacts{}, 0},
+		{"bool not_in other", "{ field: active, not_in: [false] }", map[string]string{"active": "yes"}, api.CompanyFacts{}, 1},
+		{"sources_seen not_in", "{ field: sources_seen, not_in: [2, 3] }", nil, api.CompanyFacts{}, 1},
+		{"number in empty", "{ field: fleet, in: [] }", map[string]string{"fleet": "3"}, api.CompanyFacts{}, 0},
+		{"number not_in empty", "{ field: fleet, not_in: [] }", map[string]string{"fleet": "3"}, api.CompanyFacts{}, 1},
+		{"text not_in empty", "{ field: title, not_in: [] }", map[string]string{"title": "x"}, api.CompanyFacts{}, 1},
+		{"not_in empty on absent", "{ field: fleet, not_in: [] }", nil, api.CompanyFacts{}, 0},
+		{"status contains", "{ field: status, contains: replied }", nil, api.CompanyFacts{}, 1},
+		{"NFC text", "{ field: title, eq: \"Caf\u00e9\" }", map[string]string{"title": "Cafe\u0301"}, api.CompanyFacts{}, 1},
+		{"ordered ignores unicode spaces", "{ field: company.funding_stage, eq: series_b }", nil, api.CompanyFacts{FundingStage: "Series\u00a0B"}, 1},
+		{"single-value setting eq", "{ field: title, eq: $boss }", map[string]string{"title": "cto"}, api.CompanyFacts{}, 1},
+		{"single-value setting gte", "{ field: company.funding_stage, gte: $bar }", nil, api.CompanyFacts{FundingStage: "Series C"}, 1},
+		{"declared ordered", "{ field: stage, gte: series_a }", map[string]string{"stage": "Series B"}, api.CompanyFacts{}, 1},
+		{"a date is midnight UTC", "{ field: joined, lt: 2026-01-15 }", map[string]string{"joined": "2026-01-15T00:00:01Z"}, api.CompanyFacts{}, 0},
 		{"expr on a missing key is false", `{ expr: "lead.fleet > 3" }`, nil, api.CompanyFacts{}, 0},
 	}
 	for _, tt := range tests {
@@ -103,16 +124,38 @@ func TestConditions(t *testing.T) {
 }
 
 // A value that does not parse is absent and warned once per field; a raw
-// expression that fails is false and warned once.
+// expression that fails, or gives something other than true or false, is false
+// and warned once. Warnings name fields and rules, never a lead's values.
 func TestEvaluateWarnings(t *testing.T) {
-	r := mustCompile(t, derive1(`{ any: [ { field: fleet, gt: 1 }, { expr: "lead.title == 'x'" } ] }`))
-	in := Input{Leads: []api.LeadRef{
-		lead("a", "", 0, map[string]string{"fleet": "lots"}),
-		lead("b", "", 1, map[string]string{"fleet": "many"}),
-	}}
-	_, _, w := r.Evaluate(in)
-	if len(w) != 2 || !strings.Contains(w[0], `field fleet: "lots" is not a number`) || !strings.Contains(w[1], "failed") {
-		t.Errorf("warnings: %q", w)
+	r := mustCompile(t, derive1(`{ any: [ { field: fleet, gt: 1 }, { expr: "lead.title == 'x'" }, { expr: "int(lead.email) > 1" }, { expr: "lead.full_name" } ] }`))
+	a := lead("a", "", 0, map[string]string{"fleet": "anna.weber@kranlogistik.example", "joined": "Anna Weber"})
+	a.Emails = []string{"anna.weber@kranlogistik.example"}
+	a.FullName = "Anna Weber"
+	a.LinkedInURLs = []string{"https://www.linkedin.com/in/example-anna"}
+	b := lead("b", "", 1, map[string]string{"fleet": "many"})
+	w := r.Evaluate(Input{Leads: []api.LeadRef{a, b}}).Warnings
+	want := []string{
+		"field fleet: a value is not a number, so it is treated as missing (reported once per run)",
+		"field joined: a value is not a date, so it is treated as missing (reported once per run)",
+		`condition "fleet > 1 or lead.title == 'x' or int(lead.email) > 1 or lead.full_name" failed (it reads a value the lead does not have; test it with has() first), so it counts as false`,
+	}
+	if !reflect.DeepEqual(w, want) {
+		t.Errorf("warnings:\n%q\nwant\n%q", w, want)
+	}
+	// Each failing raw expression on its own, with the lead's values present.
+	for _, expr := range []string{"int(lead.email) > 1", "lead.full_name", "lead.linkedin_url.size() > 1000000 || int(lead.linkedin_url) > 1"} {
+		r := mustCompile(t, derive1(`{ expr: "`+expr+`" }`))
+		ws := r.Evaluate(Input{Leads: []api.LeadRef{a}}).Warnings
+		if !slices.ContainsFunc(ws, func(m string) bool { return strings.Contains(m, "counts as false") }) {
+			t.Errorf("%s: no warning for the failing condition: %q", expr, ws)
+		}
+		for _, msg := range ws {
+			for _, secret := range []string{"anna", "Anna", "kranlogistik"} {
+				if strings.Contains(msg, secret) {
+					t.Errorf("%s: warning %q leaks a lead's value %q", expr, msg, secret)
+				}
+			}
+		}
 	}
 }
 
@@ -147,10 +190,6 @@ derive:
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v\nwant %v", got, want)
-	}
-	_, _, w := r.Evaluate(Input{Leads: []api.LeadRef{lead("a", "", 0, map[string]string{"segment": "a"})}})
-	if len(w) != 1 || !strings.Contains(w[0], "derive.segment shadows the input column segment") {
-		t.Errorf("warnings: %q", w)
 	}
 }
 
@@ -234,7 +273,7 @@ score:
 		Companies: map[string]api.CompanyFacts{"a.example": {Employees: &emp}, "b.example": {Employees: &emp}},
 		LeadsSeen: map[string]int{"a.example": 1, "b.example": 4, "c.example": 2},
 	}
-	vs, _, _ := r.Evaluate(in)
+	vs := r.Evaluate(in).Verdicts
 	type sc struct{ account, contact float64 }
 	got := map[api.LeadID]sc{}
 	for id, v := range vs {
@@ -244,7 +283,7 @@ score:
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
 	}
-	if rs := vs["n"].Reasons; !contains(rs, "no company domain") {
+	if rs := vs["n"].Reasons; !slices.Contains(rs, "no company domain") {
 		t.Errorf("a lead with no company says so: %q", rs)
 	}
 	if rs := vs["b"].Reasons; !reflect.DeepEqual(rs, []string{
@@ -256,7 +295,7 @@ score:
 	}) {
 		t.Errorf("reasons: %q", rs)
 	}
-	if rs := vs["c"].Reasons; !contains(rs, "-5 contact: title = intern") || !contains(rs, "tier: no value (no rule matched)") {
+	if rs := vs["c"].Reasons; !slices.Contains(rs, "-5 contact: title = intern") || !slices.Contains(rs, "tier: no value (no rule matched)") {
 		t.Errorf("reasons: %q", rs)
 	}
 }
@@ -288,7 +327,8 @@ func TestConflictsBlock(t *testing.T) {
 	b.ConflictFields = []string{"title"}
 	c := lead("c", "", 0, nil)
 	c.ConflictFields = []string{"company.region", "segment"}
-	vs, blocked, _ := r.Evaluate(Input{Leads: []api.LeadRef{a, b, c}})
+	res := r.Evaluate(Input{Leads: []api.LeadRef{a, b, c}})
+	vs, blocked := res.Verdicts, res.Blocked
 	want := map[api.LeadID]string{"a": "sources disagree on segment", "c": "sources disagree on segment, company.region"}
 	if !reflect.DeepEqual(blocked, want) {
 		t.Errorf("blocked %v, want %v", blocked, want)
@@ -299,13 +339,13 @@ func TestConflictsBlock(t *testing.T) {
 }
 
 // Lanes match on derived values and status, highest priority first.
-func TestMatchLanes(t *testing.T) {
+func TestLaneMatches(t *testing.T) {
 	r := mustCompile(t, `version: 1
 derive:
   tier:
     - { when: { field: title, present: true }, then: 1 }
 lanes:
-  - { id: export, kind: export, priority: 1, push: export:all }
+  - { id: export, kind: export, priority: 1, when: { field: sources_seen, gte: 1 }, push: export:all }
   - { id: cold, kind: cold, priority: 10, when: { all: [ { field: tier, eq: 1 }, { field: receiver_only, eq: false } ] }, push: apollo:sequence/a }
   - { id: warm, kind: non-cold, priority: 20, when: { field: status, eq: replied_positive }, push: hubspot:deals }
 `)
@@ -313,7 +353,7 @@ lanes:
 	a.Status = "replied_positive"
 	b := lead("b", "", 0, map[string]string{"title": "x"})
 	b.ReceiverOnly = true
-	got := r.MatchLanes(Input{Leads: []api.LeadRef{a, b}})
+	got := r.Evaluate(Input{Leads: []api.LeadRef{a, b}}).Lanes
 	want := map[api.LeadID][]string{"a": {"warm", "cold", "export"}, "b": {"export"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)

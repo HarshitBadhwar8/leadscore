@@ -2,6 +2,7 @@ package rules
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -12,8 +13,16 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
-	"github.com/HarshitBadhwar8/leadscore/internal/config"
+	"github.com/HarshitBadhwar8/leadscore/internal/duration"
 )
+
+// rankedColumns are the Ranked table's fixed columns (contracts section 4); a
+// derived name becomes a column beside them, so it may not take one.
+var rankedColumns = map[string]bool{
+	"lead_id": true, "email": true, "linkedin_url": true, "full_name": true, "company_domain": true,
+	"account_score": true, "contact_score": true, "score": true, "status": true, "lane": true,
+	"reasons": true, "rubric_version": true,
+}
 
 // maxWindow is the longest detector window: events are kept 90 days.
 const maxWindow = 90 * 24 * time.Hour
@@ -59,7 +68,9 @@ type scoreRule struct {
 
 type compiler struct {
 	errs     LoadErrors
-	warnings []string
+	warnings LoadErrors
+	// rollupNames are the `company` block's names, known before rollups compile.
+	rollupNames map[string]bool
 
 	settings       map[string]setting
 	leadFields     map[string]*fieldDef
@@ -79,6 +90,46 @@ type compiler struct {
 
 func (c *compiler) errf(a at, format string, args ...any) {
 	c.errs = append(c.errs, LoadError{Line: a.line(), Field: a.path, Msg: fmt.Sprintf(format, args...)})
+}
+
+func (c *compiler) warnf(a at, format string, args ...any) {
+	c.warnings = append(c.warnings, LoadError{Line: a.line(), Field: a.path, Msg: fmt.Sprintf(format, args...)})
+}
+
+// checkTree refuses YAML aliases (`*name`), whose expansion can grow
+// exponentially, and a key repeated in one mapping, which YAML would silently
+// resolve to the last value.
+func (c *compiler) checkTree(n *yaml.Node, path string) {
+	if n == nil {
+		return
+	}
+	switch n.Kind {
+	case yaml.AliasNode:
+		c.errf(at{n, path}, "YAML aliases (*%s) are not allowed in a rubric; write the value out", n.Value)
+	case yaml.DocumentNode:
+		for _, ch := range n.Content {
+			c.checkTree(ch, path)
+		}
+	case yaml.SequenceNode:
+		for i, ch := range n.Content {
+			c.checkTree(ch, at{nil, path}.index(i))
+		}
+	case yaml.MappingNode:
+		seen := map[string]bool{}
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			k := n.Content[i]
+			kp := at{nil, path}.key(k.Value)
+			if k.Kind == yaml.AliasNode {
+				c.checkTree(k, kp)
+				continue
+			}
+			if seen[k.Value] {
+				c.errf(at{k, kp}, "%s appears twice in the same block", k.Value)
+			}
+			seen[k.Value] = true
+			c.checkTree(n.Content[i+1], kp)
+		}
+	}
 }
 
 var topKeys = []string{"version", "fields", "settings", "company", "detectors", "derive", "conflicts", "score", "limits", "lanes"}
@@ -111,6 +162,11 @@ func Compile(src []byte) (*Rubric, error) {
 		rollupByName:   map[string]*rollup{},
 		deriveByName:   map[string]*deriveBlock{},
 		reads:          map[string]bool{},
+		rollupNames:    map[string]bool{},
+	}
+	c.checkTree(&doc, "")
+	if len(c.errs) > 0 {
+		return nil, c.errs // nothing else is read until aliases and duplicates are gone
 	}
 	var err error
 	if c.leadEnv, err = newEnv(false); err != nil {
@@ -122,7 +178,7 @@ func Compile(src []byte) (*Rubric, error) {
 
 	top := map[string]pair{}
 	for _, p := range pairs(root) {
-		if !contains(topKeys, p.key) {
+		if !slices.Contains(topKeys, p.key) {
 			c.errf(at{p.keyN, p.key}, "unknown key; a rubric has %s", strings.Join(topKeys, ", "))
 			continue
 		}
@@ -145,6 +201,11 @@ func Compile(src []byte) (*Rubric, error) {
 		c.errf(at{root, ""}, "lanes is required (it may be an empty list)")
 	}
 
+	if n, _ := get("company"); n != nil {
+		for _, p := range pairs(n) {
+			c.rollupNames[p.key] = true
+		}
+	}
 	c.compileSettings(get("settings"))
 	c.compileFields(get("fields"))
 	c.compileDetectors(get("detectors"))
@@ -204,7 +265,7 @@ func (c *compiler) mapping(n *yaml.Node, a at) []pair {
 // keysOnly reports unknown keys in a mapping.
 func (c *compiler) keysOnly(ps []pair, a at, allowed ...string) {
 	for _, p := range ps {
-		if !contains(allowed, p.key) {
+		if !slices.Contains(allowed, p.key) {
 			c.errf(at{p.keyN, a.key(p.key)}, "unknown key; allowed here: %s", strings.Join(allowed, ", "))
 		}
 	}
@@ -269,6 +330,10 @@ func (c *compiler) compileFields(n *yaml.Node, a at) {
 		if !c.name(p, a, "field") {
 			continue
 		}
+		if p.key == "status" {
+			c.errf(pa, "status is the folded status, not a column; it cannot be declared")
+			continue
+		}
 		ps := c.mapping(p.value, pa)
 		c.keysOnly(ps, pa, "type", "level", "aliases")
 		def := &fieldDef{name: p.key}
@@ -330,8 +395,12 @@ func (c *compiler) compileFields(n *yaml.Node, a at) {
 		if def.company {
 			target = "company." + def.name
 		}
+		builtin := api.BuiltinAliases()
 		for _, spelling := range append([]string{def.name}, def.aliases...) {
 			sq := api.SquashHeader(spelling)
+			if b, ok := builtin[sq]; ok && b != target {
+				c.warnf(pa, "header spelling %q usually names %s; in this rubric a column headed so goes to %s instead", spelling, b, target)
+			}
 			if prev, ok := c.aliasAt[sq]; ok && prev != target {
 				c.errf(pa, "header spelling %q (squashed %q) already names %s", spelling, sq, prev)
 				continue
@@ -380,7 +449,7 @@ func (c *compiler) duration(n *yaml.Node, a at) time.Duration {
 		c.errf(a, "needs a duration such as 7d or 12h")
 		return 0
 	}
-	d, err := config.ParseDuration(s.text)
+	d, err := duration.Parse(s.text)
 	if err != nil {
 		c.errf(a, "%v", err)
 		return 0
@@ -437,7 +506,7 @@ func (c *compiler) compileDetectors(n *yaml.Node, a at) {
 		switch kindName {
 		case "count_in_window":
 			c.keysOnly(ps, pa, "kind", "subject", "event", "window", "min")
-			spec.Event, _, _ = need("event")
+			spec.Event = c.event(need("event"))
 			if _, _, ok := need("window"); ok {
 				spec.Window = c.duration(vals["window"].value, at{vals["window"].value, pa.key("window")})
 			}
@@ -450,7 +519,7 @@ func (c *compiler) compileDetectors(n *yaml.Node, a at) {
 			}
 		case "first_seen":
 			c.keysOnly(ps, pa, "kind", "subject", "event", "within")
-			spec.Event, _, _ = need("event")
+			spec.Event = c.event(need("event"))
 			if _, _, ok := need("within"); ok {
 				spec.Within = c.duration(vals["within"].value, at{vals["within"].value, pa.key("within")})
 			}
@@ -458,7 +527,11 @@ func (c *compiler) compileDetectors(n *yaml.Node, a at) {
 			c.keysOnly(ps, pa, "kind", "subject", "field", "within", "from", "to")
 			if f, fa, ok := need("field"); ok {
 				f = strings.TrimPrefix(f, "company.")
-				if _, known := c.companyFields[f]; !known && !squashedRe.MatchString(f) {
+				_, known := c.companyFields[f]
+				switch {
+				case f == "leads_seen" || f == "domain" || c.rollupNames[f]:
+					c.errf(fa, "change watches a stored company fact; %s is worked out each run", f)
+				case !known && !squashedRe.MatchString(f):
 					c.errf(fa, "change watches a company fact; %q is not one", f)
 				}
 				spec.Field = f
@@ -487,6 +560,14 @@ func (c *compiler) compileDetectors(n *yaml.Node, a at) {
 		c.detectorByName[spec.Name] = spec
 		c.detectors = append(c.detectors, spec)
 	}
+}
+
+// event checks a detector's event kind: `*` may only end it, as a prefix match.
+func (c *compiler) event(e string, a at, ok bool) string {
+	if ok && strings.Contains(strings.TrimSuffix(e, "*"), "*") {
+		c.errf(a, "* may only end an event kind, as in visit_*")
+	}
+	return e
 }
 
 func (c *compiler) compileRollups(n *yaml.Node, a at) {
@@ -586,11 +667,13 @@ func (c *compiler) scanDerive(n *yaml.Node, a at) {
 		case mergeProduced[d.name]:
 			c.errf(pa, "%s is produced by the engine and cannot be derived", d.name)
 			continue
-		case d.company && c.companyFields[d.name] != nil:
-			c.errf(pa, "%s is already a company field", d.name)
+		case rankedColumns[d.name]:
+			c.errf(pa, "%s is a fixed column of the Ranked table; choose another name", d.name)
 			continue
-		case c.leadFields[d.name] != nil:
-			c.warnings = append(c.warnings, fmt.Sprintf("line %d: derive.%s shadows the input field %s from here on", pa.line(), d.name, d.name))
+		case d.company && c.companyFields[d.name] != nil:
+			c.warnf(pa, "shadows the company field %s from here on", d.name)
+		case !d.company && c.leadFields[d.name] != nil:
+			c.warnf(pa, "shadows the input field %s from here on", d.name)
 		}
 		d.idx = len(c.derive)
 		var types []string

@@ -2,12 +2,15 @@ package rules
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/google/cel-go/cel"
 	celast "github.com/google/cel-go/common/ast"
 	"github.com/google/cel-go/common/operators"
 	"gopkg.in/yaml.v3"
+
+	"github.com/HarshitBadhwar8/leadscore/internal/api"
 )
 
 // condition is one compiled condition: its CEL program and how it reads to a
@@ -16,7 +19,6 @@ type condition struct {
 	text string
 	expr string
 	prg  cel.Program
-	raw  bool // from `expr:`; may fail at run time on a missing key
 }
 
 // refKind is what a field name refers to.
@@ -38,7 +40,6 @@ type fieldRef struct {
 	display string // as a person writes it
 	typ     ftype
 	company bool // lives in the company map
-	derived *deriveBlock
 	det     *DetectorSpec
 }
 
@@ -83,18 +84,10 @@ func (c *compiler) resolve(name string, sc scope, a at) (fieldRef, bool) {
 	if name == "status" {
 		return fieldRef{kind: rStatus, name: name, display: name, typ: ftype{kind: kText}}, true
 	}
-	if d, ok := strings.CutPrefix(name, "detector."); ok {
-		spec, ok := c.detectorByName[d]
-		if !ok {
-			c.errf(a, "detector %q is not declared under detectors", d)
-			return fieldRef{}, false
-		}
-		return fieldRef{kind: rDetector, name: d, display: name, typ: ftype{kind: kBool}, det: spec}, true
-	}
 	visible := func(d *deriveBlock) bool { return !sc.rollup && d.idx < sc.derivedBefore }
 	if rest, ok := strings.CutPrefix(name, "company."); ok {
 		if d, ok := c.deriveByName[rest]; ok && d.company && visible(d) {
-			return fieldRef{kind: rDerived, name: rest, display: name, typ: d.typ, company: true, derived: d}, true
+			return fieldRef{kind: rDerived, name: rest, display: name, typ: d.typ, company: true}, true
 		}
 		if f, ok := c.companyFields[rest]; ok {
 			return c.readFact(f.name, f.typ, name), true
@@ -109,6 +102,9 @@ func (c *compiler) resolve(name string, sc scope, a at) (fieldRef, bool) {
 			}
 			return c.notYet(d, sc, a)
 		}
+		if !c.notAnAlias(rest, "company."+rest, a) {
+			return fieldRef{}, false
+		}
 		if squashedRe.MatchString(rest) {
 			// An undeclared Companies tab column: text, like any undeclared column.
 			return c.readFact(rest, ftype{kind: kText}, name), true
@@ -117,7 +113,7 @@ func (c *compiler) resolve(name string, sc scope, a at) (fieldRef, bool) {
 		return fieldRef{}, false
 	}
 	if d, ok := c.deriveByName[name]; ok && visible(d) {
-		return fieldRef{kind: rDerived, name: name, display: name, typ: d.typ, company: d.company, derived: d}, true
+		return fieldRef{kind: rDerived, name: name, display: name, typ: d.typ, company: d.company}, true
 	}
 	if f, ok := c.leadFields[name]; ok {
 		return c.readLead(f.name, f.typ), true
@@ -129,11 +125,29 @@ func (c *compiler) resolve(name string, sc scope, a at) (fieldRef, bool) {
 		c.errf(a, "%s is a company field; write company.%s", name, name)
 		return fieldRef{}, false
 	}
+	if !c.notAnAlias(name, name, a) {
+		return fieldRef{}, false
+	}
 	if squashedRe.MatchString(name) {
 		return c.readLead(name, ftype{kind: kText}), true
 	}
 	c.errf(a, "unknown field %q: declare it under fields, or use the column's squashed header name (lowercase letters and digits only)", name)
 	return fieldRef{}, false
+}
+
+// notAnAlias fails a name that is a header spelling of another field (`jobtitle`
+// is `title`): merge resolves that header to the other field, so a column by
+// that name would never be filled.
+func (c *compiler) notAnAlias(sq, self string, a at) bool {
+	target, ok := c.aliases[sq]
+	if !ok {
+		target, ok = api.BuiltinAliases()[sq]
+	}
+	if ok && target != self {
+		c.errf(a, "%s is a header spelling of %s; write %s", sq, target, target)
+		return false
+	}
+	return true
 }
 
 func (c *compiler) notYet(d *deriveBlock, sc scope, a at) (fieldRef, bool) {
@@ -178,7 +192,7 @@ func (c *compiler) allowed(r fieldRef, sc scope, a at) bool {
 // cond compiles one condition. It returns nil after recording an error.
 func (c *compiler) cond(n *yaml.Node, a at, sc scope) *condition {
 	errs := len(c.errs)
-	expr, text, raw := c.condExpr(n, a, sc)
+	expr, text := c.condExpr(n, a, sc)
 	if len(c.errs) > errs {
 		return nil
 	}
@@ -195,12 +209,17 @@ func (c *compiler) cond(n *yaml.Node, a at, sc scope) *condition {
 		c.errf(a, "the condition must be true or false, but gives %s", t)
 		return nil
 	}
-	prg, err := env.Program(ast)
+	est, err := env.EstimateCost(ast, sizeEstimator{})
+	if err != nil || est.Max > costLimit {
+		c.errf(a, "the condition could cost too much to run (estimated over %d steps per lead); simplify it", costLimit)
+		return nil
+	}
+	prg, err := env.Program(ast, cel.EvalOptions(cel.OptOptimize), cel.CostLimit(costLimit), cel.InterruptCheckFrequency(100))
 	if err != nil {
 		c.errf(a, "the condition does not compile: %v", err)
 		return nil
 	}
-	return &condition{text: unwrap(text), expr: expr, prg: prg, raw: raw}
+	return &condition{text: unwrap(text), expr: expr, prg: prg}
 }
 
 // unwrap drops one pair of parentheses around a whole condition's text.
@@ -233,13 +252,12 @@ var comparisons = map[string]string{"eq": "=", "ne": "!=", "lt": "<", "lte": "<=
 
 var celOps = map[string]string{"eq": "==", "ne": "!=", "lt": "<", "lte": "<=", "gt": ">", "gte": ">="}
 
-// condExpr turns a condition into CEL source and its text. raw is true when
-// any part came from `expr:`.
-func (c *compiler) condExpr(n *yaml.Node, a at, sc scope) (expr, text string, raw bool) {
+// condExpr turns a condition into CEL source and its text.
+func (c *compiler) condExpr(n *yaml.Node, a at, sc scope) (expr, text string) {
 	n = deref(n)
 	if n == nil || n.Kind != yaml.MappingNode {
 		c.errf(a, "a condition must be a mapping such as { field: F, eq: V }, not %s", kindName(n))
-		return "", "", false
+		return "", ""
 	}
 	ps := pairs(n)
 	keys := make([]string, len(ps))
@@ -253,7 +271,7 @@ func (c *compiler) condExpr(n *yaml.Node, a at, sc scope) (expr, text string, ra
 	if f, ok := byKey["field"]; ok {
 		if len(ps) != 2 {
 			c.errf(a, "a field condition has `field` and one operator (eq, ne, lt, lte, gt, gte, in, not_in, contains, present, missing); got %s", strings.Join(keys, ", "))
-			return "", "", false
+			return "", ""
 		}
 		var op pair
 		for _, p := range ps {
@@ -265,7 +283,7 @@ func (c *compiler) condExpr(n *yaml.Node, a at, sc scope) (expr, text string, ra
 	}
 	if len(ps) != 1 {
 		c.errf(a, "a condition has exactly one form (field, all, any, not, detector, expr); got %s", strings.Join(keys, ", "))
-		return "", "", false
+		return "", ""
 	}
 	p := ps[0]
 	pa := at{p.value, a.key(p.key)}
@@ -274,65 +292,64 @@ func (c *compiler) condExpr(n *yaml.Node, a at, sc scope) (expr, text string, ra
 		items := deref(p.value)
 		if items == nil || items.Kind != yaml.SequenceNode || len(items.Content) == 0 {
 			c.errf(pa, "%s needs a non-empty list of conditions", p.key)
-			return "", "", false
+			return "", ""
 		}
 		var exprs, texts []string
 		for i, item := range items.Content {
-			e, t, r := c.condExpr(item, at{deref(item), pa.index(i)}, sc)
+			e, t := c.condExpr(item, at{deref(item), pa.index(i)}, sc)
 			exprs = append(exprs, "("+e+")")
 			texts = append(texts, t)
-			raw = raw || r
 		}
 		join, word := " && ", " and "
 		if p.key == "any" {
 			join, word = " || ", " or "
 		}
 		if len(texts) == 1 {
-			return exprs[0], texts[0], raw
+			return exprs[0], texts[0]
 		}
-		return strings.Join(exprs, join), "(" + strings.Join(texts, word) + ")", raw
+		return strings.Join(exprs, join), "(" + strings.Join(texts, word) + ")"
 	case "not":
-		e, t, r := c.condExpr(p.value, pa, sc)
-		return "!(" + e + ")", "not " + t, r
+		e, t := c.condExpr(p.value, pa, sc)
+		return "!(" + e + ")", "not " + t
 	case "detector":
 		s, ok := scalarOf(p.value)
 		if !ok || s.text == "" {
 			c.errf(pa, "detector needs a detector name")
-			return "", "", false
+			return "", ""
 		}
 		spec, ok := c.detectorByName[s.text]
 		if !ok {
 			c.errf(pa, "detector %q is not declared under detectors", s.text)
-			return "", "", false
+			return "", ""
 		}
 		r := fieldRef{kind: rDetector, name: s.text, display: "detector." + s.text, typ: ftype{kind: kBool}, det: spec}
 		if !c.allowed(r, sc, pa) {
-			return "", "", false
+			return "", ""
 		}
-		return r.access(), s.text + " fired", false
+		return r.access(), s.text + " fired"
 	case "expr":
 		s, ok := scalarOf(p.value)
 		if !ok || strings.TrimSpace(s.text) == "" {
 			c.errf(pa, "expr needs a CEL expression")
-			return "", "", false
+			return "", ""
 		}
 		c.checkRawRefs(s.text, pa, sc)
-		return s.text, s.text, true
+		return s.text, s.text
 	}
 	c.errf(a, "unknown condition form %q; use field, all, any, not, detector or expr", p.key)
-	return "", "", false
+	return "", ""
 }
 
-func (c *compiler) fieldCond(f, op pair, a at, sc scope) (expr, text string, raw bool) {
+func (c *compiler) fieldCond(f, op pair, a at, sc scope) (expr, text string) {
 	fa := at{f.value, a.key("field")}
 	fs, ok := scalarOf(f.value)
 	if !ok || fs.text == "" {
 		c.errf(fa, "field needs a field name")
-		return "", "", false
+		return "", ""
 	}
 	r, ok := c.resolve(fs.text, sc, fa)
 	if !ok || !c.allowed(r, sc, fa) {
-		return "", "", false
+		return "", ""
 	}
 	oa := at{op.value, a.key(op.key)}
 	guard := func(cmp string) string {
@@ -346,20 +363,20 @@ func (c *compiler) fieldCond(f, op pair, a at, sc scope) (expr, text string, raw
 		s, ok := scalarOf(op.value)
 		if !ok || s.natural() != true {
 			c.errf(oa, "write %s: true", op.key)
-			return "", "", false
+			return "", ""
 		}
 		h := r.has()
 		if h == "" {
 			h = "true"
 		}
 		if op.key == "missing" {
-			return "!(" + h + ")", r.display + " is missing", false
+			return "!(" + h + ")", r.display + " is missing"
 		}
-		return h, r.display + " is present", false
+		return h, r.display + " is present"
 	case "eq", "ne":
-		v, vt, ok := c.value(op.value, r, oa)
+		v, vt, ok := c.value(op.value, r, oa, true)
 		if !ok {
-			return "", "", false
+			return "", ""
 		}
 		var cmp string
 		switch r.typ.kind {
@@ -371,68 +388,71 @@ func (c *compiler) fieldCond(f, op pair, a at, sc scope) (expr, text string, raw
 			cmp = r.access() + " == " + celLiteral(v)
 		}
 		if op.key == "ne" {
-			cmp = "!" + cmp
+			cmp = "!(" + cmp + ")"
 		}
-		return guard(cmp), r.display + " " + comparisons[op.key] + " " + vt, false
+		return guard(cmp), r.display + " " + comparisons[op.key] + " " + vt
 	case "lt", "lte", "gt", "gte":
-		v, vt, ok := c.value(op.value, r, oa)
+		v, vt, ok := c.value(op.value, r, oa, true)
 		if !ok {
-			return "", "", false
+			return "", ""
 		}
 		switch r.typ.kind {
 		case kNumber, kDate:
-			return guard(r.access() + " " + celOps[op.key] + " " + celLiteral(v)), r.display + " " + comparisons[op.key] + " " + vt, false
+			return guard(r.access() + " " + celOps[op.key] + " " + celLiteral(v)), r.display + " " + comparisons[op.key] + " " + vt
 		case kOrdered:
 			list, ok := c.orderList(r.typ.order, oa)
 			if !ok {
-				return "", "", false
+				return "", ""
 			}
 			k := rank(v.(string), list)
 			if k < 0 {
 				c.errf(oa, "%q is not in settings.%s", v, r.typ.order)
-				return "", "", false
+				return "", ""
 			}
 			cmp := fmt.Sprintf("ordRank(%s, %s) %s %d", r.access(), celList(toAny(list)), celOps[op.key], k)
-			return guard(cmp), r.display + " " + comparisons[op.key] + " " + vt, false
+			return guard(cmp), r.display + " " + comparisons[op.key] + " " + vt
 		}
 		c.errf(oa, "%s compares numbers, dates and ordered fields; %s is %s", op.key, r.display, r.typ)
-		return "", "", false
+		return "", ""
 	case "in", "not_in":
 		vs, vt, ok := c.values(op.value, r, oa)
 		if !ok {
-			return "", "", false
+			return "", ""
 		}
 		var cmp string
-		switch r.typ.kind {
-		case kText:
+		switch {
+		case len(vs) == 0:
+			cmp = "false" // nothing is in an empty list
+		case r.typ.kind == kText:
 			cmp = "textIn(" + r.access() + ", " + celList(vs) + ")"
-		case kOrdered:
+		case r.typ.kind == kOrdered:
 			cmp = "ordIn(" + r.access() + ", " + celList(vs) + ")"
 		default:
 			cmp = r.access() + " in " + celList(vs)
 		}
 		word := " in "
 		if op.key == "not_in" {
-			cmp, word = "!"+cmp, " not in "
+			cmp, word = "!("+cmp+")", " not in "
 		}
-		return guard(cmp), r.display + word + vt, false
+		return guard(cmp), r.display + word + vt
 	case "contains":
 		if r.typ.kind != kText && r.typ.kind != kOrdered {
 			c.errf(oa, "contains matches text; %s is %s", r.display, r.typ)
-			return "", "", false
+			return "", ""
 		}
-		v, vt, ok := c.value(op.value, r, oa)
+		v, vt, ok := c.value(op.value, r, oa, false)
 		if !ok {
-			return "", "", false
+			return "", ""
 		}
-		return guard("textContains(" + r.access() + ", " + celString(v.(string)) + ")"), r.display + " contains " + vt, false
+		return guard("textContains(" + r.access() + ", " + celString(v.(string)) + ")"), r.display + " contains " + vt
 	}
 	c.errf(oa, "unknown operator %q; use eq, ne, lt, lte, gt, gte, in, not_in, contains, present or missing", op.key)
-	return "", "", false
+	return "", ""
 }
 
-// value reads one comparison value (a scalar or a $setting) as r's type.
-func (c *compiler) value(n *yaml.Node, r fieldRef, a at) (v any, text string, ok bool) {
+// value reads one comparison value (a scalar or a $setting) as r's type. A
+// status must be a known status unless it is a `contains` fragment.
+func (c *compiler) value(n *yaml.Node, r fieldRef, a at, wholeStatus bool) (v any, text string, ok bool) {
 	s, isScalar := scalarOf(n)
 	if !isScalar {
 		c.errf(a, "needs a single value, not %s", kindName(n))
@@ -456,7 +476,7 @@ func (c *compiler) value(n *yaml.Node, r fieldRef, a at) (v any, text string, ok
 		c.errf(a, "%s is %s: %v", r.display, r.typ, err)
 		return nil, "", false
 	}
-	if r.kind == rStatus && !validStatus(v.(string)) {
+	if wholeStatus && r.kind == rStatus && !validStatus(v.(string)) {
 		c.errf(a, "%q is not a status; statuses are %s", s.text, strings.Join(statuses, ", "))
 		return nil, "", false
 	}
@@ -521,14 +541,7 @@ func settingName(s scalar) (string, bool) {
 	return s.text[1:], true
 }
 
-func validStatus(s string) bool {
-	for _, st := range statuses {
-		if normText(s) == st {
-			return true
-		}
-	}
-	return false
-}
+func validStatus(s string) bool { return slices.Contains(statuses, normText(s)) }
 
 // orderList returns the settings list an ordered field ranks by.
 func (c *compiler) orderList(name string, a at) ([]string, bool) {
@@ -594,7 +607,13 @@ func (c *compiler) checkRawRefs(src string, a at, sc scope) {
 		case "company":
 			name = "company." + u.name
 		case "detector":
-			name = "detector." + u.name
+			spec, ok := c.detectorByName[u.name]
+			if !ok {
+				c.errf(a, "detector %q is not declared under detectors", u.name)
+				continue
+			}
+			c.allowed(fieldRef{kind: rDetector, name: u.name, display: "detector." + u.name, det: spec}, sc, a)
+			continue
 		case "status":
 			name = "status"
 		default:

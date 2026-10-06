@@ -51,7 +51,7 @@ type DetectorSpec struct {
 }
 
 // Lane is one entry of the rubric's `lanes` block. Its `when` is compiled with
-// the rest of the rubric; MatchLanes evaluates it.
+// the rest of the rubric; Evaluate reports the lanes each lead matches.
 type Lane struct {
 	ID       string
 	Name     string
@@ -95,7 +95,7 @@ type Rubric struct {
 	limits        Limits
 	lanes         []Lane
 	reads         []string
-	warnings      []string
+	warnings      LoadErrors
 }
 
 // Version is `r-` plus the first 16 hex characters of the SHA-256 of the
@@ -146,5 +146,6 @@ func (r *Rubric) DerivedNames() []string {
 }
 
 // Warnings returns what Compile noticed but accepted, such as a derived name
-// shadowing an input field. `rules check` prints them.
-func (r *Rubric) Warnings() []string { return append([]string(nil), r.warnings...) }
+// shadowing an input field, each with its line and field. `rules check`
+// prints them.
+func (r *Rubric) Warnings() []LoadError { return append([]LoadError(nil), r.warnings...) }

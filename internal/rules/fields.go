@@ -7,7 +7,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
+	"golang.org/x/text/unicode/norm"
 	"gopkg.in/yaml.v3"
 )
 
@@ -92,15 +94,15 @@ var (
 	squashedRe = regexp.MustCompile(`^[a-z0-9]+$`)
 )
 
-// normText is the text-matching form: trimmed and lowercased.
-func normText(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
+// normText is the text-matching form: Unicode NFC (so a composed and a
+// decomposed "é" match), trimmed and lowercased.
+func normText(s string) string { return strings.ToLower(strings.TrimSpace(norm.NFC.String(s))) }
 
-// normOrdered is the ordered-list matching form: normText, also ignoring
-// spaces, hyphens and underscores, so `Series B` matches `series_b`.
+// normOrdered is the ordered-list matching form: normText, also ignoring every
+// Unicode space, hyphen and underscore, so `Series B` matches `series_b`.
 func normOrdered(s string) string {
 	return strings.Map(func(r rune) rune {
-		switch r {
-		case ' ', '-', '_', '\t':
+		if unicode.IsSpace(r) || r == '-' || r == '_' {
 			return -1
 		}
 		return r

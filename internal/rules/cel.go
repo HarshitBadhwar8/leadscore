@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/cel-go/cel"
+	"github.com/google/cel-go/checker"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/common/types/traits"
@@ -140,4 +141,26 @@ func celList(vs []any) string {
 		parts[i] = celLiteral(v)
 	}
 	return "[" + strings.Join(parts, ", ") + "]"
+}
+
+// costLimit bounds what one condition may cost for one lead, in CEL's cost
+// units (about one per operation). Compile refuses a condition whose estimated
+// worst case is over it, and evaluation stops one that reaches it, so a rubric
+// can never stall a run (contracts section 2).
+const costLimit = 1_000_000
+
+// sizeEstimator gives CEL's cost estimate the largest sizes a run can see: a
+// map or list (lead fields, company facts, settings) of at most 1,000 entries,
+// and text of at most 50,000 characters (a Sheets cell).
+type sizeEstimator struct{}
+
+func (sizeEstimator) EstimateSize(n checker.AstNode) *checker.SizeEstimate {
+	if n.Type() != nil && n.Type().Kind() == types.StringKind {
+		return &checker.SizeEstimate{Min: 0, Max: 50_000}
+	}
+	return &checker.SizeEstimate{Min: 0, Max: 1_000}
+}
+
+func (sizeEstimator) EstimateCallCost(string, string, *checker.AstNode, []checker.AstNode) *checker.CallEstimate {
+	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -116,6 +117,10 @@ func (c *compiler) scoreRule(n *yaml.Node, a at, sc scope) *scoreRule {
 				c.errf(at{q.keyN, pa.key(q.key)}, "a band threshold is a number")
 				continue
 			}
+			if _, dup := bands[th]; dup {
+				c.errf(at{q.keyN, pa.key(q.key)}, "threshold %s appears twice", renderValue(th))
+				continue
+			}
 			v, ok := c.number(q.value, at{q.value, pa.key(q.key)})
 			if ok {
 				bands[th] = v
@@ -172,7 +177,9 @@ func (c *compiler) compileLimits(n *yaml.Node, a at) Limits {
 		}
 	}
 	loc, err := time.LoadLocation(l.Timezone)
-	if err != nil || l.Timezone == "" {
+	// "Local" is whatever zone the machine running leadscore has, which
+	// differs between a laptop and Google Cloud; it is refused.
+	if err != nil || l.Timezone == "" || l.Timezone == "Local" {
 		c.errf(at{n, a.key("timezone")}, "unknown timezone %q; use an IANA name such as UTC or Asia/Kolkata", l.Timezone)
 		return l
 	}
@@ -222,10 +229,11 @@ func (c *compiler) compileLanes(n *yaml.Node, a at) []Lane {
 			c.errf(ia, "every lane needs an id, which must never change")
 		case !laneIDRe.MatchString(l.ID):
 			c.errf(la, "a lane id uses letters, digits, hyphens and underscores")
-		case ids[l.ID]:
-			c.errf(la, "lane id %q is used twice", l.ID)
+		case ids[strings.ToLower(l.ID)]:
+			// Ids name tabs, tables and files, which ignore case in places.
+			c.errf(la, "lane id %q is used twice (ignoring case)", l.ID)
 		}
-		ids[l.ID] = true
+		ids[strings.ToLower(l.ID)] = true
 		l.Name, _ = str("name")
 		if l.Name == "" {
 			l.Name = l.ID
@@ -249,15 +257,44 @@ func (c *compiler) compileLanes(n *yaml.Node, a at) []Lane {
 		if msg := checkPush(l); msg != "" {
 			c.errf(pa, "%s", msg)
 		}
-		if w, ok := vals["when"]; ok {
-			l.when = c.cond(w.value, at{w.value, ia.key("when")}, scope{what: "lane " + l.ID, derivedBefore: len(c.derive)})
+		w, ok := vals["when"]
+		if !ok {
+			c.errf(ia, "every lane needs when: the condition a lead must meet")
+		} else {
+			wa := at{w.value, ia.key("when")}
+			l.when = c.cond(w.value, wa, scope{what: "lane " + l.ID, derivedBefore: len(c.derive)})
 			if l.when != nil {
 				l.When = l.when.text
+			}
+			if l.Kind == "cold" && !requiresNotReceiverOnly(w.value) {
+				c.warnf(wa, "cold lane %s does not require receiver_only to be false; a lead known only from webhooks (which anyone with the receiver secret can forge) could be cold-contacted. Add { field: receiver_only, eq: false } to its all: list", l.ID)
 			}
 		}
 		out = append(out, l)
 	}
 	return out
+}
+
+// requiresNotReceiverOnly reports whether a condition is, or is an `all` that
+// includes, { field: receiver_only, eq: false } (or ne: true).
+func requiresNotReceiverOnly(n *yaml.Node) bool {
+	ps := pairs(n)
+	vals := map[string]*yaml.Node{}
+	for _, p := range ps {
+		vals[p.key] = p.value
+	}
+	if f, ok := scalarOf(vals["field"]); ok && f.text == "receiver_only" && len(ps) == 2 {
+		if v, ok := scalarOf(vals["eq"]); ok && v.natural() == false {
+			return true
+		}
+		if v, ok := scalarOf(vals["ne"]); ok && v.natural() == true {
+			return true
+		}
+	}
+	if all := deref(vals["all"]); all != nil && all.Kind == yaml.SequenceNode && len(ps) == 1 {
+		return slices.ContainsFunc(all.Content, requiresNotReceiverOnly)
+	}
+	return false
 }
 
 // checkPush checks a lane's push target (contracts section 2, "Lanes"). That
@@ -301,15 +338,6 @@ func versionOf(src []byte) (string, error) {
 	}
 	sum := sha256.Sum256(norm)
 	return "r-" + hex.EncodeToString(sum[:])[:16], nil
-}
-
-func contains(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
 }
 
 func dedupe(ss []string) []string {

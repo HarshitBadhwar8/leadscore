@@ -7,7 +7,7 @@
 version: 1
 
 # Columns in your lead sheet. Any column already works as text under its
-# squashed header (lowercase letters and digits: "Job Title" is "jobtitle");
+# squashed header (lowercase letters and digits: "Dock Doors" is "dockdoors");
 # declare a column here to give it a type, a nicer name, or more spellings.
 fields:
   warehouse_software: { type: text, aliases: ["Warehouse software", "WMS"] }
@@ -26,7 +26,7 @@ company:
   legacy_tool_seen: { any: { field: warehouse_software, in: $legacy_tools } }  # anyone still on spreadsheets or paper
   largest_fleet: { max: fleet_size }
   ops_contacts: { count: { field: title, contains: operations } }
-  industry: { first: industry }                                               # the first lead's answer wins
+  main_industry: { first: industry }                                          # the first lead's answer wins
 
 # Signals from website visits (the receiver, or an events sheet).
 detectors:
@@ -40,7 +40,7 @@ derive:
     rules:
     - when: { field: company.legacy_tool_seen, eq: true }
       then: yes
-    - when: { field: company.industry, in: $target_industries }
+    - when: { field: company.main_industry, in: $target_industries }
       then: yes
     # no else: any other company has no fit signal
   tier:
@@ -48,9 +48,15 @@ derive:
     rules:
     - when: { field: company.employees, missing: true }
       then: null                 # headcount unknown: wait for enrichment rather than guess
-    - when: { any: [ { field: company.employees, lt: 50 }, { field: company.employees, gt: 5000 } ] }
-      then: 4                    # too small or too big for us
-    - when: { all: [ { field: fit_signal, eq: yes }, { field: company.largest_fleet, gte: 20 } ] }
+    - when:                      # too small or too big for us
+        any:
+          - { field: company.employees, lt: 50 }
+          - { field: company.employees, gt: 5000 }
+      then: 4
+    - when:
+        all:
+          - { field: fit_signal, eq: yes }
+          - { field: company.largest_fleet, gte: 20 }
       then: 1
     - when: { field: fit_signal, eq: yes }
       then: 2
@@ -60,12 +66,17 @@ derive:
   priority:
     level: company
     rules:
-    - when: { all: [ { field: tier, eq: 1 }, { field: company.region, in: $home_countries } ] }
+    - when:
+        all:
+          - { field: tier, eq: 1 }
+          - { field: company.region, in: $home_countries }
       then: A
     - when: { field: tier, lte: 2 }
       then: B
     - else: C
-  hot:                           # a lead-level label: this person looked at the demo page this week
+  hot:                           # this person looked at the demo page this week
+    level: lead
+    rules:
     - when: { detector: demo_visit }
       then: true
     - else: false
@@ -84,7 +95,11 @@ score:
     - { band: company.leads_seen, points: { 2: 5, 3: 10 } }   # 2 people seen: 5; 3 or more: 10
     - { when: { field: company.ops_contacts, gte: 2 }, points: 5 }
   contact:
-    - when: { any: [ { field: title, contains: head }, { field: title, contains: director }, { field: title, contains: vp } ] }
+    - when:
+        any:
+          - { field: title, contains: head }
+          - { field: title, contains: director }
+          - { field: title, contains: vp }
       points: 15
     - { when: { field: hot, eq: true }, points: 20 }
     - { when: { field: warm_path, present: true }, points: 10 }
@@ -107,7 +122,10 @@ lanes:
     name: Hot visitors
     kind: cold
     priority: 25
-    when: { all: [ { field: hot, eq: true }, { field: receiver_only, eq: false } ] }
+    when:
+      all:
+        - { field: hot, eq: true }
+        - { field: receiver_only, eq: false }
     push: apollo:sequence/Demo visitors
   - id: fleet-ops
     name: Fleet ops intro
