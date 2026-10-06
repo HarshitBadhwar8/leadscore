@@ -106,6 +106,7 @@ type AppliedRow struct {
 	RowHash        string
 	LeadID         api.LeadID
 	FirstAppliedAt time.Time
+	KeyConflictAt  time.Time // when the row first carried a key another lead holds; it counts once
 	Extra          map[string]string
 }
 
@@ -282,7 +283,7 @@ func (r WindowEvent) encode() api.Row {
 func (r AppliedRow) encode() api.Row {
 	return withExtra(api.Row{
 		"source_id": r.SourceID, "row_id": r.RowID, "row_hash": r.RowHash, "lead_id": string(r.LeadID),
-		"first_applied_at": FormatTime(r.FirstAppliedAt),
+		"first_applied_at": FormatTime(r.FirstAppliedAt), "key_conflict_at": FormatTime(r.KeyConflictAt),
 	}, r.Extra)
 }
 
@@ -392,7 +393,8 @@ func decode(def TableDef, r api.Row) (Row, error) {
 		out = w
 	case TableAppliedRows:
 		out = AppliedRow{SourceID: d.s("source_id"), RowID: d.s("row_id"), RowHash: d.s("row_hash"),
-			LeadID: api.LeadID(d.s("lead_id")), FirstAppliedAt: d.t("first_applied_at"), Extra: extra(def, r)}
+			LeadID: api.LeadID(d.s("lead_id")), FirstAppliedAt: d.t("first_applied_at"),
+			KeyConflictAt: d.t("key_conflict_at"), Extra: extra(def, r)}
 	case TableSeenEvents:
 		out = SeenEvent{EventKey: d.s("event_key"), FirstReceivedAt: d.t("first_received_at"),
 			RunID: d.s("run_id"), Extra: extra(def, r)}
