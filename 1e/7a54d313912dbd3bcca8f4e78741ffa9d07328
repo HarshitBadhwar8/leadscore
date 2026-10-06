@@ -1,0 +1,24 @@
+internal/check/check_test.go
+  s_28e5c721690f52::t_2818052a52e7fa 1-111
+internal/check/secrets.go
+  s_28e5c721690f52::t_e77ea5ea572fd9 1-74
+internal/check/check.go
+  s_28e5c721690f52::t_14e1a94e8921d9 34-37
+  s_28e5c721690f52::t_241f8395792a2e 1-33,38-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1e7a54d313912dbd3bcca8f4e78741ffa9d07328",
+  "prompts": {},
+  "sessions": {
+    "s_28e5c721690f52": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "da9242c6-61ec-4654-be3b-55ff7ec11668",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
