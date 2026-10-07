@@ -51,10 +51,7 @@ func NewPoller(cfg api.Config) (api.Poller, error) {
 // else the send's completed_at), and to_email.
 func (p *Poller) Poll(ctx context.Context, since time.Time) ([]api.Event, error) {
 	var out []api.Event
-	for page := 1; ; page++ {
-		if page > maxPollPages {
-			return nil, fmt.Errorf("apollo: the reply search has more than %d pages; nothing was read", maxPollPages)
-		}
+	err := eachPage(maxPollPages, func(page int) (int, pagination, error) {
 		q := url.Values{
 			"emailer_message_stats[]":         {"replied"},
 			"emailer_message_date_range_mode": {"completed_at"},
@@ -67,17 +64,19 @@ func (p *Poller) Poll(ctx context.Context, since time.Time) ([]api.Event, error)
 			Pagination pagination      `json:"pagination"`
 		}
 		if err := p.c.Do(ctx, Request{Method: http.MethodGet, Path: messagesSearchPath, Query: q}, &reply); err != nil {
-			return nil, fmt.Errorf("apollo: reading replies: %w", err)
+			return 0, pagination{}, err
 		}
 		for _, m := range reply.Messages {
 			if e, ok := m.event(p.now().UTC()); ok {
 				out = append(out, e)
 			}
 		}
-		if page >= reply.Pagination.TotalPages {
-			return out, nil
-		}
+		return len(reply.Messages), reply.Pagination, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("apollo: reading replies: %w", err)
 	}
+	return out, nil
 }
 
 // maxPollPages bounds one poll (Apollo's search stops at 50,000 records:
@@ -96,7 +95,7 @@ type polledMessage struct {
 
 // event is the message as a polled `reply`. A message naming no person
 // (neither an email nor a contact id) is dropped: there is no lead to apply it
-// to. With no usable time it is timed at the poll.
+// to. With no usable time it is timed at the poll and marked no_reply_time.
 func (m polledMessage) event(now time.Time) (api.Event, bool) {
 	email := strings.ToLower(strings.TrimSpace(m.ToEmail))
 	contactID := strings.TrimSpace(m.ContactID)
@@ -110,15 +109,16 @@ func (m polledMessage) event(now time.Time) (api.Event, bool) {
 		Attrs: attrs(AttrMessageID, strings.TrimSpace(m.ID), AttrLabel, strings.ToLower(strings.TrimSpace(m.ReplyClass)),
 			AttrContactID, contactID),
 	}
-	e.ReceivedAt = now
 	for _, s := range []string{m.RepliedAt, m.CompletedAt} {
 		if t, err := time.Parse(time.RFC3339, strings.TrimSpace(s)); err == nil {
 			e.At, e.ReceivedAt = t.UTC(), t.UTC()
-			break
+			return e, true
 		}
 	}
-	if e.At.IsZero() {
-		e.At = now
-	}
+	// No time Apollo gave: timed at the poll for its effects, and marked so
+	// that a reply with no message id is keyed without the poll's time
+	// (events.Key), else every poll would read it as a new reply.
+	e.At, e.ReceivedAt = now, now
+	e.Attrs[AttrNoReplyTime] = "yes"
 	return e, true
 }

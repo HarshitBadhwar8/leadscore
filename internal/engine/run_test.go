@@ -48,10 +48,16 @@ func TestExampleRunFillsRanked(t *testing.T) {
 	}
 	// A vendor lane whose sink this build does not have is reported; one
 	// whose sink it has is not, and an export lane needs no sink.
+	unregistered := false
 	for lane, sink := range map[string]string{"demo-followup": "hubspot", "fleet-ops": "apollo"} {
-		if _, registered := api.SinkFactory(sink); hasKey(res.Problems, "lane_sink_unregistered:"+lane) == registered {
+		_, registered := api.SinkFactory(sink)
+		if hasKey(res.Problems, "lane_sink_unregistered:"+lane) == registered {
 			t.Errorf("lane %s (sink %s registered: %v): problems %v", lane, sink, registered, res.Problems)
 		}
+		unregistered = unregistered || !registered
+	}
+	if unregistered && res.Healthy {
+		t.Errorf("a lane with no sink in the build must make the run unhealthy: %+v", res)
 	}
 	if hasKey(res.Problems, "lane_sink_unregistered:nurture") {
 		t.Errorf("problems %v", res.Problems)

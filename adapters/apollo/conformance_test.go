@@ -2,6 +2,7 @@ package apollo_test
 
 import (
 	"context"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -75,5 +76,30 @@ func TestALaterLabelIsANewEvent(t *testing.T) {
 	}
 	if later[0] != apollo.PolledReplyKey("msg-1", "willing_to_meet") {
 		t.Errorf("key %v, want the message id plus the label", later[0])
+	}
+}
+
+// A polled reply with no message id and no time Apollo gave is keyed by its
+// person and label only, so polling it again later is the same event.
+func TestAnUntimedReplyKeepsItsKey(t *testing.T) {
+	t.Setenv(apollo.KeyVariable, key)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"emailer_messages":[{"contact_id":"contact-1","to_email":"dana@acme-robotics.example","reply_class":"not_interested"}],"pagination":{"page":1,"total_pages":1}}`))
+	}))
+	t.Cleanup(srv.Close)
+	p, err := apollo.NewPoller(api.Config{"base_url": srv.URL, "_http_client": srv.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs, err := p.Poll(context.Background(), time.Now().Add(-time.Hour))
+	if err != nil || len(evs) != 1 {
+		t.Fatalf("evs %v err %v", evs, err)
+	}
+	e := evs[0]
+	e.Origin = events.OriginPolling
+	first := events.Key(merge.NormalizeEventKeys(e))
+	e.At, e.ReceivedAt = e.At.Add(6*time.Hour), e.ReceivedAt.Add(6*time.Hour) // the next poll's time
+	if again := events.Key(merge.NormalizeEventKeys(e)); again != first {
+		t.Errorf("keys %v then %v, want one", first, again)
 	}
 }

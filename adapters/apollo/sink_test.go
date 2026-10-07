@@ -215,9 +215,10 @@ func TestRefusalsMapToErrRefused(t *testing.T) {
 	if n := fake.Count("enroll"); n != 0 {
 		t.Errorf("%d enrollments, want none", n)
 	}
-	// The pre-read refuses without calling add for a contact in another sequence.
-	if n := callsOf(fake, "/add_contact_ids"); n != 3 {
-		t.Errorf("%d add calls, want 3 (opted out, bad email, the race)", n)
+	// The pre-read refuses without calling add for a contact in another
+	// sequence or opted out.
+	if n := callsOf(fake, "/add_contact_ids"); n != 2 {
+		t.Errorf("%d add calls, want 2 (bad email, the race)", n)
 	}
 }
 
@@ -233,9 +234,14 @@ func TestClassify(t *testing.T) {
 	}{
 		{"422 another sequence", status(422, `{"error":"Contact is active in another sequence"}`), api.ErrRefused},
 		{"400 opted out", status(400, `{"error":"contacts_unsubscribed"}`), api.ErrRefused},
-		{"422 invalid email", status(422, `{"error":"Email is invalid"}`), api.ErrRefused},
+		{"422 invalid email by code", status(422, `{"error":"Bad contact","error_code":"invalid_email"}`), api.ErrRefused},
 		{"422 other", status(422, `{"error":"Email account not found"}`), nil},
-		{"403", status(403, `{"error":"not accessible with this api_key"}`), nil},
+		// The rest of a body may echo the contact: never read for a refusal.
+		{"422 echoing the contact", status(422, `{"error":"Email account not found","contact":{"email":"unsubscribe-me@acme-robotics.example","email_unsubscribed":false,"note":"invalid email"}}`), nil},
+		{"422 already in this sequence", status(422, `{"error_code":"contact_already_exists_in_campaign"}`), nil},
+		{"not JSON", status(400, `unsubscribe`), nil},
+		{"401", status(401, `{"error":"Invalid access credentials."}`), api.ErrRateLimited},
+		{"403", status(403, `{"error":"not accessible with this api_key"}`), api.ErrRateLimited},
 		{"500", status(500, `{}`), api.ErrTransient},
 		{"503", status(503, ``), api.ErrTransient},
 		{"timeout", context.DeadlineExceeded, api.ErrTransient},

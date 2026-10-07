@@ -22,8 +22,10 @@ func init() { Register(apolloSequences{getenv: os.Getenv}) }
 // (the sink returns ErrTransient), so this check is what tells the team.
 //
 // A missing key is the secrets check's to report, and a rubric that does not
-// compile the rubric check's. A call that gets no answer is the warning
-// apollo-sequences:unreachable: it says nothing about the names.
+// compile the rubric check's. A key Apollo refuses (401, 403: not a master
+// key) fails as apollo-sequences:key; a call that gets no answer (429, 5xx,
+// network) is the warning apollo-sequences:unreachable: it says nothing about
+// the names.
 type apolloSequences struct{ getenv func(string) string }
 
 func (apolloSequences) Name() string { return "apollo-sequences" }
@@ -48,9 +50,16 @@ func (a apolloSequences) Run(ctx context.Context, env Env) []Problem {
 			Fix: "fix sinks.apollo in leadscore.yml"}}
 	}
 	unreachable := func(err error) []Problem {
+		if apollo.KeyRefused(err) {
+			// S0 confirms: sequences and mailboxes need a master key, and
+			// Apollo answers 401 or 403 to any other.
+			return []Problem{{Key: "apollo-sequences:key",
+				Message: "Apollo refused the key for sequences and mailboxes, so nothing can be enrolled: " + err.Error(),
+				Fix:     "use a master API key in " + apollo.KeyVariable}}
+		}
 		return []Problem{{Key: "apollo-sequences:unreachable", Warning: true,
 			Message: "Apollo did not answer, so the mailbox and sequence names were not checked: " + err.Error(),
-			Fix:     "nothing if it clears on the next run; otherwise check the key (it must be a master key) and Apollo's status"}}
+			Fix:     "nothing if it clears on the next run; otherwise check Apollo's status and the network"}}
 	}
 
 	var out []Problem

@@ -1,0 +1,27 @@
+{
+  "provisional": true,
+  "documented": true,
+  "note": "S0 confirms: a key that is not a master key gets 403 here",
+  "method": "POST",
+  "path": "/api/v1/emailer_campaigns/search",
+  "query": {},
+  "request_headers": [
+    "Accept",
+    "Cache-Control",
+    "Content-Type",
+    "X-Api-Key"
+  ],
+  "request_body": {
+    "q_name": "Qualified founders",
+    "page": 1,
+    "per_page": 100
+  },
+  "status": 403,
+  "response_headers": {
+    "Content-Type": "application/json; charset=utf-8"
+  },
+  "response_body": {
+    "error": "api/v1/emailer_campaigns/search is not accessible with this api_key",
+    "error_code": "API_INACCESSIBLE"
+  }
+}

@@ -129,7 +129,7 @@ func (s *Sink) Do(ctx context.Context, req api.StepRequest) (string, error) {
 		if contactID == "" {
 			return "", errors.New("apollo: the enroll step needs the contact step's id")
 		}
-		return s.enroll(ctx, name, contactID)
+		return s.enroll(ctx, name, contactID, req.Lead)
 	}
 	return "", fmt.Errorf("apollo: unknown step %q", req.Key.Step)
 }
@@ -224,43 +224,171 @@ func splitName(full string) (first, last string) {
 // enroll adds the contact to the named sequence. The vendor id is the
 // sequence id and the contact id, so a repeat returns the same id.
 //
-// S0 confirms whether Apollo's add call is itself a no-op for a contact
-// already in the sequence. Until then the step reads the contact first: in
-// this sequence already is a no-op; in any other sequence (active, paused or
-// finished) is a refusal, since Apollo already works or worked that person.
+// Before the add call it reads the contact and searches the team's contacts
+// by email, so neither a repeat nor a duplicate contact can enroll anyone
+// twice:
+//   - the contact already in this sequence is a no-op (S0 confirms whether
+//     Apollo's add call is itself one);
+//   - the contact in any other sequence (active, paused or finished), or
+//     opted out (email_unsubscribed, read whatever ContactOptOutFlag says), is
+//     refused;
+//   - any other contact with one of the lead's emails that is opted out or in
+//     any sequence is refused: Apollo already holds that person.
+//
 // The add call also asks Apollo to skip contacts active or finished in other
-// sequences, so a race between the read and the add still refuses.
-func (s *Sink) enroll(ctx context.Context, name, contactID string) (string, error) {
+// sequences, so a race between the reads and the add still refuses.
+func (s *Sink) enroll(ctx context.Context, name, contactID string, lead api.LeadRef) (string, error) {
 	seqID, err := s.sequenceID(ctx, name)
 	if err != nil {
 		return "", err
 	}
 	vendorID := seqID + ":" + contactID
-	statuses, err := s.c.contactSequences(ctx, contactID)
+	own, err := s.c.readContact(ctx, contactID)
 	if err != nil {
 		return "", classify(err)
 	}
-	if _, in := statuses[seqID]; in {
+	if _, in := own.sequences[seqID]; in {
 		return vendorID, nil
 	}
-	if len(statuses) > 0 {
-		return "", fmt.Errorf("apollo: the contact is already in another sequence: %w", api.ErrRefused)
+	if own.optedOut {
+		return "", fmt.Errorf("apollo: the contact is %s: %w", reasonOptedOut, api.ErrRefused)
 	}
-	skipped, err := s.c.addToSequence(ctx, seqID, contactID, s.mailbox)
+	if len(own.sequences) > 0 {
+		return "", fmt.Errorf("apollo: the contact is %s: %w", reasonOtherSequence, api.ErrRefused)
+	}
+	emails := append([]string{own.email}, lead.Emails...)
+	seen := map[string]bool{}
+	for _, email := range emails {
+		email = strings.ToLower(strings.TrimSpace(email))
+		if email == "" || seen[email] {
+			continue
+		}
+		seen[email] = true
+		dups, err := s.c.contactsByEmail(ctx, email)
+		if err != nil {
+			return "", classify(err)
+		}
+		for _, d := range dups {
+			switch {
+			case d.id == contactID:
+			case d.optedOut:
+				return "", fmt.Errorf("apollo: another contact with the lead's email is %s: %w", reasonOptedOut, api.ErrRefused)
+			case len(d.sequences) > 0:
+				return "", fmt.Errorf("apollo: another contact with the lead's email is in a sequence: %w", api.ErrRefused)
+			}
+		}
+	}
+	reply, err := s.c.addToSequence(ctx, seqID, contactID, s.mailbox)
+	var se *StatusError
+	if errors.As(err, &se) && se.Status >= 400 && se.Status < 500 && refusalOf(errorFields(se.Body())) == reasonInSequence {
+		return vendorID, nil
+	}
 	if err != nil {
 		return "", classify(err)
 	}
-	if skipped != nil {
-		switch reason := refusalOf(skipped.reason); reason {
-		case reasonInSequence:
-			return vendorID, nil
-		case "":
-			return "", fmt.Errorf("apollo: the contact was skipped for an unrecognized reason: %w", api.ErrRefused)
-		default:
-			return "", fmt.Errorf("apollo: the contact was skipped (%s): %w", reason, api.ErrRefused)
+	return vendorID, addOutcome(reply, contactID)
+}
+
+// addOutcome reads the add call's reply for one contact. The contact was
+// added only when the reply's contacts list holds it and no skip payload
+// mentions it. A skip for a recognised refusal is ErrRefused; "already in this
+// sequence" is done; any other skip, or a reply that shows neither, counts
+// one attempt (a skip means nobody was added, so a retry cannot contact the
+// person twice; after three the step fails until a `retry`).
+//
+// S0 confirms the skip shape; until then a skip is any mention of the contact
+// id under a key naming "skip": keyed by id, a plain list, a reason-to-ids
+// map, or nested deeper.
+func addOutcome(reply map[string]any, contactID string) error {
+	var skipped bool
+	var reasons []string
+	for k, v := range reply {
+		if !strings.Contains(strings.ToLower(k), "skip") {
+			continue
+		}
+		if found, rs := mentions(v, contactID, nil); found {
+			skipped = true
+			reasons = append(reasons, rs...)
 		}
 	}
-	return vendorID, nil
+	if !skipped {
+		if listed(reply["contacts"], contactID) {
+			return nil
+		}
+		return errors.New("apollo: the add reply neither lists nor skips the contact")
+	}
+	switch reason := refusalOf(strings.Join(reasons, " ")); reason {
+	case reasonInSequence:
+		return nil
+	case "":
+		return errors.New("apollo: the contact was skipped for an unrecognised reason")
+	default:
+		return fmt.Errorf("apollo: the contact was skipped (%s): %w", reason, api.ErrRefused)
+	}
+}
+
+// mentions reports whether v holds id anywhere (as a map key or a string
+// value), with the words around it: the map keys on the way down and, for a
+// map keyed by id, its value.
+func mentions(v any, id string, path []string) (bool, []string) {
+	switch t := v.(type) {
+	case string:
+		if t == id {
+			return true, path
+		}
+	case []any:
+		for _, e := range t {
+			if ok, rs := mentions(e, id, path); ok {
+				return true, rs
+			}
+		}
+	case map[string]any:
+		for k, e := range t {
+			if k == id {
+				rs := append([]string(nil), path...)
+				return true, append(rs, words(e)...)
+			}
+			if ok, rs := mentions(e, id, append(append([]string(nil), path...), k)); ok {
+				return true, rs
+			}
+		}
+	}
+	return false, nil
+}
+
+// words are the strings in v, for a skip reason given in any shape.
+func words(v any) []string {
+	switch t := v.(type) {
+	case string:
+		return []string{t}
+	case []any:
+		var out []string
+		for _, e := range t {
+			out = append(out, words(e)...)
+		}
+		return out
+	case map[string]any:
+		var out []string
+		for k, e := range t {
+			out = append(append(out, k), words(e)...)
+		}
+		return out
+	}
+	return nil
+}
+
+// listed reports whether a contacts list holds the contact id.
+func listed(v any, id string) bool {
+	list, _ := v.([]any)
+	for _, e := range list {
+		if m, ok := e.(map[string]any); ok && m["id"] == id {
+			return true
+		}
+		if e == id {
+			return true
+		}
+	}
+	return false
 }
 
 // sequenceID resolves a sequence name once per run. An unresolved name
@@ -293,24 +421,16 @@ var (
 	ErrSequenceAmbiguous = errors.New("apollo: more than one sequence has that name")
 )
 
-// maxSearchPages bounds a paged search; past it the answer is incomplete, and
-// an incomplete answer is reported as an error rather than read as complete.
+// maxSearchPages bounds the sequence search; past it the answer is
+// incomplete, and an incomplete answer is an error, never read as complete.
 const maxSearchPages = 50
-
-type pagination struct {
-	Page       int `json:"page"`
-	TotalPages int `json:"total_pages"`
-}
 
 // ResolveSequence finds the id of the one sequence whose name is exactly
 // name. Apollo's name filter is a keyword search, so every page is read and
 // matched exactly. S0 confirms the call and the q_name filter.
 func (c *Client) ResolveSequence(ctx context.Context, name string) (string, error) {
 	var found []string
-	for page := 1; ; page++ {
-		if page > maxSearchPages {
-			return "", fmt.Errorf("apollo: the sequence search for a lane's name has more than %d pages", maxSearchPages)
-		}
+	err := eachPage(maxSearchPages, func(page int) (int, pagination, error) {
 		var reply struct {
 			Sequences []struct {
 				ID   string `json:"id"`
@@ -320,16 +440,17 @@ func (c *Client) ResolveSequence(ctx context.Context, name string) (string, erro
 		}
 		body := map[string]any{"q_name": name, "page": page, "per_page": perPage}
 		if err := c.Do(ctx, Request{Method: http.MethodPost, Path: sequencesSearchPath, Body: body}, &reply); err != nil {
-			return "", err
+			return 0, pagination{}, err
 		}
 		for _, sq := range reply.Sequences {
 			if sq.Name == name && sq.ID != "" {
 				found = append(found, sq.ID)
 			}
 		}
-		if page >= reply.Pagination.TotalPages {
-			break
-		}
+		return len(reply.Sequences), reply.Pagination, nil
+	})
+	if err != nil {
+		return "", err
 	}
 	switch len(found) {
 	case 0:
@@ -358,43 +479,92 @@ func (c *Client) EmailAccountIDs(ctx context.Context) ([]string, error) {
 	return ids, nil
 }
 
-// contactSequences reads a contact's sequence memberships: sequence id to
-// status (active, paused, finished, ...). S0 confirms the call and the
-// contact_campaign_statuses field.
-func (c *Client) contactSequences(ctx context.Context, contactID string) (map[string]string, error) {
+// apolloContact is what the enroll step reads of a contact.
+type apolloContact struct {
+	id, email string
+	optedOut  bool
+	sequences map[string]string // sequence id -> status (active, paused, finished, ...)
+}
+
+// contactRecord is the JSON of a contact. Statuses is a pointer so a reply
+// without the field is told apart from a contact in no sequence.
+type contactRecord struct {
+	ID       string `json:"id"`
+	Email    string `json:"email"`
+	OptedOut *bool  `json:"email_unsubscribed"`
+	Statuses *[]struct {
+		SequenceID string `json:"emailer_campaign_id"`
+		Status     string `json:"status"`
+	} `json:"contact_campaign_statuses"`
+}
+
+func (r *contactRecord) read() (apolloContact, error) {
+	if r == nil || r.Statuses == nil {
+		return apolloContact{}, errors.New("apollo: a contact record came back without contact_campaign_statuses")
+	}
+	c := apolloContact{id: r.ID, email: r.Email, optedOut: r.OptedOut != nil && *r.OptedOut, sequences: map[string]string{}}
+	for _, st := range *r.Statuses {
+		if st.SequenceID != "" {
+			c.sequences[st.SequenceID] = st.Status
+		}
+	}
+	return c, nil
+}
+
+// readContact reads one contact. S0 confirms the call and the
+// contact_campaign_statuses and email_unsubscribed fields.
+func (c *Client) readContact(ctx context.Context, contactID string) (apolloContact, error) {
 	var reply struct {
-		Contact struct {
-			Statuses []struct {
-				SequenceID string `json:"emailer_campaign_id"`
-				Status     string `json:"status"`
-			} `json:"contact_campaign_statuses"`
-		} `json:"contact"`
+		Contact *contactRecord `json:"contact"`
 	}
 	path := contactsPath + "/" + url.PathEscape(contactID)
 	if err := c.Do(ctx, Request{Method: http.MethodGet, Path: path}, &reply); err != nil {
-		return nil, err
+		return apolloContact{}, err
 	}
-	out := map[string]string{}
-	for _, st := range reply.Contact.Statuses {
-		if st.SequenceID != "" {
-			out[st.SequenceID] = st.Status
-		}
-	}
-	return out, nil
+	return reply.Contact.read()
 }
 
-// skip is Apollo's answer that it did not add the contact, with its reason
-// (empty when it gave none).
-type skip struct{ reason string }
+// maxContactPages bounds a contact search for one email. An email matching
+// more contacts than that is an error, never read as "no match".
+const maxContactPages = 5
 
-// addToSequence adds one contact to a sequence, sending from the mailbox. A
-// 2xx that names the contact among the skipped ones returns that skip.
+// contactsByEmail returns every team contact whose email is exactly email.
+// The search is a keyword search, so near matches are dropped here. S0
+// confirms the call, that it spends no credits, and the q_keywords filter.
+func (c *Client) contactsByEmail(ctx context.Context, email string) ([]apolloContact, error) {
+	var out []apolloContact
+	err := eachPage(maxContactPages, func(page int) (int, pagination, error) {
+		var reply struct {
+			Contacts   []contactRecord `json:"contacts"`
+			Pagination pagination      `json:"pagination"`
+		}
+		body := map[string]any{"q_keywords": email, "page": page, "per_page": perPage}
+		if err := c.Do(ctx, Request{Method: http.MethodPost, Path: contactsSearchPath, Body: body}, &reply); err != nil {
+			return 0, pagination{}, err
+		}
+		for i := range reply.Contacts {
+			r := &reply.Contacts[i]
+			if !strings.EqualFold(strings.TrimSpace(r.Email), email) {
+				continue
+			}
+			ac, err := r.read()
+			if err != nil {
+				return 0, pagination{}, err
+			}
+			out = append(out, ac)
+		}
+		return len(reply.Contacts), reply.Pagination, nil
+	})
+	return out, err
+}
+
+// addToSequence adds one contact to a sequence, sending from the mailbox,
+// and returns the reply for addOutcome to read.
 //
 // The flags ask Apollo to skip, not enroll, a contact active or finished in
 // another sequence, with no email, or with an unverified email. S0 confirms
-// the call, the flags and the skipped_contact_ids shape (taken here as a map
-// of contact id to reason, or a plain list of ids).
-func (c *Client) addToSequence(ctx context.Context, seqID, contactID, mailbox string) (*skip, error) {
+// the call and the flags.
+func (c *Client) addToSequence(ctx context.Context, seqID, contactID, mailbox string) (map[string]any, error) {
 	body := map[string]any{
 		"emailer_campaign_id":                  seqID,
 		"contact_ids":                          []string{contactID},
@@ -404,27 +574,12 @@ func (c *Client) addToSequence(ctx context.Context, seqID, contactID, mailbox st
 		"sequence_no_email":                    false,
 		"sequence_unverified_email":            false,
 	}
-	var reply struct {
-		Skipped any `json:"skipped_contact_ids"`
-	}
+	reply := map[string]any{}
 	path := fmt.Sprintf(addContactsPathFmt, url.PathEscape(seqID))
 	if err := c.Do(ctx, Request{Method: http.MethodPost, Path: path, Body: body}, &reply); err != nil {
 		return nil, err
 	}
-	switch sk := reply.Skipped.(type) {
-	case map[string]any:
-		if r, ok := sk[contactID]; ok {
-			reason, _ := r.(string)
-			return &skip{reason: reason}, nil
-		}
-	case []any:
-		for _, id := range sk {
-			if id == contactID {
-				return &skip{}, nil
-			}
-		}
-	}
-	return nil, nil
+	return reply, nil
 }
 
 // Refusal reasons, as named in errors (never Apollo's own text, which may
@@ -436,10 +591,11 @@ const (
 	reasonInSequence    = "already in this sequence" // not a refusal: the enroll already happened
 )
 
-// refusalMarkers tell Apollo's refusal reasons apart, by words in its reply
-// (a skip reason, or a 4xx body), lowercased. S0 confirms the real wording;
-// these come from Apollo's public docs and UI. Order matters: the first
-// match wins, and "this sequence" is checked before "another".
+// refusalMarkers tell Apollo's refusal reasons apart, by words in a skip
+// reason or an error reply's error and error_code fields, lowercased. S0
+// confirms the real wording; these come from Apollo's public docs and UI.
+// Order matters: the first match wins, and "this sequence" is checked before
+// "another".
 var refusalMarkers = []struct{ marker, reason string }{
 	{"already_in_campaign", reasonInSequence},
 	{"already in this sequence", reasonInSequence},
@@ -473,10 +629,30 @@ func refusalOf(text string) string {
 	return ""
 }
 
+// errorFields is the text of an error reply's top-level error and error_code
+// fields: the only part of a body a refusal is read from, since the rest may
+// echo the contact back (an email like unsubscribe-me@..., a flag set false).
+// S0 confirms Apollo's error shape.
+func errorFields(body []byte) string {
+	var reply map[string]any
+	if json.Unmarshal(body, &reply) != nil {
+		return ""
+	}
+	var parts []string
+	for _, k := range []string{"error", "error_code"} {
+		if v, ok := reply[k].(string); ok {
+			parts = append(parts, v)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
 // classify maps a call's error to section 1's classes (contracts section 6):
-// a 429 is already ErrRateLimited; a 5xx, a timeout or a transport failure is
-// ErrTransient; a 4xx whose body names a refusal (another sequence, opted
-// out, invalid email) is ErrRefused; any other error counts one attempt.
+// a 429, 401 or 403 is ErrRateLimited (a refused key or a key without the
+// scope is no lead's fault: the sink stops for the run with no attempt
+// counted); a 5xx, a timeout or a transport failure is ErrTransient; a 4xx
+// whose error fields name a refusal (another sequence, opted out, invalid
+// email) is ErrRefused; any other error counts one attempt.
 //
 // None of these says Apollo did nothing: the ledger records that the call
 // went out, so a timeout still holds the person's one cold push.
@@ -493,15 +669,16 @@ func classify(err error) error {
 		}
 		return fmt.Errorf("%w: %w", api.ErrTransient, err)
 	}
-	if se.Status >= 500 {
+	switch {
+	case KeyRefused(err):
+		return fmt.Errorf("%w: apollo refused the key (it must be a master key): %w", api.ErrRateLimited, err)
+	case se.Status >= 500:
 		return fmt.Errorf("%w: %w", api.ErrTransient, err)
-	}
-	if se.Status >= 400 {
-		switch reason := refusalOf(string(se.Body())); reason {
+	case se.Status >= 400:
+		switch reason := refusalOf(errorFields(se.Body())); reason {
 		case "", reasonInSequence:
-			// "Already in this sequence" as an error reply is left to count
-			// an attempt: the enroll step reads the contact first, so it
-			// should never get here, and S0 confirms the shape.
+			// Not a refusal; "already in this sequence" is read by the
+			// enroll step itself, and anywhere else counts an attempt.
 		default:
 			return fmt.Errorf("apollo: refused (%s), status %d: %w", reason, se.Status, api.ErrRefused)
 		}

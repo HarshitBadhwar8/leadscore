@@ -65,14 +65,21 @@ func TestApolloSequences(t *testing.T) {
 		{"mailbox as a number", cfg(block(12)), good, "good-key", map[string]bool{"apollo-sequences:mailbox": false}},
 		{"names missing or ambiguous", cfg(block("mailbox-1")), bad, "good-key",
 			map[string]bool{"apollo-sequences:miss": false, "apollo-sequences:dup": false}},
-		{"unreachable is a warning", cfg(block("mailbox-1")), good, "wrong", map[string]bool{"apollo-sequences:unreachable": true}},
+		{"a refused key fails", cfg(block("mailbox-1")), good, "wrong", map[string]bool{"apollo-sequences:key": false}},
+		{"unreachable is a warning", cfg(block("mailbox-1")), good, "good-key/rate_limited", map[string]bool{"apollo-sequences:unreachable": true}},
+		{"forbidden on the sequence search fails", cfg(block("mailbox-1")), good, "good-key/forbidden", map[string]bool{"apollo-sequences:key": false}},
 		{"base_url without a test client", cfg(api.Config{"base_url": srv.URL}), good, "good-key", map[string]bool{"apollo-sequences:config": false}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			key := tc.key
+			if c, ok := strings.CutPrefix(key, "good-key/"); ok { // a good key, and the sequence search answers this case
+				key = "good-key"
+				fake.FailNext(fakeapollo.CallSearchSequences, c)
+			}
 			c := apolloSequences{getenv: func(k string) string {
 				if k == "APOLLO_API_KEY" {
-					return tc.key
+					return key
 				}
 				return ""
 			}}

@@ -51,6 +51,9 @@ const (
 	AttrVisitedAt = "visited_at"
 	AttrLabel     = "label"      // polled replies
 	AttrMessageID = "message_id" // polled replies
+	// AttrNoReplyTime is "yes" on a polled reply Apollo gave no time for: it
+	// is timed at the poll, and with no message id keyed without a time.
+	AttrNoReplyTime = "no_reply_time"
 )
 
 // ErrIgnored marks a body of an engagement kind we do not act on (an open, a

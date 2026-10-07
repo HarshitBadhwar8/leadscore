@@ -19,14 +19,14 @@ import (
 
 var outreachFixtures = []string{
 	"contacts_create/created", "contacts_create/invalid_email", "contacts_create/rate_limited",
-	"contacts_create/server_error", "contacts_create/forbidden",
+	"contacts_create/server_error", "contacts_create/forbidden", "contacts_create/bad_request",
 	"contacts_get/found", "contacts_get/not_found",
 	"contacts_search/found", "contacts_search/opted_out", "contacts_search/rate_limited",
-	"emailer_campaigns_search/found",
+	"emailer_campaigns_search/found", "emailer_campaigns_search/rate_limited", "emailer_campaigns_search/forbidden",
 	"emailer_campaigns_add_contact_ids/added", "emailer_campaigns_add_contact_ids/skipped_other_sequence",
 	"emailer_campaigns_add_contact_ids/skipped_unsubscribed", "emailer_campaigns_add_contact_ids/skipped_invalid_email",
 	"emailer_campaigns_add_contact_ids/rate_limited", "emailer_campaigns_add_contact_ids/server_error",
-	"emailer_campaigns_add_contact_ids/forbidden",
+	"emailer_campaigns_add_contact_ids/forbidden", "emailer_campaigns_add_contact_ids/bad_request", "emailer_campaigns_add_contact_ids/already_in_sequence",
 	"email_accounts/list",
 	"emailer_messages_search/replies", "emailer_messages_search/rate_limited",
 }
@@ -88,7 +88,9 @@ func (s *Server) AddMailbox(id string) {
 }
 
 // AddContact puts a contact in the fake as if the team already had it. It is
-// not counted as created.
+// not counted as created. A second contact with an email the fake already
+// holds is a duplicate: the search finds both, and creating by that email
+// still finds the first.
 func (s *Server) AddContact(c Contact) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -98,7 +100,7 @@ func (s *Server) AddContact(c Contact) {
 		cp.Sequences[k] = v
 	}
 	s.out.contacts[c.ID] = &cp
-	if c.Email != "" {
+	if _, dup := s.out.byEmail[strings.ToLower(c.Email)]; c.Email != "" && !dup {
 		s.out.byEmail[strings.ToLower(c.Email)] = c.ID
 	}
 }
@@ -156,6 +158,17 @@ func (s *Server) FailNext(call, fixtureCase string) {
 	s.out.fails[call] = append(s.out.fails[call], fixtureCase)
 }
 
+// FailNextAfter answers the next `after` requests of a call normally, then
+// the one after them with a fixture case exactly as saved.
+func (s *Server) FailNextAfter(call string, after int, fixtureCase string) {
+	s.mu.Lock()
+	for range after {
+		s.out.fails[call] = append(s.out.fails[call], "")
+	}
+	s.mu.Unlock()
+	s.FailNext(call, fixtureCase)
+}
+
 // Count is the number of objects the sink's step created (sinktest.Vendor):
 // contacts for "contact", enrollments for "enroll".
 func (s *Server) Count(step string) int {
@@ -174,7 +187,7 @@ func (s *Server) Fail(step string, kind sinktest.FailKind) {
 	c := map[sinktest.FailKind]string{
 		sinktest.RateLimited: "rate_limited",
 		sinktest.Transient:   "server_error",
-		sinktest.Other:       "forbidden",
+		sinktest.Other:       "bad_request",
 	}[kind]
 	if kind == sinktest.Refused {
 		c = map[string]string{"contact": "invalid_email", "enroll": "skipped_unsubscribed"}[step]
@@ -209,7 +222,9 @@ func (s *Server) answerOutreach(call string, r *http.Request, raw []byte) (Fixtu
 	var body map[string]any
 	_ = json.Unmarshal(raw, &body)
 	o := s.out
-	if q := o.fails[call]; len(q) > 0 {
+	if q := o.fails[call]; len(q) > 0 && q[0] == "" {
+		o.fails[call] = q[1:]
+	} else if len(q) > 0 {
 		o.fails[call] = q[1:]
 		f := s.fixtures[call+"/"+q[0]]
 		if call == CallAddToSequence && strings.HasPrefix(q[0], "skipped_") {

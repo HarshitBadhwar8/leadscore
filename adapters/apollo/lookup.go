@@ -25,13 +25,9 @@ import (
 const KindOptOut = "optout"
 
 // optOutField is the contact's opt-out flag. S0 confirms its name, that it is
-// always present (true or false), and that the search spends no credits.
+// always present (true or false), that the search spends no credits, and
+// that q_keywords matches by email.
 const optOutField = "email_unsubscribed"
-
-// maxLookupPages bounds the contact search for one email. An email matching
-// more contacts than that is a lookup failure for the lead, never read as
-// "not opted out".
-const maxLookupPages = 5
 
 // Lookup is the `apollo` lookup.
 type Lookup struct{ c *Client }
@@ -91,17 +87,14 @@ func (l *Lookup) Lookup(ctx context.Context, leads []api.LeadRef) ([]api.Event, 
 // read as one.
 func (l *Lookup) optedOut(ctx context.Context, email string) ([]api.Event, error) {
 	var out []api.Event
-	for page := 1; ; page++ {
-		if page > maxLookupPages {
-			return nil, fmt.Errorf("apollo: the contact search for one email has more than %d pages", maxLookupPages)
-		}
+	err := eachPage(maxContactPages, func(page int) (int, pagination, error) {
 		var reply struct {
 			Contacts   []map[string]json.RawMessage `json:"contacts"`
 			Pagination pagination                   `json:"pagination"`
 		}
 		body := map[string]any{"q_keywords": email, "page": page, "per_page": perPage}
 		if err := l.c.Do(ctx, Request{Method: http.MethodPost, Path: contactsSearchPath, Body: body}, &reply); err != nil {
-			return nil, err
+			return 0, pagination{}, err
 		}
 		for _, c := range reply.Contacts {
 			var got, id string
@@ -112,14 +105,16 @@ func (l *Lookup) optedOut(ctx context.Context, email string) ([]api.Event, error
 			_ = json.Unmarshal(c["id"], &id)
 			var flag *bool
 			if raw, ok := c[optOutField]; !ok || json.Unmarshal(raw, &flag) != nil || flag == nil {
-				return nil, fmt.Errorf("apollo: a matching contact has no readable %s flag", optOutField)
+				return 0, pagination{}, fmt.Errorf("apollo: a matching contact has no readable %s flag", optOutField)
 			}
 			if *flag {
 				out = append(out, api.Event{Kind: KindOptOut, Email: email, Attrs: attrs(AttrContactID, id)})
 			}
 		}
-		if page >= reply.Pagination.TotalPages {
-			return out, nil
-		}
+		return len(reply.Contacts), reply.Pagination, nil
+	})
+	if err != nil {
+		return nil, err
 	}
+	return out, nil
 }
