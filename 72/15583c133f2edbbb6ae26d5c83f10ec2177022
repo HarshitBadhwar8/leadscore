@@ -1,0 +1,49 @@
+adapters/hubspot/check.go
+  s_9dab9ff7f2c580::t_722722d13de970 67-68
+docs/design/oss-outbound-engine-contracts.md
+  s_9dab9ff7f2c580::t_8a284e391ed999 733,741,749,754,891,897
+internal/check/apollo_sequences.go
+  s_9dab9ff7f2c580::t_1392d96c49a11b 113,115
+internal/check/check.go
+  s_9dab9ff7f2c580::t_3236a6fe07d292 43-47
+internal/check/doctor_only.go
+  s_9dab9ff7f2c580::t_3a3a5ed6bca09d 22-25,30-33,64,193-196,201
+internal/check/doctor_only_test.go
+  s_9dab9ff7f2c580::t_1ee210d5d8329c 111-112,117-120,143,239-241,244-247
+internal/check/overrides.go
+  s_9dab9ff7f2c580::t_e036a5cc1ae4b5 70-72,74-75
+internal/check/rubric.go
+  s_9dab9ff7f2c580::t_2a00e6d9b4194f 49-59
+internal/check/sheets.go
+  s_9dab9ff7f2c580::t_57d6c21092e6da 71-79,97,121-123,128,133
+internal/cli/doctor.go
+  s_9dab9ff7f2c580::t_b663b90eaed396 9,19,36-38,61,74,101,132-145,183-185,187-189,192,194-197
+internal/cli/doctor_rows_test.go
+  s_9dab9ff7f2c580::t_efdd995e5dd61e 26-28,71-75
+internal/cli/doctor_test.go
+  s_9dab9ff7f2c580::t_239fd38b41b2a8 5,123,253-409
+internal/engine/health.go
+  s_9dab9ff7f2c580::t_0ec8627a85774f 81-90
+internal/engine/view.go
+  s_9dab9ff7f2c580::t_dfc072250ed38f 48-49,61-72
+internal/engine/view_test.go
+  s_9dab9ff7f2c580::t_d6c662e70bc944 5,11,164-260
+internal/store/sqlite/sqlite.go
+  s_9dab9ff7f2c580::t_1639606c82a876 15,99-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7215583c133f2edbbb6ae26d5c83f10ec2177022",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
