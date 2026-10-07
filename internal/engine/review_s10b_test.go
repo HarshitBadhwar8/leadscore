@@ -214,7 +214,7 @@ func TestManyLeadsAtOneCompanyStayFast(t *testing.T) {
 	if res.Pushed != 100 {
 		t.Fatalf("pushed %d\n%s", res.Pushed, out)
 	}
-	if took > 15*time.Second {
+	if took > 15*time.Second && !raceOn {
 		t.Errorf("3,000 leads at one company took %s", took)
 	}
 	t.Logf("3,000 leads at one company, 100 pushes: %s", took)
