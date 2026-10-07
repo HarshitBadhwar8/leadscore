@@ -1,0 +1,46 @@
+internal/receiver/body.go
+  s_9dab9ff7f2c580::t_8090ecf841a42f 7,31-34,44,51-114,116-119,122-125,127-131,146-158,160-168,170-175,177,182-186,189,191,198,201,206,208-230,233,236-268,275,339-340,348,354-358,363-393
+  s_9dab9ff7f2c580::t_c54e6baae113dd 394
+internal/receiver/queue.go
+  s_9dab9ff7f2c580::t_78274c88862c68 6,10,30-36,39-43,51-52,56-57,74,79-81,85,93,96,99,109-110,117-130,137-152,154,156-188,203-209
+README.md
+  s_9dab9ff7f2c580::t_75703e095184e9 151-157,160-167,172-174
+compose.yaml
+  s_9dab9ff7f2c580::t_6e5987b4e7dd58 10-11,39-40
+docs/design/oss-outbound-engine-contracts.md
+  s_9dab9ff7f2c580::t_34c3b5558651c4 580
+examples/leadscore.laptop.yml
+  s_9dab9ff7f2c580::t_10f4baac902331 22-24
+internal/cli/run.go
+  s_9dab9ff7f2c580::t_c2b1ef833dfdc6 34,300-320
+internal/cli/serve.go
+  s_9dab9ff7f2c580::t_fed73c51401b11 32
+internal/receiver/auth/auth.go
+  s_9dab9ff7f2c580::t_77865dcd321ea7 72-75
+internal/receiver/body_test.go
+  s_9dab9ff7f2c580::t_917354270ea565 5-6,19,228-229,231-234,236-240,242-243,246-325
+internal/receiver/handler.go
+  s_9dab9ff7f2c580::t_18754c76825df3 46-51,78-82,88,112,153-164,166-168,171-174,177-212,214,221,226-229,241-275,313,317,319-322,324
+internal/receiver/handler_test.go
+  s_9dab9ff7f2c580::t_1ee8ada0e0d76f 14,217-218,549-779
+internal/receiver/serve.go
+  s_9dab9ff7f2c580::t_61d0af1579753b 137,223
+testdata/compose/smoke.sh
+  s_9dab9ff7f2c580::t_8f0f43c267bf64 33-44,94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e568422ff565ee98ace002de744258571e95d83b",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
