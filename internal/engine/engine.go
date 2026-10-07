@@ -80,7 +80,7 @@ func DefaultHooks() Hooks {
 		Push:      pushHook,
 		ReRead:    reReadHook,
 		Export:    exportHook,
-		AfterSave: Chain(deleteProcessed, writeExportCSVs),
+		AfterSave: Chain(deleteProcessed, writeExportCSVs, writeView),
 	}
 }
 

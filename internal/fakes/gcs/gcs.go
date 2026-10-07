@@ -1,9 +1,10 @@
 // Package gcs is an in-memory fake of the Cloud Storage JSON API calls the
 // Sheets store makes for its lease file (contracts section 4): bucket get,
-// object get (metadata or media), multipart and media upload, and delete. It
-// enforces the generation preconditions (ifGenerationMatch, 0 meaning "does
-// not exist yet") exactly, answering 412 when one does not hold, because that
-// compare-and-swap is what makes the lease safe.
+// object get (metadata or media), multipart and media upload, delete, and
+// testIamPermissions on a bucket (the doctor's lease check). It enforces the
+// generation preconditions (ifGenerationMatch, 0 meaning "does not exist yet")
+// exactly, answering 412 when one does not hold, because that compare-and-swap
+// is what makes the lease safe.
 package gcs
 
 import (
@@ -25,6 +26,7 @@ type Server struct {
 	mu      sync.Mutex
 	buckets map[string]map[string]*object
 	gen     int64
+	denied  map[string]map[string]bool // bucket -> permissions the caller lacks
 }
 
 type object struct {
@@ -43,6 +45,20 @@ func (s *Server) CreateBucket(name string) {
 	if s.buckets[name] == nil {
 		s.buckets[name] = map[string]*object{}
 	}
+}
+
+// DenyPermission makes testIamPermissions on bucket leave out perm (for
+// example "storage.objects.create"), as for an account without that role.
+func (s *Server) DenyPermission(bucket, perm string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.denied == nil {
+		s.denied = map[string]map[string]bool{}
+	}
+	if s.denied[bucket] == nil {
+		s.denied[bucket] = map[string]bool{}
+	}
+	s.denied[bucket][perm] = true
 }
 
 // Object returns an object's content and generation; ok is false when missing.
@@ -115,6 +131,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, map[string]any{"kind": "storage#bucket", "name": bucket, "id": bucket})
+		return
+	}
+	if tail == "iam/testPermissions" && r.Method == http.MethodGet {
+		var held []string
+		for _, p := range q["permissions"] {
+			if !s.denied[bucket][p] {
+				held = append(held, p)
+			}
+		}
+		writeJSON(w, map[string]any{"kind": "storage#testIamPermissionsResponse", "permissions": held})
 		return
 	}
 	nameEsc, ok := strings.CutPrefix(tail, "o/")

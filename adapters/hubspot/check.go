@@ -64,8 +64,8 @@ func (hubspotCheck) Run(ctx context.Context, env check.Env) []check.Problem {
 	}
 
 	dealsLane := ""
-	if env.Rubric != nil {
-		for _, l := range env.Rubric.Lanes() {
+	if r := check.RubricFor(env); r != nil {
+		for _, l := range r.Lanes() {
 			if l.Sink == "hubspot" && l.Dest == destDeals {
 				dealsLane = l.ID
 				break

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"time"
 
@@ -78,6 +79,36 @@ func (s *Store) LeaseInfo(ctx context.Context) (string, time.Time, error) {
 		return "", time.Time{}, fmt.Errorf("the lease file's expires_at: %w", err)
 	}
 	return cur.Owner, exp, nil
+}
+
+// LeaseBucket is the lease's Cloud Storage bucket; empty when none is set.
+func (s *Store) LeaseBucket() string { return s.bucket }
+
+// leasePermissions are what taking, checking and releasing the lease need.
+var leasePermissions = []string{"storage.objects.create", "storage.objects.delete", "storage.objects.get"}
+
+// LeaseBucketAccess reports, without writing anything, whether the lease
+// bucket exists and whether this account may write, read and delete the
+// lease file in it (the doctor's `lease` check). It asks Cloud Storage's
+// testIamPermissions, which needs no permission of its own, so an account
+// holding only Storage Object Admin on the bucket can still ask.
+func (s *Store) LeaseBucketAccess(ctx context.Context) (exists, writable bool, err error) {
+	if s.bucket == "" {
+		return false, false, errors.New("the Sheets store needs `store.lease_bucket` to take the run lease (setup/gcp.sh bucket creates it)")
+	}
+	resp, err := s.svc.Storage.Buckets.TestIamPermissions(s.bucket, leasePermissions).Context(ctx).Do()
+	if notFound(err) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, fmt.Errorf("asking Cloud Storage about gs://%s: %w", s.bucket, err)
+	}
+	for _, p := range leasePermissions {
+		if !slices.Contains(resp.Permissions, p) {
+			return true, false, nil
+		}
+	}
+	return true, true, nil
 }
 
 // readLease reads the lease file and its generation; a missing file is an

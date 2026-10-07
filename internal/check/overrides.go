@@ -8,7 +8,6 @@ import (
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/merge"
-	"github.com/HarshitBadhwar8/leadscore/internal/rules"
 )
 
 func init() {
@@ -68,18 +67,12 @@ func (overridesCheck) Run(_ context.Context, env Env) []Problem {
 	return out
 }
 
-// rubricLanes returns the rubric's lane ids, lowercased (ids are unique
-// ignoring case), or nil when there is no rubric to read or it does not compile.
+// rubricLanes returns the rubric's lane ids (the run's rubric, or doctor's
+// compiled file), lowercased (ids are unique ignoring case), or nil when there
+// is no rubric to read or it does not compile.
 func rubricLanes(env Env) map[string]bool {
-	if env.Config == nil {
-		return nil
-	}
-	text, err := env.Config.Rubric()
-	if err != nil {
-		return nil
-	}
-	r, err := rules.Compile(text)
-	if err != nil {
+	r := RubricFor(env)
+	if r == nil {
 		return nil
 	}
 	out := map[string]bool{}

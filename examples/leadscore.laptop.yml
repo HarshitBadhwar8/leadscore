@@ -13,15 +13,31 @@ store: { type: sqlite, path: /data/leadscore.db }
 sources:
   - { id: leads, type: csv, path: leads.csv }
 
+# Company facts from Apollo (name, headcount, funding stage, country), looked
+# up for your leads' companies with APOLLO_API_KEY. Each lookup spends an
+# Apollo credit; both budgets cap the spend, so a big first import spreads
+# over several days. Remove the block to use only your own columns.
+enrich: { type: apollo, max_age: 30d, max_lookups_per_run: 100, max_lookups_per_day: 400 }
+
+# The tools cold and non-cold lanes push to; each block is one tool. Remove a
+# block you do not use, and the rubric's lanes that push to it.
+sinks:
+  # Apollo sequences, with APOLLO_API_KEY (a master key). mailbox_id is the
+  # mailbox enrollments send from (quote it); doctor's apollo-sequences check
+  # says when it is wrong. On a laptop this block also reads replies
+  # (replies: polling): without it every run reports poll_failed.
+  apollo: { mailbox_id: "your-mailbox-id" }
+  # HubSpot contacts and deals, with HUBSPOT_TOKEN. After adding it, run
+  # `docker compose exec leadscore leadscore setup hubspot` once.
+  # hubspot: { pipeline: Sales Pipeline, stage: Appointment scheduled }
+
 # A laptop has no public address, so replies are read by polling Apollo, and
 # website visits come from Apollo's visitor CSV export (a source with
 # events: true). With a Cloudflare Tunnel you can use the receiver instead:
 # set replies: receiver and point the Apollo workflows at the tunnel's URL.
 # A tunnel works only while the laptop is awake; webhooks sent while it
 # sleeps are lost unless Apollo retries them.
-# Polling reads replies through the Apollo sink: until a sinks.apollo block
-# is added (with the sinks setup), every run reports poll_failed and the
-# container shows unhealthy.
+# Polling reads replies through sinks.apollo above.
 replies: polling
 
 # The export lists, in ./out on your machine.

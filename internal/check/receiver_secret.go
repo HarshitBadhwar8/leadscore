@@ -33,6 +33,24 @@ func ReceiverConfigured(c *config.Config) bool {
 	return c.Replies == "receiver" || len(c.Receiver.VisitEvents) > 0
 }
 
+// inContainer reports whether this process runs in a Docker container; a
+// variable so tests can say either.
+var inContainer = func() bool { _, err := os.Stat("/.dockerenv"); return err == nil }
+
+// receiverSecretFix says where this install keeps the receiver secret:
+// Secret Manager on Google Cloud, .env on Docker, the shell profile for the
+// plain binary (as the README's CSV-only path says).
+func receiverSecretFix(inCloudRun bool) string {
+	where := "your shell profile (`export " + ReceiverSecretVar + "=<a long random value>` in ~/.zshrc or ~/.bashrc), so every new terminal has it"
+	switch {
+	case inCloudRun:
+		where = "Secret Manager (`setup/gcp.sh secrets`)"
+	case inContainer():
+		where = ".env, then `docker compose up -d`"
+	}
+	return "set " + ReceiverSecretVar + " in " + where + "; use the same value in each Apollo workflow (a CSV-only install needs any long random value)"
+}
+
 // ReceiverSecretProblems fails when the receiver is configured and its secret
 // is missing, and warns while a previous secret is still set (a rotation not
 // finished). `serve` calls it at start.
@@ -60,7 +78,7 @@ func ReceiverSecretProblems(c *config.Config, getenv func(string) string) []Prob
 		out = append(out, Problem{
 			Key:     "secret_missing:" + ReceiverSecretVar,
 			Message: ReceiverSecretVar + " is not set, but " + why + ", so every webhook is refused",
-			Fix:     "set " + ReceiverSecretVar + " in Secret Manager or .env, and the same value in each Apollo workflow",
+			Fix:     receiverSecretFix(inCloudRun),
 		})
 	}
 	if strings.TrimSpace(getenv(ReceiverSecretPreviousVar)) != "" {

@@ -24,8 +24,9 @@ const (
 // putHealth records this run's result and its open problems in the model's
 // Health table. A run that finished (final) rewrites the problem rows: it keeps
 // first_seen_at for a problem still open and deletes every problem not raised
-// this run. A run that failed part way keeps the problems it did not get to
-// check, since it cannot tell them resolved.
+// this run, except one only AfterSave raises while AfterSave has not run yet.
+// A run that failed part way keeps the problems it did not get to check,
+// since it cannot tell them resolved.
 func (x *exec) putHealth(final bool) {
 	r, m := x.run, x.run.Model
 	now := r.Now()
@@ -73,14 +74,20 @@ func (x *exec) putHealth(final bool) {
 	for k, p := range raised {
 		put(healthProblem, k, problemValue(p))
 	}
-	if !final {
-		return
-	}
 	for k, row := range m.Health {
 		if row.Kind != healthProblem {
 			continue
 		}
-		if _, open := raised[row.Key]; !open {
+		_, open := raised[row.Key]
+		switch {
+		case open:
+		case afterSaveProblems[row.Key]:
+			// Re-checked only once AfterSave ran; then resolved even in a
+			// run cut short, whose AfterSave still ran.
+			if x.afterSaved {
+				m.Delete(model.TableHealth, k.Parts())
+			}
+		case final:
 			m.Delete(model.TableHealth, k.Parts())
 		}
 	}
@@ -119,7 +126,7 @@ func (x *exec) lateProblem(key, message, fix string) {
 	if x.lost {
 		return
 	}
-	x.putHealth(true)
+	x.putHealth(!x.cutShort)
 	_ = x.commit("Health", codec.Encode(x.run.Model, model.TableHealth), false)
 }
 

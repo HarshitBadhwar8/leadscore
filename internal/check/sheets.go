@@ -68,8 +68,15 @@ func (sheetAccess) Run(ctx context.Context, env Env) []Problem {
 		_, err = sheets.Inspect(ctx, t.svc, t.id)
 	}
 	if err != nil {
-		return []Problem{{Key: "sheet-access:" + t.id,
-			Message: fmt.Sprintf("this account cannot open the spreadsheet %s: %v", t.id, err), Fix: fix}}
+		p := Problem{Key: "sheet-access:" + t.id,
+			Message: fmt.Sprintf("this account cannot open the spreadsheet %s: %v", t.id, err), Fix: fix}
+		if t.view {
+			// The view is a convenience: a run that cannot reach it stays
+			// healthy (contracts section 9.2); doctor still fails it.
+			p.Warning = !env.Doctor
+			p.Fix += "; if the view was deleted, remove store.view_spreadsheet and run `leadscore setup sheet --view` again"
+		}
+		return []Problem{p}
 	}
 	if env.Config == nil || !env.Config.Hosted() {
 		return nil
@@ -87,7 +94,7 @@ func (sheetAccess) Run(ctx context.Context, env Env) []Problem {
 		if a != "" && !sheets.CanEdit(shared[strings.ToLower(a)]) {
 			out = append(out, Problem{Key: "sheet-access:" + a,
 				Message: fmt.Sprintf("the spreadsheet %s is not shared with %s as an editor", t.id, a),
-				Fix:     "leadscore setup sheet --repair, or " + fix})
+				Fix:     "leadscore setup sheet --repair, or " + fix, Warning: t.view && !env.Doctor})
 		}
 	}
 	return out
@@ -111,16 +118,19 @@ func (sheetsSettings) Run(ctx context.Context, env Env) []Problem {
 		return nil
 	}
 	repair := "leadscore setup sheet --repair"
+	// On the SQLite view a wrong setting only misleads its Health!H1: a
+	// warning in a run, which stays healthy (contracts section 9.2).
+	viewWarn := t.view && !env.Doctor
 	var out []Problem
 	if info.AutoRecalc != sheets.AutoRecalc {
 		out = append(out, Problem{Key: "sheets:recalc",
 			Message: fmt.Sprintf("the spreadsheet recalculates %q, not every hour, so Health!H1 does not show staleness on its own", info.AutoRecalc),
-			Fix:     repair})
+			Fix:     repair, Warning: viewWarn})
 	}
 	if !sheets.UTCZone(info.TimeZone) {
 		out = append(out, Problem{Key: "sheets:timezone",
 			Message: fmt.Sprintf("the spreadsheet's time zone is %q, not UTC, so the Health!H1 staleness formula is off by the offset", info.TimeZone),
-			Fix:     repair})
+			Fix:     repair, Warning: viewWarn})
 	}
 	if share := float64(info.Cells) / CellCap; share > CellWarnShare {
 		var big []string

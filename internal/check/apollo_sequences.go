@@ -110,15 +110,9 @@ func (a apolloSequences) Run(ctx context.Context, env Env) []Problem {
 // apolloLanes are the rubric's lanes pushing to the apollo sink: the run's
 // rubric, or in doctor the file compiled; none when it does not compile.
 func apolloLanes(env Env) []rules.Lane {
-	r := env.Rubric
+	r := RubricFor(env)
 	if r == nil {
-		text, err := env.Config.Rubric()
-		if err != nil {
-			return nil
-		}
-		if r, err = rules.Compile(text); err != nil {
-			return nil
-		}
+		return nil
 	}
 	var out []rules.Lane
 	for _, l := range r.Lanes() {
