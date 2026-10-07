@@ -55,7 +55,7 @@ var Tables = []TableDef{
 		"lead_id", "created_at", "apollo_held_at", "merged_into", "first_seen", "fields", "conflicts"}},
 	{Name: TableIdentities, Key: []string{"key"}, Columns: []string{"key", "kind", "lead_id", "source_id", "first_seen_at"}},
 	{Name: TableCompanyFacts, Key: []string{"domain"}, Columns: []string{
-		"domain", "facts", "previous", "rollups", "first_seen", "enriched_at", "not_found_at"}},
+		"domain", "facts", "previous", "rollups", "first_seen", "enriched_at", "not_found_at", "enrich_failed_at"}},
 	{Name: EventsPrefix, Key: []string{"seq"}, Columns: []string{"seq", "received_at", "kind", "body"}, Pattern: true},
 	{Name: TableWindowEvents, Key: []string{"event_key"}, Columns: []string{
 		"event_key", "subject", "lead_id", "domain", "kind", "at", "attrs"}},

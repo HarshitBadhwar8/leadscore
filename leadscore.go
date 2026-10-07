@@ -63,8 +63,9 @@ type RawEvent = api.RawEvent
 // CompanyFacts is what an enricher learned about a company domain. Region is
 // the vendor's country, trimmed, with no bucketing. FundingStage is one of the
 // section 6 values, or empty. Employees is nil when unknown. Extra holds other
-// facts; the Apollo enricher writes latest_funding_at. NotFound means the vendor
-// had no record (retried after max age).
+// facts; the Apollo enricher writes latest_funding_at. An empty Extra value
+// means the vendor sent a value that cannot be used, and clears that fact.
+// NotFound means the vendor had no record (retried after max age).
 type CompanyFacts = api.CompanyFacts
 
 // LeadRef is what engines and adapters see of a lead. Emails holds every email
@@ -101,9 +102,12 @@ type Subject = api.Subject
 type Source = api.Source
 
 // Enricher returns company facts. Enrich calls domains in the order given and
-// stops only on a rate limit, when it returns the facts so far and
-// ErrRateLimited. A failure on one domain is skipped. The caller counts calls
-// made as the index of the last domain tried, plus one.
+// stops on a rate limit, when it returns the facts so far and ErrRateLimited.
+// A failure on one domain is skipped; a failure every later domain would
+// likely share (the key refused, ctx done, three failures in a row) also stops
+// it, returning the facts so far and that error. The caller counts calls made
+// as the index of the last domain tried, plus one. The engine calls it one
+// domain at a time.
 type Enricher = api.Enricher
 
 // Poller reads outcomes on a schedule (Apollo reply polling), at run step 3.

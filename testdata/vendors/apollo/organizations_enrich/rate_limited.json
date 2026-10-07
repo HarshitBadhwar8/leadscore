@@ -1,0 +1,12 @@
+{
+  "provisional": true,
+  "documented": true,
+  "method": "GET",
+  "path": "/api/v1/organizations/enrich",
+  "query": {"domain": "acme-robotics.example"},
+  "request_headers": ["Accept", "Cache-Control", "X-Api-Key"],
+  "request_body": null,
+  "status": 429,
+  "response_headers": {"Content-Type": "application/json; charset=utf-8", "Retry-After": "1"},
+  "response_body": {"message": "The maximum number of api calls allowed for api/v1/organizations/enrich is 600 times per hour. Please upgrade your plan if you need more."}
+}

@@ -1,0 +1,23 @@
+{
+  "provisional": true,
+  "documented": true,
+  "note": "a 5xx: a per-domain failure",
+  "method": "GET",
+  "path": "/api/v1/organizations/enrich",
+  "query": {
+    "domain": "acme-robotics.example"
+  },
+  "request_headers": [
+    "Accept",
+    "Cache-Control",
+    "X-Api-Key"
+  ],
+  "request_body": null,
+  "status": 500,
+  "response_headers": {
+    "Content-Type": "application/json; charset=utf-8"
+  },
+  "response_body": {
+    "error": "Internal Server Error"
+  }
+}

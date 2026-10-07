@@ -53,9 +53,8 @@ exits 2.
   merges new input rows (`ingest_chunk_rows` per run; a large first import
   finishes over several runs, and nothing is pushed until it has), scores
   every lead, and saves `Ranked` and `Health`. It exits 1 when the run failed
-  or finished unhealthy. Enrichment, events and pushing arrive with later
-  slices; until then a lane whose sink is not in the build is reported in
-  `Health`.
+  or finished unhealthy. A lane whose sink is not in the build is reported
+  in `Health`.
 - `leadscore run --dry-run`: scores every row in memory and prints one line
   per lead whose verdict, status or planned lane would change, then totals. It
   takes no lease and writes nothing.
@@ -81,6 +80,34 @@ imported waits until they appear.
 login (`gcloud auth login --enable-gdrive-access` first), shares it with the run and
 receiver accounts, and writes `store.spreadsheet`; `--view` makes a SQLite store's
 read-only view; `--repair` puts an existing spreadsheet's settings back.
+
+## Enrichment
+
+With an `enrich` block, each run looks up company facts (name, headcount,
+funding stage, country, latest funding date) in Apollo for the companies of
+your leads, using `APOLLO_API_KEY`:
+
+```yaml
+enrich: { type: apollo, max_age: 30d, max_lookups_per_run: 100, max_lookups_per_day: 400 }
+```
+
+A company is looked up when it has never been, or when its last lookup (or
+Apollo's "not found") is older than `max_age`. Every call counts toward both
+budgets, so a large first import spreads over several days instead of
+spending a month of credits at once. Your `Companies` tab always wins over
+Apollo; Apollo's value wins over a value from a lead sheet. When a value
+changes, the old one is kept in `Company facts` as `previous`. A dry run makes
+no lookups. A lookup that gets no answer waits a day, and three in a row stop
+enrichment for that run (the warning `enrich_failed`). The `apollo-key` check
+signs in with Apollo's free auth-health call on every run, so a bad key shows
+in `Health` without spending a credit.
+
+**If you send only through Apollo:** leadscore does not yet know whether
+Apollo's contacts carry an opt-out flag it can read. Until that is confirmed, a
+person who clicked an unsubscribe link without replying may not be seen before
+a push, unless HubSpot is also a sink or the receiver gets Apollo's
+`unsubscribed` webhook. The `apollo-key` check warns
+(`apollo-key:no_optout_flag`) until an unsubscribe webhook has been received.
 
 ## Export lists
 
