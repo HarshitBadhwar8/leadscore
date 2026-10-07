@@ -58,7 +58,7 @@ type CompanyFacts struct {
     Region       string            // the vendor's country, trimmed; no bucketing
     FundingStage string            // one of the values in section 6, or empty
     Employees    *int              // nil when unknown
-    Extra        map[string]string // other facts; the Apollo enricher writes latest_funding_at
+    Extra        map[string]string // other facts (the Apollo enricher writes latest_funding_at); an empty value clears that fact (section 4)
     FetchedAt    time.Time
     NotFound     bool              // vendor had no record; retried after max age
 }
@@ -106,9 +106,12 @@ type Source interface {
 }
 
 type Enricher interface {
-    // Enrich calls domains in the order given and stops only on a rate limit, when
+    // Enrich calls domains in the order given and stops on a rate limit, when
     // it returns the facts so far and ErrRateLimited. A failure on one domain is
-    // skipped. The caller counts calls made as the index of the last domain tried, plus one.
+    // skipped; a failure every later domain would likely share (the key
+    // refused, ctx done, three failures in a row) also stops it, returning the
+    // facts so far and that error. The caller counts calls made as the index of
+    // the last domain tried, plus one. The engine calls it one domain at a time.
     Enrich(ctx context.Context, domains []string, budget int) ([]CompanyFacts, error)
 }
 
@@ -467,7 +470,7 @@ Every tool table is created with exactly these columns, in this order (`storetes
 | `Applied overrides` | `row_hash` | `row_hash`, `applied_at`, `run_id`. `retry` and `resubscribe` rows apply once; the CLI writes the request time in `note`, so each request is a new row |
 | `People` | `lead_id` | `lead_id`, `created_at`, `apollo_held_at` (never cleared), `merged_into` (the surviving lead id after a `same_as` merge; merges are permanent), `first_seen` (JSON: event kind to time), `fields` (JSON: resolved field name to {value, source_id, at}, plus `derived: true` on a company domain derived from a work email), `conflicts` (JSON: field to the list of {value, source_id} that disagreed with the kept value) |
 | `Identities` | `key` | `key` (lowercased email or canonical LinkedIn URL), `kind` (`email` or `linkedin`), `lead_id`, `source_id`, `first_seen_at` |
-| `Company facts` | `domain` | `domain`, `facts` (JSON: fact to {value, origin, at}, the resolved winner), `previous` (JSON, same shape: the value a change replaced), `rollups` (JSON), `first_seen` (JSON: event kind to time, for every event whose domain is the company), `enriched_at`, `not_found_at` |
+| `Company facts` | `domain` | `domain`, `facts` (JSON: fact to {value, origin, at}, the resolved winner), `previous` (JSON, same shape: the value a change replaced), `rollups` (JSON), `first_seen` (JSON: event kind to time, for every event whose domain is the company), `enriched_at`, `not_found_at`, `enrich_failed_at` (the last lookup that got no answer; the domain waits a day) |
 | `Events YYYY-MM` (Sheets) / `Events` (SQLite) | `seq` | `seq`, `received_at`, `kind`, `body` |
 | `Window events` | `event_key` | `event_key`, `subject` (`lead` or `company`), `lead_id`, `domain`, `kind`, `at`, `attrs` (JSON) |
 | `Applied rows` | `source_id`, `row_id` | `source_id`, `row_id`, `row_hash` (one row group's hash, section 12.5), `lead_id` (empty for a rejected row that never applied; a row that applied before keeps its lead), `first_applied_at`, `key_conflict_at` (when the row first carried a key another lead holds; it is counted once) |
@@ -482,11 +485,11 @@ Every tool table is created with exactly these columns, in this order (`storetes
 
 **Primary email.** The lead's newest email identity from a same-source correction, else its email identity with the earliest `first_seen_at`. Merge keeps it in `People.fields["email"]`, which moves only on such a correction. **Company domain.** Stored in `People.fields["company.domain"]`; the people-by-domain index reads it.
 
-**Company fact origins**, highest first: `companies_tab`, `enrichment`, `input`. `facts` holds the winner. A source never replaces a fact from a higher origin. A refresh with an unchanged value leaves `facts.<f>` and `previous.<f>` alone (only `enriched_at` moves); a changed value moves the old entry to `previous` and sets `at` to the fetch time. A `companies_tab` fact whose cell is emptied, or whose row is removed, moves to `previous` and leaves `facts`, so a lower origin can fill it.
+**Company fact origins**, highest first: `companies_tab`, `enrichment`, `input`. `facts` holds the winner. A source never replaces a fact from a higher origin. A refresh with an unchanged value leaves `facts.<f>` and `previous.<f>` alone (only `enriched_at` moves); a changed value moves the old entry to `previous` and sets `at` to the fetch time. A `companies_tab` fact whose cell is emptied, or whose row is removed, moves to `previous` and leaves `facts`, so a lower origin can fill it. An enrichment answer that leaves a field out keeps the stored fact; a value the vendor sent that cannot be mapped (a funding label or date the enricher does not know, given as an empty `Extra` value) moves the stored fact below `companies_tab` to `previous` and out of `facts`, so a stale stage does not outlive the vendor's change. An exact `company.<name>` key in `Extra` wins over `<name>`.
 
-**`Health` rows.** Results: `last_result` (`healthy` or `unhealthy`), `last_run_at`, `last_success_at` (moved only by a healthy run that scored; a run stopped before scoring is not a success), `run_id`, `rubric_version`, `schedule`. Problems: key `<kind>:<id>`, exactly as the check or hook gives it, for example `push_failed:<lead>:<lane>:<step>`, `namesake:<lead>`, `secret_missing:<variable>`, `status_conflict:<lead>`, `override_unmatched:<row>`, `override_unknown_lane:<row>`, `merge_cycle:<lead>`, `receiver_only_push:<lead>`, `silent:<kind>`, `skipped_runs`, `key_conflicts`, `ledger_shrank`, `push_pending` (a warning: the count of steps pending over 24 hours), `lookup_failed:<lookup type>` (a whole lookup failed; a warning when only some leads failed), `sink_failed:<sink type>` (a sink could not be built, or has no steps for a lane), `view_write_failed`, `export_dir_readable` (a warning), `export_lane_invalid:<lane id>`, `poll_failed:<sink type>`, and the run's own: `source_failed:<source id>`, `lane_sink_unregistered:<lane id>`, `rubric_unknown_field:<field>`, `step_failed:<hook>`, `events_shrank`, `ingest_backlog` (a warning), `deadline_passed`, `run_stopped` (a warning), `commit_too_large`, `run_failed` (also for a `Ranked` write that fails). A problem's `value` is its message and fix (`<message>. Fix: <fix>.`, prefixed `warning: ` for a warning). Each run rewrites the problem rows: it keeps `first_seen_at` for a problem still open and deletes resolved ones; a run that failed or was cut short (deadline, `Stop`) deletes none, since it did not re-check them. On Sheets, cell `H1` of the `Health` tab (outside the table, the one exception to exact width) holds the staleness formula, rewritten each run: `=IF(NOW()-DATEVALUE(LEFT(<last_success_at cell>,10))-TIMEVALUE(MID(<last_success_at cell>,12,8))>3*<schedule in days>,"STALE: no successful run in 3 intervals","ok")`. `<schedule in days>` comes from the `schedule` result row (the 15-minute default when it is missing); with no `last_success_at` row yet the cell holds `="STALE: no successful run yet"`. The stored times are UTC, so setup sets the spreadsheet's time zone to UTC (`Etc/GMT`) and `NOW()` matches them. `Health` has room for seven columns (A to G) before `H1`; its tab is eight columns wide.
+**`Health` rows.** Results: `last_result` (`healthy` or `unhealthy`), `last_run_at`, `last_success_at` (moved only by a healthy run that scored; a run stopped before scoring is not a success), `run_id`, `rubric_version`, `schedule`. Problems: key `<kind>:<id>`, exactly as the check or hook gives it, for example `push_failed:<lead>:<lane>:<step>`, `namesake:<lead>`, `secret_missing:<variable>`, `status_conflict:<lead>`, `override_unmatched:<row>`, `override_unknown_lane:<row>`, `merge_cycle:<lead>`, `receiver_only_push:<lead>`, `silent:<kind>`, `skipped_runs`, `key_conflicts`, `ledger_shrank`, `push_pending` (a warning: the count of steps pending over 24 hours), `apollo-key:auth`, `apollo-key:config`, `apollo-key:unreachable` and `apollo-key:no_optout_flag` (warnings), `enrich_failed` (a warning: lookups that got no answer), `lookup_failed:<lookup type>` (a whole lookup failed; a warning when only some leads failed), `sink_failed:<sink type>` (a sink could not be built, or has no steps for a lane), `view_write_failed`, `export_dir_readable` (a warning), `export_lane_invalid:<lane id>`, `poll_failed:<sink type>`, and the run's own: `source_failed:<source id>`, `lane_sink_unregistered:<lane id>`, `rubric_unknown_field:<field>`, `step_failed:<hook>`, `events_shrank`, `ingest_backlog` (a warning), `deadline_passed`, `run_stopped` (a warning), `commit_too_large`, `run_failed` (also for a `Ranked` write that fails). A problem's `value` is its message and fix (`<message>. Fix: <fix>.`, prefixed `warning: ` for a warning). Each run rewrites the problem rows: it keeps `first_seen_at` for a problem still open and deletes resolved ones; a run that failed or was cut short (deadline, `Stop`) deletes none, since it did not re-check them. On Sheets, cell `H1` of the `Health` tab (outside the table, the one exception to exact width) holds the staleness formula, rewritten each run: `=IF(NOW()-DATEVALUE(LEFT(<last_success_at cell>,10))-TIMEVALUE(MID(<last_success_at cell>,12,8))>3*<schedule in days>,"STALE: no successful run in 3 intervals","ok")`. `<schedule in days>` comes from the `schedule` result row (the 15-minute default when it is missing); with no `last_success_at` row yet the cell holds `="STALE: no successful run yet"`. The stored times are UTC, so setup sets the spreadsheet's time zone to UTC (`Etc/GMT`) and `NOW()` matches them. `Health` has room for seven columns (A to G) before `H1`; its tab is eight columns wide.
 
-**`State` keys.** `schema_version` (`major.minor`), `config_version`, `cursor:<source id>`, `cursor:events`, `last_poll_at`, `first_run_at`, `last_received:<kind>` (received time of the newest event of each kind), `enrich_count:<YYYY-MM-DD>` (UTC), `ledger_rows` (the highest committed ledger row count; never lowered by a run), `key_conflicts` (running count), `opened_by` (the hostname of the `serve` process that last opened a SQLite file, written only when that `serve` runs in a container and cleared otherwise), `export_lane:<lane id>` (`yes`: the lane once had an `Export` table, so the table is still loaded and kept current after the lane leaves the rubric), and on SQLite `lease_owner` and `lease_expires_at`. The `store` check (SQLite) fails when the current process is not in a container (no `/.dockerenv`) while `opened_by` names one.
+**`State` keys.** `schema_version` (`major.minor`), `config_version`, `cursor:<source id>`, `cursor:events`, `last_poll_at`, `first_run_at`, `last_received:<kind>` (received time of the newest event of each kind), `enrich_count:<YYYY-MM-DD>` (UTC; only today's key is kept, a run deletes the others), `ledger_rows` (the highest committed ledger row count; never lowered by a run), `key_conflicts` (running count), `opened_by` (the hostname of the `serve` process that last opened a SQLite file, written only when that `serve` runs in a container and cleared otherwise), `export_lane:<lane id>` (`yes`: the lane once had an `Export` table, so the table is still loaded and kept current after the lane leaves the rubric), and on SQLite `lease_owner` and `lease_expires_at`. The `store` check (SQLite) fails when the current process is not in a container (no `/.dockerenv`) while `opened_by` names one.
 
 **Sheets events.** On Sheets an event's sequence is its position: its monthly tab (by the UTC month of `received_at`) and its row there. Each appended row's `seq` cell holds a random id. A cursor holds, for every tab read, the number of data rows read from it and the id of the last one; a read whose tab is shorter than that (checked against the tab's row count before reading, since Sheets refuses a range below the grid) or whose row at that place has another id (rows sorted, inserted or deleted) is `ErrEventsShrank`. A batch is appended in one `batchUpdate` (`appendCells`, so all-or-nothing even when it spans two months), creating a missing month's tab (hidden) in the same request. `DeleteProcessed` deletes whole tabs only (deleting rows would move the positions cursors hold): a tab whose rows are all at or below the committed cursor (its last row being the one the cursor read), whose month ended before `olderThan`, whose month plus the one-hour grace has passed, and that is not the newest `Events` tab. The same `batchUpdate` records each deleted month in the spreadsheet's developer metadata (`leadscore.events_deleted`), and `ReadEvents` skips a cursor month recorded there instead of failing, so a run that crashed after the delete and before saving the shorter cursor reads on.
 
@@ -520,7 +523,7 @@ Every tool table is created with exactly these columns, in this order (`storetes
 | `Log` | about 180,000 | 8 | 1,440,000 |
 | `Events` monthly tabs | about 120,000 live (four months) | 4 | 480,000 |
 | `Leads` and other input tabs | about 20,000 | about 20 | 400,000 |
-| `Companies`, `Company facts` | about 5,000 each | about 10, 7 | 85,000 |
+| `Companies`, `Company facts` | about 5,000 each | about 10, 8 | 90,000 |
 | Export tab | up to 20,000 | 11 | 220,000 |
 | **Total** | | | **about 6.0 million of 10 million** |
 
@@ -602,7 +605,7 @@ Teams override every row except `unsubscribe` with `reply_labels`. Two polled re
 - **Checks.** The `apollo-key` check uses Apollo's free auth-health call (S0 confirms it), never an enrichment call. The `apollo-sequences` check confirms `mailbox_id` is in the email-accounts list and every lane's sequence name resolves.
 - **Sequences.** `apollo:sequence/<name>` names a sequence; the sink resolves names to ids once per run. An unresolved name makes `Do` return `ErrTransient`, so the step waits until the name is fixed.
 - **Refusals.** `ErrRefused`: contact active in another sequence, opted out, or invalid email.
-- **Budgets.** Every enrichment call made counts toward both budgets. A domain is looked up when `enriched_at` and `not_found_at` are both empty or older than `max_age`.
+- **Budgets.** Every enrichment call made counts toward both budgets. A domain is looked up when `enriched_at` and `not_found_at` are both empty or older than `max_age`, and no lookup of it failed in the last 24 hours (`enrich_failed_at`). Never-tried domains go first, then the least recently tried. A personal mail provider's domain, or a name with no dot, is never looked up. Three failed lookups in a row stop the run's enrichment and raise the warning `enrich_failed`; so does any failed lookup. A rate limit stops it too, and is not a failure.
 
 **HubSpot properties** created by `leadscore setup hubspot`. The `leadscore_` prefix is configurable; properties go in a group named `leadscore`.
 
@@ -744,7 +747,7 @@ A new version changes the store only by adding tables or columns (a minor schema
 | `sheet-access` (in run) | an account cannot open the Sheet (not shared, or blocked by a Workspace sharing policy): this account cannot open it (`sheet-access:<spreadsheet id>`), or on Google Cloud the run or receiver account is not among its editors (`sheet-access:<account>`) | share it, or ask the Workspace admin for an exception |
 | `sheets` (in run) | spreadsheet not set to recalculate hourly (`sheets:recalc`) or not on UTC (`sheets:timezone`), either of which leaves the `Health!H1` formula wrong; cell use past 70% (`sheets:cells`, a warning naming the largest tabs) | `leadscore setup sheet --repair`; shorten `log_retention` or move to SQLite |
 | `hubspot` (in run; only with `sinks.hubspot` and the token set) | token missing the scopes (`hubspot:scopes`); custom properties missing or of the wrong type (`hubspot:properties`); pipeline or stage not found, not set while a lane pushes to `hubspot:deals`, or a closed stage (`hubspot:pipeline`); a deal step waiting on a deal at a stage no pipeline lists (`hubspot:unknown_stage`, read from the ledger, also with no token); the block unreadable (`hubspot:config`) or HubSpot unreachable (`hubspot:api`) | re-create the private app; `leadscore setup hubspot` |
-| `apollo-key` (in run) | the key fails the auth-health call; Apollo has no opt-out flag (warning for Apollo-only teams) | check the key |
+| `apollo-key` (in run) | Apollo refuses the key on the auth-health call (401, 403, or `is_logged_in` false: `apollo-key:auth`); the call gets no answer (429, 5xx, network: the warning `apollo-key:unreachable`); Apollo has no opt-out flag (the warning `apollo-key:no_optout_flag`, for teams with `sinks.apollo` and no `sinks.hubspot`, until an unsubscribe webhook has been received (`State.last_received:unsubscribed` set: real evidence Apollo's unsubscribe workflow reaches the receiver); the enrich or `sinks.apollo` block cannot build a client (`apollo-key:config`, for example `base_url` without a test client) | check the key |
 | `apollo-sequences` (in run) | mailbox id not found; a lane's sequence name missing or ambiguous | check `sinks.apollo.mailbox_id` and the sequence names |
 | `receivers` | with `replies: receiver`, `receiver.public_url`'s `/healthz` unreachable | re-deploy; on a laptop, `replies: polling` or a Cloudflare Tunnel |
 | `receiver-silence` (in run) | any expected event kind silent past the threshold (raises `silent:<kind>`) | check the Apollo workflow |
@@ -774,6 +777,7 @@ RFC section 7 explains the ownership rule; this is every value.
 | Source channels | Team | `sources[].channel` | each source its own channel |
 | Polling interval, push batch size, attempts before `failed`, call timeout | Us, fixed | code | 6 hours, 25 leads, 3, 30 seconds: no adopter need to tune them, and each knob adds docs and tests |
 | Pending-push warning, pre-push lookup margin, cell-use warning | Us, fixed | code | 24 hours, 10%, 70%: thresholds for warnings and a safety margin, not policy |
+| Wait after a failed enrichment lookup, failures in a row that stop enrichment | Us, fixed | code | 24 hours, 3: a domain that always fails cannot take the budget from the rest |
 | Deal search-lag window | Us, fixed | code | 15 minutes: a no-deal answer this soon after a deal call is not trusted (S0 confirms HubSpot's lag) |
 | Receiver batch window, hold cap, `/healthz` cache | Us, fixed | code | 2 seconds, 10 seconds, 60 seconds: inside Apollo's request timeout and the Sheets limits |
 | Save budget after the deadline | Us, fixed | code | 90 seconds: bounds the job's task timeout |
@@ -815,7 +819,7 @@ Not public API: these live under `internal/` and may change between releases. Th
 | `internal/fakes/hubspot` | S11 | built from S0's fixtures |
 | `internal/fakes/sink` | S10b | an in-memory find-or-create sink and lookup for engine and `sinktest` tests |
 | `internal/e2e` | S17 | the end-to-end suite |
-| `adapters/apollo` | S8 owns `client.go` (key, base URL, 30-second timeout, the two call modes) and registration; S9 adds the body parsers, `PolledReplyKey` and `RequiredPaths`; S12 adds sinks, the `Lookup` and the `Poller` | |
+| `adapters/apollo` | S8 owns `client.go` (key, base URL, 30-second timeout, the two call modes; 12.8) and registration; S9 adds the body parsers, `PolledReplyKey` and `RequiredPaths`; S12 adds sinks, the `Lookup` and the `Poller` | |
 | `adapters/hubspot`, `adapters/csv`, `adapters/sheetsource` | S11, S7, S5 | `adapters/hubspot` also registers the `hubspot` check (it imports `internal/check`), and `internal/cli` imports it for `setup hubspot`, so every build registers the HubSpot sink, lookup and check: a custom adapter registered as `hubspot` panics as a duplicate |
 
 **Built-in stores** register through a blank import in the root package (`leadscore.go`): their packages are internal, so a custom build could not import them, and this way every build has them.
@@ -947,7 +951,7 @@ func RunWith(ctx context.Context, opts api.RunOptions, hooks Hooks, now func() t
 
 - **Wiring.** `leadscore.Run`, `leadscore run`, the `serve` timer and the e2e suite all use `DefaultHooks()`. `leadscore run` closes `Stop` from its own SIGTERM handler; `serve` closes it at shutdown.
 - **Sources and chunks.** S10a calls every `Source.Fetch` at step 3, puts source events in `SourceEvents` with their keys normalized once by `merge.NormalizeEventKeys` (`Intake` normalizes the events it reads itself, receiver and polled, the same way), normalizes and merges rows (`ingest_chunk_rows` per run across sources in config order, whole row groups only: a group is never split, and the first group is taken whole even when it alone is over the size), and saves `cursor:<source id>` in phase 1 only when all of that source's rows were taken this run and its events were handed to Intake (Intake ran and returned no error; a source with no events needs no Intake). The backlog is accepted rows whose (source, row id, row hash) is not yet in `Applied rows` after this chunk; while it is non-empty, `NoPush` is set.
-- **Phases.** Phase 1 commits `People`, `Identities`, `Applied rows`, `Company facts`, `Seen events`, `Window events`, `Outcomes`, `Pushes` (load-time fixes, cancels, retry resets), `Applied overrides`, the `Log` lines written so far (merge's `row_rejected`, `key_conflict` and `merged` among them), and `State` cursors, `last_poll_at`, `first_run_at` (set by the first run), `key_conflicts` and `config_version`: everything merge writes because a row was applied is saved with the row. The tier and priority change lines are committed with the first `Ranked` chunk, so a failed `Ranked` write never logs a change twice. Each pushing batch commits `Pushes` and `State.ledger_rows`. Phase 2 commits everything else except the `Export` tables and `Ranked`: right after it, the export tables' changed rows are written in their own chunked commits (section 4, "Export rows": switches to `yes` first, `ErrTooLarge` halves the chunk), then `Ranked` in chunks (12.2).
+- **Phases.** Phase 1 commits `People`, `Identities`, `Applied rows`, `Company facts`, `Seen events`, `Window events`, `Outcomes`, `Pushes` (load-time fixes, cancels, retry resets), `Applied overrides`, the `Log` lines written so far (merge's `row_rejected`, `key_conflict` and `merged` among them), and `State` cursors, `last_poll_at`, `first_run_at` (set by the first run), `key_conflicts`, `config_version` and `enrich_count:<day>`: everything merge writes because a row was applied is saved with the row, and the day's enrichment count with the facts its calls bought. The redo after `ErrTooLarge` runs `Enrich` again on the reloaded model: the hook keeps this run's answers, failure stamps, log lines, warning and error on the `Run` and puts them back without calling again, and still counts their calls, so a failed `Enrich` stays failed. After a second `ErrTooLarge` discards the model, the answers and the day's count are put back too, and phase 2 saves them; that replay writes over the discarded model, which no longer holds this run's `Companies` tab changes, so for that run an answer may land on a fact the tab just changed (never over a `companies_tab` fact the model still holds). The next run applies the tab again, and the tab wins. The tier and priority change lines are committed with the first `Ranked` chunk, so a failed `Ranked` write never logs a change twice. Each pushing batch commits `Pushes` and `State.ledger_rows`. Phase 2 commits everything else except the `Export` tables and `Ranked`: right after it, the export tables' changed rows are written in their own chunked commits (section 4, "Export rows": switches to `yes` first, `ErrTooLarge` halves the chunk), then `Ranked` in chunks (12.2).
 - **`ErrCommittedWithProblems`.** The commit is done: the model takes the writes as committed, nothing is retried, and the store's message is raised as the `people_tab_check` problem (a warning).
 - **`ErrTooLarge`.** On phase 1 only, the run discards the model, reloads, and redoes steps 3 to 6 with half the rows it took (not half the configured chunk); a second `ErrTooLarge` sets `NoPush`. Other commits retry once at the same size, then fail the run.
 - **Hook errors.** `Intake` returning `ErrEventsShrank` sets `NoPush`, raises `events_shrank` and continues; any other `Intake` error fails the run before phase 1. A `Fold` error fails the run before phase 1 (no status is safe to score on). An `Intake` or `Fold` failure raises `step_failed:<hook>` as well as `run_failed`. `Enrich`, `Detect` and `Export` errors make the run unhealthy and it continues. A `PrePush` error skips `Push`. `Push`, `ReRead` and `AfterSave` errors make the run unhealthy. A failing hook raises `step_failed:<hook>`.
@@ -967,3 +971,51 @@ func RunWith(ctx context.Context, opts api.RunOptions, hooks Hooks, now func() t
 - `Intake` logs a stored body the parsers refuse as `event_rejected` (naming its sequence, never a body value), and a source event row with `Kind` empty, or a vendor-only kind (`sent`, `replied*`, `unsubscribed`, `reply`, `optout`, `deal_*`) from a source, as `row_rejected`, once: it records the key `reject|<source id>|<reason>` in `Seen events`, since snapshot sources return the row every run. A failed poll raises `poll_failed:<sink type>` (`poll_failed:none` when `replies: polling` has no poller in the build) and leaves `last_poll_at` unchanged.
 - The `Window events` and `Seen events` trims are recorded in phase 2 with the `Log` trim; deleting processed events is S9's `AfterSave` step: skipped when the run saw `ErrEventsShrank`; when `DeleteProcessed` returns a changed cursor it is committed at once under the lease, retried once, and if that still fails the error names the value to set as `State.cursor:events` by hand (until then the next run raises `events_shrank`).
 - `events.Parse(raw []RawEvent) ([]Event, []InputRow)` is pure: it returns events and the receiver input rows (source id `receiver`), with no writes.
+
+### 12.8 The Apollo client (S8)
+
+`adapters/apollo/client.go` is the one way into Apollo's API; S12's sink, `Lookup` and `Poller` build on it.
+
+```go
+const KeyVariable = "APOLLO_API_KEY"
+const DefaultBaseURL = "https://api.apollo.io"
+const CallTimeout = 30 * time.Second // every attempt, whatever HTTP client the block gives
+const ContactOptOutFlag = false      // S0 confirms; section 6, "Opt-out reads"
+
+// Key from APOLLO_API_KEY; base_url and _http_client from the block. No key
+// is an error; base_url without _http_client is refused (for tests only, so
+// leadscore.yml cannot send the key elsewhere). Redirects are never followed:
+// a 3xx is the reply, so the key header never leaves for another host. A
+// typed-nil _http_client counts as absent.
+func NewClient(cfg api.Config) (*Client, error)
+func NewClientWithKey(cfg api.Config, key string) (*Client, error)
+
+type Request struct {
+    Method string
+    Path   string     // under the base URL
+    Query  url.Values
+    Body   any        // sent as JSON when non-nil
+}
+// Do is the single-shot call: a 2xx body is decoded into out (when non-nil);
+// 429 wraps api.ErrRateLimited at once, with no wait; any other non-2xx is a
+// *StatusError; a transport failure or timeout is returned wrapped, naming
+// only the method, path and cause (never the URL's query).
+func (c *Client) Do(ctx context.Context, req Request, out any) error
+// DoRetrying is Do with a 429 retried, three attempts in all, waiting
+// Retry-After (seconds, capped at 30s; 0 is at once) or 2s doubling. Only 429
+// is retried. A 429 on the last attempt wraps api.ErrRateLimited. The wait
+// ends early, as ErrWaitStopped (neither a rate limit nor a failure), when the
+// context's WithWaitStop context is done.
+func (c *Client) DoRetrying(ctx context.Context, req Request, out any) error
+func WithWaitStop(ctx, stop context.Context) context.Context // the engine passes Run.PushCtx
+var ErrWaitStopped error
+
+type StatusError struct{ Status int; Detail string } // Detail: logredact.VendorErrorDetail of the body only
+func (e *StatusError) Body() []byte // the raw reply, to tell refusal reasons apart; never log it
+func IsStatus(err error, codes ...int) bool
+func (c *Client) AuthHealth(ctx context.Context) error // the apollo-key check's call; never spends a credit
+var ErrKeyRefused error                                // AuthHealth: 200 with is_logged_in false
+func KeyRefused(err error) bool                        // 401, 403 or ErrKeyRefused
+```
+
+The enricher (`enrich.go`) uses `DoRetrying`; sinks, lookups and the poller use `Do` and map its errors to section 1's classes themselves (section 6, "Refusals"). `internal/fakes/apollo` serves `testdata/vendors/apollo`; S12 adds its calls to both.

@@ -1,0 +1,11 @@
+{
+  "provisional": true,
+  "method": "GET",
+  "path": "/api/v1/organizations/enrich",
+  "query": {"domain": "quiet-co.example"},
+  "request_headers": ["Accept", "Cache-Control", "X-Api-Key"],
+  "request_body": null,
+  "status": 200,
+  "response_headers": {"Content-Type": "application/json; charset=utf-8"},
+  "response_body": {"organization": {"id": "org-0002", "name": "Quiet Co", "primary_domain": "quiet-co.example"}}
+}
