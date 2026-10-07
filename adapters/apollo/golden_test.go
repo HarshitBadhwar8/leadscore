@@ -1,0 +1,149 @@
+package apollo_test
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/HarshitBadhwar8/leadscore/adapters/apollo"
+	"github.com/HarshitBadhwar8/leadscore/internal/api"
+)
+
+// goldenDir holds one stored body per file (testdata/events/README.md). They
+// are provisional: built from core's test bodies until S0's real captures land.
+const goldenDir = "../../testdata/events"
+
+var goldenReceived = time.Date(2026, 8, 23, 7, 0, 0, 0, time.UTC)
+
+type golden struct {
+	events []api.Event
+	rows   []api.InputRow
+	reject string // a substring of the error, when the body is refused
+}
+
+func row(cols ...string) api.InputRow {
+	r := api.InputRow{SourceID: "receiver", Columns: map[string]string{}}
+	for i := 0; i+1 < len(cols); i += 2 {
+		r.Headers = append(r.Headers, cols[i])
+		r.Columns[cols[i]] = cols[i+1]
+	}
+	return r
+}
+
+var goldens = map[string]golden{
+	"apollo_reply_sent.json": {
+		events: []api.Event{{Kind: "sent", Email: "dana.reyes@example.com", LinkedInURL: "https://www.linkedin.com/in/dana-reyes-example/",
+			Domain: "example.com", At: goldenReceived, ReceivedAt: goldenReceived, Origin: "receiver",
+			Attrs: map[string]string{"stage": "Approaching", "contact_id": "ct-1001", "full_name": "Dana Reyes", "title": "VP Engineering"}}},
+		rows: []api.InputRow{row("contact_id", "ct-1001", "email", "dana.reyes@example.com",
+			"linkedin_url", "https://www.linkedin.com/in/dana-reyes-example/", "full_name", "Dana Reyes",
+			"title", "VP Engineering", "company.domain", "example.com")},
+	},
+	"apollo_reply_replied.json": {
+		events: []api.Event{{Kind: "replied", Email: "dana.reyes@example.com", Domain: "example.com", At: goldenReceived,
+			ReceivedAt: goldenReceived, Origin: "receiver",
+			Attrs: map[string]string{"stage": "Replied", "conversation_link": "https://app.apollo.io/#/conv/9", "contact_id": "ct-1001"}}},
+		rows: []api.InputRow{row("contact_id", "ct-1001", "email", "dana.reyes@example.com", "company.domain", "example.com")},
+	},
+	"apollo_reply_replied_positive.json": {
+		events: []api.Event{{Kind: "replied_positive", Email: "dana.reyes@example.com", At: goldenReceived,
+			ReceivedAt: goldenReceived, Origin: "receiver",
+			Attrs: map[string]string{"stage": "Interested", "conversation_link": "https://app.apollo.io/#/conv/9", "contact_id": "ct-1001"}}},
+		rows: []api.InputRow{row("contact_id", "ct-1001", "email", "dana.reyes@example.com")},
+	},
+	"apollo_reply_unsubscribed.json": {
+		events: []api.Event{{Kind: "unsubscribed", Email: "sam.ortiz@example.org", At: goldenReceived,
+			ReceivedAt: goldenReceived, Origin: "receiver",
+			Attrs: map[string]string{"stage": "Do Not Contact", "full_name": "Sam Ortiz"}}},
+		rows: []api.InputRow{row("email", "sam.ortiz@example.org", "full_name", "Sam Ortiz")},
+	},
+	"apollo_reply_opened.json":         {}, // an unacted kind: nothing, and no error
+	"apollo_reply_reserved_stage.json": {reject: "reserved"},
+	"apollo_visit_identified.json": {
+		events: []api.Event{{Kind: "visit_pricing", Email: "lee.park@example.net", LinkedInURL: "https://www.linkedin.com/in/lee-park-example/",
+			Domain: "example.net", At: time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC), ReceivedAt: goldenReceived, Origin: "receiver",
+			Attrs: map[string]string{"contact_id": "ct-2002", "full_name": "Lee Park", "title": "Head of Platform", "company": "Example Net"}}},
+		rows: []api.InputRow{row("contact_id", "ct-2002", "email", "lee.park@example.net",
+			"linkedin_url", "https://www.linkedin.com/in/lee-park-example/", "full_name", "Lee Park",
+			"title", "Head of Platform", "company.name", "Example Net", "company.domain", "example.net")},
+	},
+	"apollo_visit_company_only.json": {
+		events: []api.Event{{Kind: "visit_pricing", Domain: "example.org", At: time.Date(2026, 8, 21, 9, 30, 0, 0, time.UTC),
+			ReceivedAt: goldenReceived, Origin: "receiver", Attrs: map[string]string{"company": "Example Org"}}},
+	},
+	"apollo_visit_no_visited_at.json": {
+		events: []api.Event{{Kind: "visit_docs", Email: "lee.park@example.net", At: goldenReceived, ReceivedAt: goldenReceived,
+			Origin: "receiver", Attrs: map[string]string{"full_name": "Lee", "body_sha256": "*"}}},
+		rows: []api.InputRow{row("email", "lee.park@example.net", "full_name", "Lee")},
+	},
+	"apollo_visit_linkedin_only.json": {
+		events: []api.Event{{Kind: "visit_pricing", LinkedInURL: "https://www.linkedin.com/in/ada-example/", Domain: "example.com",
+			At: time.Date(2026, 8, 22, 8, 0, 0, 0, time.UTC), ReceivedAt: goldenReceived, Origin: "receiver",
+			Attrs: map[string]string{"full_name": "Ada"}}},
+		rows: []api.InputRow{row("linkedin_url", "https://www.linkedin.com/in/ada-example/", "full_name", "Ada", "company.domain", "example.com")},
+	},
+	"apollo_visit_no_identity.json": {reject: "neither a contact nor a company"},
+}
+
+// Every golden body parses to exactly the expected events and receiver rows,
+// and every body in the folder has an expectation.
+func TestGoldenBodies(t *testing.T) {
+	files, err := filepath.Glob(filepath.Join(goldenDir, "*.json"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no golden bodies: %v", err)
+	}
+	for _, f := range files {
+		name := filepath.Base(f)
+		t.Run(name, func(t *testing.T) {
+			want, ok := goldens[name]
+			if !ok {
+				t.Fatal("no expectation for this body; add one to goldens")
+			}
+			body, err := os.ReadFile(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var probe map[string]any
+			if json.Unmarshal(body, &probe) != nil || probe["provisional"] != true {
+				t.Error(`a body not from S0's captures must carry "provisional": true`)
+			}
+			kind := apollo.KindReply
+			if strings.HasPrefix(name, "apollo_visit_") {
+				kind = apollo.KindVisit
+			}
+			evs, rows, err := apollo.ParseRaw(api.RawEvent{Seq: "1", Kind: kind, ReceivedAt: goldenReceived, Body: body})
+			if want.reject != "" {
+				if err == nil || !strings.Contains(err.Error(), want.reject) {
+					t.Fatalf("err = %v, want a reject naming %q", err, want.reject)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i := range evs {
+				if want.events[i].Attrs["body_sha256"] == "*" {
+					if len(evs[i].Attrs["body_sha256"]) != 64 {
+						t.Errorf("a visit with no visited_at must carry its body hash, got %q", evs[i].Attrs["body_sha256"])
+					}
+					want.events[i].Attrs["body_sha256"] = evs[i].Attrs["body_sha256"]
+				}
+			}
+			if !reflect.DeepEqual(evs, want.events) {
+				t.Errorf("events\n got %+v\nwant %+v", evs, want.events)
+			}
+			if !reflect.DeepEqual(rows, want.rows) {
+				t.Errorf("rows\n got %+v\nwant %+v", rows, want.rows)
+			}
+		})
+	}
+	for name := range goldens {
+		if _, err := os.Stat(filepath.Join(goldenDir, name)); err != nil {
+			t.Errorf("expectation for %s, but no such body", name)
+		}
+	}
+}

@@ -279,9 +279,10 @@ func (x *exec) main() error {
 		return nil
 	}
 
-	// Phase 2: everything else but Ranked, with the Log trim and Health. The
-	// Window events and Seen events trims are Intake's (S9).
+	// Phase 2: everything else but Ranked, with the retention trims (Log,
+	// Window events, Seen events) and Health.
 	r.Model.Trim(model.TableLog, "at", r.Now().Add(-x.cfg.LogRetention))
+	trimEvents(r)
 	x.putHealth(!x.cutShort)
 	if err := x.commit("phase 2", codec.Encode(r.Model, phase2Tables(r.Model)...), false); err != nil {
 		return err

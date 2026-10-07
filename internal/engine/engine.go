@@ -59,12 +59,14 @@ type Hooks struct {
 }
 
 // DefaultHooks is the production set. Each hook slice sets its field here in
-// its own PR; slices sharing AfterSave (S13's CSV rewrite, S16's view) each
-// add one function to its Chain.
+// its own PR; slices sharing AfterSave each add one function to its Chain
+// (S9's deletion of processed events, S13's CSV rewrite, S16's view).
 func DefaultHooks() Hooks {
 	return Hooks{
+		Intake:    intake,
 		Fold:      defaultFold,
-		AfterSave: Chain(),
+		Detect:    detectHook,
+		AfterSave: Chain(deleteProcessed),
 	}
 }
 
