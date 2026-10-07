@@ -295,7 +295,9 @@ func optOutOrigin(kind string, e api.Event, labels map[string]string) string {
 // every other live lead that holds one of the event's identity keys (its
 // contact id, well-formed email or LinkedIn URL), logged as key_conflict with
 // lead ids only: wrongly not contacting someone is acceptable, contacting an
-// opted-out person is not. Replies and visits stay on the resolved lead.
+// opted-out person is not. Each opt-out is written to every lead of the
+// reached leads' merge families too (cycle members included). Replies and
+// visits stay on the resolved lead.
 //
 // A visit or custom kind has no outcome effect (it feeds detectors only).
 // Applying an event twice changes nothing the second time.
@@ -319,10 +321,10 @@ func Apply(m *model.Model, lead api.LeadID, e api.Event, labels map[string]strin
 	if origin := optOutOrigin(kind, e, labels); origin != "" {
 		held := kind != "optout"
 		if lead != "" {
-			applyOptOut(m, lead, at, origin, held)
+			applyOptOutFamily(m, lead, at, origin, held)
 		}
 		for _, other := range holders(m, e) {
-			if other == lead || !applyOptOut(m, other, at, origin, held) {
+			if other == lead || !applyOptOutFamily(m, other, at, origin, held) {
 				continue
 			}
 			msg := fmt.Sprintf("an opt-out that matched no lead carries an identity key of lead %s; the opt-out was applied to it", other)
@@ -381,6 +383,33 @@ func applyOptOut(m *model.Model, lead api.LeadID, at time.Time, origin string, h
 		markHeld(m, lead, at)
 	}
 	return changed
+}
+
+// applyOptOutFamily records an opt-out on a live lead and on every lead
+// merged into it, members of a hand-edited merged_into cycle included, so the
+// opt-out stays on each of them even if a person later edits the
+// merged_into cells. Only the live lead is marked Apollo-held (the hold is
+// read across the family). It reports whether the live lead's outcome
+// changed.
+func applyOptOutFamily(m *model.Model, lead api.LeadID, at time.Time, origin string, held bool) bool {
+	changed := applyOptOut(m, lead, at, origin, held)
+	for _, f := range family(m, lead) {
+		applyOptOut(m, f, at, origin, false)
+	}
+	return changed
+}
+
+// family returns the leads other than lead whose merged_into walk ends at
+// it, sorted.
+func family(m *model.Model, lead api.LeadID) []api.LeadID {
+	var out []api.LeadID
+	for _, p := range m.People {
+		if p.MergedInto != "" && p.LeadID != lead && merge.Live(m, p.LeadID) == lead {
+			out = append(out, p.LeadID)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
 }
 
 // holders are the live leads holding one of the event's identity keys: its

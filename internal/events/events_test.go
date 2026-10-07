@@ -218,12 +218,49 @@ func TestOptOutFollowsMergedInto(t *testing.T) {
 	if o := outcome(m, "LIVE"); o.UnsubscribedAt.IsZero() {
 		t.Errorf("opt-out did not land on the live lead: %+v", o)
 	}
-	// Called with the absorbed lead's id, it still writes the live lead.
+	// Called with the absorbed lead's id, it still writes the live lead, and
+	// every lead of the family keeps the opt-out too.
 	m2 := newModel(t, "LIVE")
 	m2.Put(model.TablePeople, model.Person{LeadID: "OLD", CreatedAt: t0, MergedInto: "LIVE"})
 	Apply(m2, "OLD", api.Event{Kind: "optout", At: t0}, nil)
-	if outcome(m2, "LIVE").UnsubscribedAt.IsZero() || !outcome(m2, "OLD").UnsubscribedAt.IsZero() {
-		t.Error("Apply must write the live lead, not the absorbed one")
+	if outcome(m2, "LIVE").UnsubscribedAt.IsZero() || outcome(m2, "OLD").UnsubscribedAt.IsZero() {
+		t.Error("Apply must write the live lead and the lead merged into it")
+	}
+	if !m2.People["OLD"].ApolloHeldAt.IsZero() || !m2.People["LIVE"].ApolloHeldAt.IsZero() {
+		t.Error("a lookup opt-out is not an Apollo engagement")
+	}
+}
+
+// In a hand-edited merged_into cycle, an opt-out reaching one member is
+// written on every member, so it survives a person fixing the cycle by hand.
+func TestOptOutReachesEveryCycleMember(t *testing.T) {
+	m := newModel(t)
+	m.Put(model.TablePeople, model.Person{LeadID: "A", CreatedAt: t0, MergedInto: "B"})
+	m.Put(model.TablePeople, model.Person{LeadID: "B", CreatedAt: t0, MergedInto: "C"})
+	m.Put(model.TablePeople, model.Person{LeadID: "C", CreatedAt: t0, MergedInto: "A"})
+	m.Put(model.TablePeople, model.Person{LeadID: "D", CreatedAt: t0, MergedInto: "B"}) // merged into a member
+	m.Put(model.TableIdentities, model.Identity{Key: "c@example.com", Kind: "email", LeadID: "C", SourceID: "csv", FirstSeenAt: t0})
+	e := merge.NormalizeEventKeys(api.Event{Kind: "unsubscribed", Email: "c@example.com", At: t0, Origin: OriginReceiver})
+	lead, ok := merge.FindPerson(m, e)
+	if !ok || lead != "A" {
+		t.Fatalf("resolved %q, want the cycle's lowest id", lead)
+	}
+	Apply(m, lead, e, nil)
+	for _, id := range []api.LeadID{"A", "B", "C", "D"} {
+		if o := outcome(m, string(id)); o.UnsubscribedAt.IsZero() || o.UnsubscribedOrigin != UnsubEvent {
+			t.Errorf("%s: %+v, want the opt-out", id, o)
+		}
+	}
+	// A person then fixes the cycle: every former member stays opted out.
+	for _, id := range []api.LeadID{"A", "B", "C", "D"} {
+		p := m.People[model.Key(id)]
+		p.MergedInto = ""
+		m.Put(model.TablePeople, p)
+	}
+	for _, id := range []api.LeadID{"A", "B", "C", "D"} {
+		if outcome(m, string(id)).UnsubscribedAt.IsZero() {
+			t.Errorf("%s lost the opt-out once live again", id)
+		}
 	}
 }
 
@@ -339,7 +376,7 @@ func TestOptOutReachesTheLinkedInHolder(t *testing.T) {
 	}
 	Apply(m, b, e, nil)
 	for _, id := range []string{"A", string(b)} {
-		if o := outcome(m, id); o.UnsubscribedAt.IsZero() || o.UnsubscribedOrigin != UnsubEvent {
+		if o := outcome(m, string(id)); o.UnsubscribedAt.IsZero() || o.UnsubscribedOrigin != UnsubEvent {
 			t.Errorf("%s not opted out: %+v", id, o)
 		}
 	}

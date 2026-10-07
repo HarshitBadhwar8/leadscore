@@ -39,7 +39,8 @@ const (
 // cancelled. It then
 // applies each new `retry` and `resubscribe` Overrides row once (Applied
 // overrides), and folds every live lead's status (contracts section 7).
-// Everything it changes is saved in phase 1.
+// Everything it changes is saved in phase 1. Last, it keeps open the
+// receiver_only_push problems whose lead is still known only from webhooks.
 func foldHook(r *Run) error {
 	r.invalidate()
 	r.pushing = nil
@@ -49,6 +50,7 @@ func foldHook(r *Run) error {
 	applyResubscribes(r, v)
 	foldStatuses(r, v)
 	r.invalidate()
+	keepReceiverOnlyPushes(r)
 	return nil
 }
 

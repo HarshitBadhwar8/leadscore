@@ -76,6 +76,7 @@ func DefaultHooks() Hooks {
 		Detect:    detectHook,
 		PrePush:   prePushHook,
 		Push:      pushHook,
+		ReRead:    reReadHook,
 		Export:    exportHook,
 		AfterSave: Chain(deleteProcessed, writeExportCSVs),
 	}
