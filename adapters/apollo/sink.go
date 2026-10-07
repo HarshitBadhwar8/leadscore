@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
+	"github.com/HarshitBadhwar8/leadscore/internal/vendorhttp"
 )
 
 // The `apollo` sink (contracts sections 1 and 6, RFC 6.11): a destination
@@ -666,10 +667,10 @@ func errorFields(body []byte) string {
 	return strings.Join(parts, " ")
 }
 
-// classify maps a call's error to section 1's classes (contracts section 6):
-// a 429, 401 or 403 is ErrRateLimited (a refused key or a key without the
-// scope is no lead's fault: the sink stops for the run with no attempt
-// counted); a 5xx, a timeout or a transport failure is ErrTransient; a 4xx
+// classify maps a call's error to section 1's classes (contracts section 6,
+// with the status rule shared through vendorhttp.Class): a 429, 401 or 403
+// is ErrRateLimited (a refused key or a key without the scope is no lead's
+// fault: the sink stops for the run with no attempt counted); a 5xx, a timeout or a transport failure is ErrTransient; a 4xx
 // whose error fields name a refusal (another sequence, opted out, invalid
 // email) is ErrRefused; any other error counts one attempt.
 //
@@ -688,11 +689,11 @@ func classify(err error) error {
 		}
 		return fmt.Errorf("%w: %w", api.ErrTransient, err)
 	}
-	switch {
-	case KeyRefused(err):
-		return fmt.Errorf("%w: apollo refused the key (it must be a master key): %w", api.ErrRateLimited, err)
-	case se.Status >= 500:
-		return fmt.Errorf("%w: %w", api.ErrTransient, err)
+	switch class := vendorhttp.Class(se.Status); {
+	case vendorhttp.KeyRefused(se.Status):
+		return fmt.Errorf("%w: apollo refused the key (it must be a master key): %w", class, err)
+	case class != nil:
+		return fmt.Errorf("%w: %w", class, err)
 	case se.Status >= 400:
 		switch reason := refusalOf(errorFields(se.Body())); reason {
 		case "", reasonInSequence:

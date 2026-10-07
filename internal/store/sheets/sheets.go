@@ -40,6 +40,7 @@ import (
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
+	"github.com/HarshitBadhwar8/leadscore/internal/vendorhttp"
 )
 
 func init() {
@@ -84,16 +85,14 @@ func Connect(ctx context.Context, cfg api.Config, scopes ...string) (*Services, 
 	if len(scopes) == 0 {
 		scopes = Scopes
 	}
-	base, _ := cfg["base_url"].(string)
-	base = strings.TrimRight(base, "/")
-	client, _ := cfg["_http_client"].(*http.Client)
+	base, client, err := vendorhttp.TestKeys(cfg)
+	if err != nil {
+		return nil, err
+	}
 	var common []option.ClientOption
 	endpoint := func(path string) []option.ClientOption { return nil }
 	switch {
 	case base != "":
-		if client == nil {
-			return nil, errors.New("`base_url` is for tests only and needs a test HTTP client; remove it from leadscore.yml")
-		}
 		common = append(common, option.WithHTTPClient(client))
 		endpoint = func(path string) []option.ClientOption {
 			return []option.ClientOption{option.WithEndpoint(base + path)}

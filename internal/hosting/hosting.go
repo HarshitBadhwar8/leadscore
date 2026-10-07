@@ -22,7 +22,7 @@ import (
 	htransport "google.golang.org/api/transport/http"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
-	"github.com/HarshitBadhwar8/leadscore/internal/logredact"
+	"github.com/HarshitBadhwar8/leadscore/internal/vendorhttp"
 )
 
 // The fixed resource names (contracts section 3, `hosting`).
@@ -70,8 +70,12 @@ func AccountEmail(name, project string) string {
 	return name + "@" + project + ".iam.gserviceaccount.com"
 }
 
-// callTimeout bounds every Google call.
-const callTimeout = 30 * time.Second
+// callTimeout bounds every Google call; maxAnswer caps an answer read into
+// memory (a larger one is an error).
+const (
+	callTimeout = 30 * time.Second
+	maxAnswer   = 4 << 20
+)
 
 const cloudPlatformScope = "https://www.googleapis.com/auth/cloud-platform"
 
@@ -92,14 +96,11 @@ type Client struct {
 // `gcloud auth application-default login --impersonate-service-account`). A
 // nil block is Google's standard credentials.
 func Connect(ctx context.Context, cfg api.Config) (*Client, error) {
-	base, _ := cfg["base_url"].(string)
-	base = strings.TrimRight(base, "/")
-	client, _ := cfg["_http_client"].(*http.Client)
+	base, client, err := vendorhttp.TestKeys(cfg)
 	switch {
+	case err != nil:
+		return nil, err
 	case base != "":
-		if client == nil {
-			return nil, errors.New("`base_url` is for tests only and needs a test HTTP client")
-		}
 		return &Client{http: client, base: base}, nil
 	case client != nil:
 		return &Client{http: client}, nil
@@ -141,8 +142,6 @@ func (c *Client) endpoint(service string) string {
 // call sends one request to a Google API and decodes a 2xx JSON answer into
 // out. Errors name the API and path only, never a body or a secret.
 func (c *Client) call(ctx context.Context, method, service, path string, body io.Reader, out any) error {
-	ctx, cancel := context.WithTimeout(ctx, callTimeout)
-	defer cancel()
 	u := c.endpoint(service) + path
 	req, err := http.NewRequestWithContext(ctx, method, u, body)
 	if err != nil {
@@ -151,27 +150,17 @@ func (c *Client) call(ctx context.Context, method, service, path string, body io
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := c.http.Do(req)
+	reply, err := vendorhttp.Do(c.http, req, callTimeout, maxAnswer)
 	if err != nil {
-		var ue *url.Error
-		if errors.As(err, &ue) {
-			err = ue.Err // the URL is already named below
-		}
 		return fmt.Errorf("%s %s: %w", service, path, err)
 	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if err != nil {
-		return fmt.Errorf("%s %s: reading the answer: %w", service, path, err)
-	}
-	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("%s %s: %w", service, path,
-			&APIError{Status: resp.StatusCode, Detail: logredact.VendorErrorDetail(data)})
+	if reply.Status/100 != 2 {
+		return fmt.Errorf("%s %s: %w", service, path, &APIError{Status: reply.Status, Detail: reply.Detail()})
 	}
 	if out == nil {
 		return nil
 	}
-	if err := json.Unmarshal(data, out); err != nil {
+	if err := json.Unmarshal(reply.Body, out); err != nil {
 		return fmt.Errorf("%s %s: unexpected answer: %w", service, path, err)
 	}
 	return nil

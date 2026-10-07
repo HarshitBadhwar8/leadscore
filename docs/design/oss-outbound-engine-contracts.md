@@ -806,6 +806,7 @@ Not public API: these live under `internal/` and may change between releases. Th
 | `internal/check` | S1 | the check framework (12.4) |
 | `internal/config` | S1 | loading `leadscore.yml`, the rubric path, the bundle, `config get` and `set-hosting` (section 3) |
 | `internal/logredact` | S1 | `Redact`, `VendorErrorDetail` (copied) |
+| `internal/vendorhttp` | refactor after S15 | the HTTP rules the vendor clients share, so they cannot drift: `TestKeys` (`base_url` refused without `_http_client`, or when not non-empty text; an `_http_client` that is not an `*http.Client` refused; a typed nil counts as absent), `NewClient` (a copy of the caller's client that never follows redirects), `Do` (a per-call timeout on the call's own context, the whole reply read under a size cap, transport errors naming the operation and cause, never the URL), `Reply.Detail` (`logredact.VendorErrorDetail`), and `Class` / `KeyRefused` (429, 401, 403 are `ErrRateLimited`; 5xx and any `Do` error are `ErrTransient`). Auth headers, retries, pacing and parsing stay in each adapter. `adapters/apollo`, `adapters/hubspot`, `internal/hosting` (`Connect`, `call`) and `internal/store/sheets` (`Connect`, test keys only) use it |
 | `internal/csvsafe` | S10a | `Cell` and `Row`: quote a CSV cell a spreadsheet would read as a formula (starting with a tab or a carriage return, or whose first non-space character is `=`, `+`, `-` or `@`, unless it parses as a number); `ranked --csv` and the export CSVs (S13) use it |
 | `internal/duration` | S1 (moved out of `internal/config` by S2) | `Parse`: Go durations plus `d` for days, shared by config and the rubric |
 | `internal/model` | S1 creates it empty; S4 fills it | the in-memory model (12.2) |
@@ -981,7 +982,7 @@ func RunWith(ctx context.Context, opts api.RunOptions, hooks Hooks, now func() t
 
 ### 12.8 The Apollo client (S8)
 
-`adapters/apollo/client.go` is the one way into Apollo's API; S12's sink, `Lookup` and `Poller` build on it.
+`adapters/apollo/client.go` is the one way into Apollo's API; S12's sink, `Lookup` and `Poller` build on it. It keeps the API below and builds on `internal/vendorhttp` (12.1) for the test keys, redirects, timeout, size cap, transport errors and status classes.
 
 ```go
 const KeyVariable = "APOLLO_API_KEY"
