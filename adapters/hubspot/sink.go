@@ -167,9 +167,11 @@ const maxTextLen = 65536
 //  1. deals the engine already knows: another lead's done deal step
 //     (Related), the deal a deal step settled earlier in this run, and the
 //     company's stored deal (CompanyDealID);
-//  2. deals associated with this lead's contact that carry the company's
-//     domain: a retry of this step whose earlier call created the deal and
-//     timed out, read through the association, which (S0 confirms) does not
+//  2. deals associated with this lead's contact, unless shown to be another
+//     company's (elsewhere: a different domain property, or company records
+//     with other domains only): a retry of this step whose earlier call
+//     created the deal and timed out, or a salesperson's deal on the
+//     person, read through the association, which (S0 confirms) does not
 //     lag as search does;
 //  3. deals carrying the company's domain, found by search.
 //
@@ -184,7 +186,7 @@ func (k *Sink) deal(ctx context.Context, req api.StepRequest) (string, error) {
 	if contactID == "" {
 		return "", errors.New("hubspot: the deal step has no contact id from the contact step")
 	}
-	domain := strings.ToLower(strings.TrimSpace(req.Lead.Domain))
+	domain := normDomain(req.Lead.Domain)
 	if domain == "" {
 		return "", fmt.Errorf("hubspot: a deal is per company, and the lead has no company domain: %w", api.ErrRefused)
 	}
@@ -197,9 +199,9 @@ func (k *Sink) deal(ctx context.Context, req api.StepRequest) (string, error) {
 	}
 	domainProp := k.s.prop("company_domain")
 	unknown := false
-	// pick reads the ids and returns the first open one; with sameDomain, a
-	// deal counts only when it carries the company's domain.
-	pick := func(ids []string, sameDomain bool) (string, error) {
+	// pick reads the ids and returns the first open one that skip does not
+	// rule out.
+	pick := func(ids []string, skip func(o object) bool) (string, error) {
 		ids = dedupe(ids)
 		if len(ids) == 0 {
 			return "", nil
@@ -214,7 +216,7 @@ func (k *Sink) deal(ctx context.Context, req api.StepRequest) (string, error) {
 		}
 		for _, id := range ids {
 			o, ok := byID[id]
-			if !ok || sameDomain && !strings.EqualFold(o.prop(domainProp), domain) {
+			if !ok || skip != nil && skip(o) {
 				continue // deleted, or another company's deal
 			}
 			c, known := pipes.of(o.prop("pipeline"), o.prop("dealstage"))
@@ -245,7 +247,7 @@ func (k *Sink) deal(ctx context.Context, req api.StepRequest) (string, error) {
 	if req.Lead.CompanyDealID != "" {
 		known = append(known, req.Lead.CompanyDealID)
 	}
-	reuse, err := pick(known, false)
+	reuse, err := pick(known, nil)
 	if err != nil {
 		return "", err
 	}
@@ -254,7 +256,12 @@ func (k *Sink) deal(ctx context.Context, req api.StepRequest) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("hubspot: reading the contact's deals: %w", err)
 		}
-		if reuse, err = pick(sortedIDs(assoc[contactID]), true); err != nil {
+		ids := sortedIDs(assoc[contactID])
+		coDomains, err := dealCompanyDomains(ctx, k.s.c, ids)
+		if err != nil {
+			return "", fmt.Errorf("hubspot: %w", err)
+		}
+		if reuse, err = pick(ids, func(o object) bool { return elsewhere(domain, o.prop(domainProp), coDomains[o.ID]) }); err != nil {
 			return "", err
 		}
 	}
@@ -264,7 +271,8 @@ func (k *Sink) deal(ctx context.Context, req api.StepRequest) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("hubspot: finding the company's deal: %w", err)
 		}
-		if reuse, err = pick(sortedIDs(idsOf(found)), true); err != nil {
+		sameDomain := func(o object) bool { return normDomain(o.prop(domainProp)) != domain }
+		if reuse, err = pick(sortedIDs(idsOf(found)), sameDomain); err != nil {
 			return "", err
 		}
 	}
@@ -277,7 +285,7 @@ func (k *Sink) deal(ctx context.Context, req api.StepRequest) (string, error) {
 		return reuse, nil
 	}
 	if unknown {
-		return "", fmt.Errorf("hubspot: a deal at the company is at a stage no pipeline lists, so the deal step waits rather than open a second deal: %w", api.ErrTransient)
+		return "", fmt.Errorf("hubspot: a deal at the company is %s, so the deal step waits rather than open a second deal: %w", unknownStageText, api.ErrTransient)
 	}
 
 	props := map[string]string{
@@ -298,6 +306,11 @@ func (k *Sink) deal(ctx context.Context, req api.StepRequest) (string, error) {
 	k.remember(domain, id)
 	return id, nil
 }
+
+// unknownStageText marks a deal step waiting on a deal at an unknown stage;
+// the hubspot check finds it in the ledger's last_error and raises
+// hubspot:unknown_stage.
+const unknownStageText = "at a stage no pipeline lists"
 
 // dealToContact is HubSpot's built-in association type from a deal to a
 // contact (S0 confirms the id).

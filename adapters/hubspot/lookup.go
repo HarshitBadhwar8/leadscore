@@ -27,7 +27,8 @@ const optOutProperty = "hs_email_optout"
 //     then open, then lost) among the deals of the company records found
 //     through its contacts (or by the domain when none is), the deals
 //     carrying the company's domain property, the deals linked to its
-//     contacts that carry that domain, and the company's stored deal
+//     contacts (unless shown to be another company's), and the company's
+//     stored deal
 //     (CompanyDealID). A stored deal that no longer exists is `deal_lost`
 //     naming it; a company with no deal at all is `deal_lost` with no deal
 //     id.
@@ -100,7 +101,7 @@ func (l *Lookup) Lookup(ctx context.Context, leads []api.LeadRef) ([]api.Event, 
 	return r.events, r.failed, nil
 }
 
-func domainOf(l api.LeadRef) string { return strings.ToLower(strings.TrimSpace(l.Domain)) }
+func domainOf(l api.LeadRef) string { return normDomain(l.Domain) }
 
 // fail records a failed read for some leads, and fails their companies.
 func (r *lookupRun) fail(idx []int, err error) {
@@ -321,7 +322,7 @@ func (r *lookupRun) byLeadID(ctx context.Context) {
 type candidate struct {
 	id         string
 	stored     bool // the company's stored deal (CompanyDealID)
-	viaContact bool // linked to a contact at the company only: it counts only when it carries the company's domain
+	viaContact bool // linked to a contact at the company: it counts unless there is evidence it is another company's (elsewhere)
 }
 
 // deals reads every company's deals and emits one event per company that no
@@ -407,7 +408,7 @@ func (r *lookupRun) deals(ctx context.Context) {
 			continue
 		}
 		for _, o := range found {
-			d := strings.ToLower(strings.TrimSpace(o.prop("domain")))
+			d := normDomain(o.prop("domain"))
 			companiesAt[d] = append(companiesAt[d], o.ID)
 		}
 	}
@@ -451,7 +452,7 @@ func (r *lookupRun) deals(ctx context.Context) {
 			continue
 		}
 		for _, o := range found {
-			add(strings.ToLower(strings.TrimSpace(o.prop(domainProp))), o.ID)
+			add(normDomain(o.prop(domainProp)), o.ID)
 		}
 	}
 	for _, d := range domains {
@@ -489,21 +490,49 @@ func (r *lookupRun) deals(ctx context.Context) {
 		}
 	}
 
+	// The companies of the deals linked to contacts, to tell a deal of
+	// another company (the person's old employer) from this one's.
+	var linked []string
 	for _, d := range domains {
 		if r.badDom[d] {
 			continue
 		}
-		r.events = append(r.events, companyEvent(d, cands[d], read, pipes, domainProp))
+		for _, c := range cands[d] {
+			if c.viaContact {
+				linked = append(linked, c.id)
+			}
+		}
+	}
+	coDomains, err := dealCompanyDomains(ctx, r.s.c, sortedIDs(linked))
+	if err != nil {
+		var hit []string
+		for _, d := range domains {
+			for _, c := range cands[d] {
+				if c.viaContact {
+					hit = append(hit, d)
+					break
+				}
+			}
+		}
+		r.failDomains(hit, fmt.Errorf("hubspot: %w", err))
+	}
+
+	for _, d := range domains {
+		if r.badDom[d] {
+			continue
+		}
+		r.events = append(r.events, companyEvent(d, cands[d], read, pipes, domainProp, coDomains))
 	}
 }
 
 // companyEvent is the one deal event for a company: the strongest stage
 // among its deals (won, then open, then lost), naming that deal; the
-// company's stored deal is preferred within a stage. A deal linked only to a
-// contact at the company counts only when it carries the company's domain. A stored deal that no
+// company's stored deal is preferred within a stage. A deal linked to a
+// contact at the company counts unless it is shown to be another company's
+// (elsewhere). A stored deal that no
 // longer exists counts as lost. No deal at all is deal_lost with no deal id
 // (contracts section 5.3).
-func companyEvent(domain string, cands []candidate, read map[string]object, pipes *pipelines, domainProp string) api.Event {
+func companyEvent(domain string, cands []candidate, read map[string]object, pipes *pipelines, domainProp string, coDomains map[string][]string) api.Event {
 	type pick struct {
 		id, stage string
 		stored    bool
@@ -527,10 +556,10 @@ func companyEvent(domain string, cands []candidate, read map[string]object, pipe
 			}
 			continue
 		}
-		if c.viaContact && !strings.EqualFold(o.prop(domainProp), domain) {
-			// A deal linked only to a contact here, for another company
-			// (the person's old employer): not this company's. A deal of
-			// this company's own company record is a separate candidate.
+		if c.viaContact && elsewhere(domain, o.prop(domainProp), coDomains[c.id]) {
+			// A deal linked to a contact here but shown to be another
+			// company's (the person's old employer). A deal of this
+			// company's own company record is a separate candidate.
 			continue
 		}
 		class, _ := pipes.of(o.prop("pipeline"), o.prop("dealstage"))

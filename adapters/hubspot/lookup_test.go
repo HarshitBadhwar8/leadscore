@@ -294,3 +294,39 @@ func TestLookupSecondaryEmailMatch(t *testing.T) {
 	}
 	wantEvents(t, evs, "optout ana@acme.example")
 }
+
+// The review probe: a salesperson's deal on the contact, with no domain
+// property and no company link, is the company's deal: held, not released.
+// One linked to a company record of another domain is not.
+func TestLookupHandMadeContactDealCounts(t *testing.T) {
+	f, cfg := portal(t)
+	c := f.AddContact("ana@acme.example", nil)
+	hand := f.AddDeal(fakehub.StageOpen, nil)
+	f.Associate("contacts", c, "deals", hand)
+	evs, _, err := lookup(t, cfg, lead("a", "acme.example", "ana@acme.example"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantEvents(t, evs, "deal_open acme.example "+hand)
+
+	f.Associate("deals", hand, "companies", f.AddCompany("oldjob.example"))
+	evs, _, err = lookup(t, cfg, lead("a", "acme.example", "ana@acme.example"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantEvents(t, evs, "deal_lost acme.example")
+}
+
+// Domains compare normalized on both sides, as merge normalizes a lead's:
+// case, a scheme, www. and a path do not make a deal another company's.
+func TestLookupNormalizesDomains(t *testing.T) {
+	f, cfg := portal(t)
+	c := f.AddContact("ana@acme.example", nil)
+	d := f.AddDeal(fakehub.StageOpen, map[string]string{"leadscore_company_domain": "https://www.Acme.example/"})
+	f.Associate("contacts", c, "deals", d)
+	evs, _, err := lookup(t, cfg, lead("a", "WWW.ACME.example", "ana@acme.example"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantEvents(t, evs, "deal_open acme.example "+d)
+}

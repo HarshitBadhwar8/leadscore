@@ -249,3 +249,37 @@ func TestLookupGetsTheLeadsDoneSteps(t *testing.T) {
 		t.Errorf("the lookup did not get Ana's contact step: %v", lk.Looked())
 	}
 }
+
+// Done for the HubSpot lookup holds a contact step even after its lane was
+// changed to push elsewhere, and the contact step of a lead merged into this
+// one.
+func TestLookupDoneSurvivesLaneRenamesAndMerges(t *testing.T) {
+	w := newWorld(t, "ana@acme.example,Ana A,Clerk,acme.example")
+	w.pushesOff()
+	// The home address arrives later, so its lead is the newer one, which a
+	// same_as merge absorbs.
+	w.leads("ana@acme.example,Ana A,Clerk,acme.example", "ana.home@home.example,Ana Home,Clerk,acme.example")
+	w.pushesOff()
+	w.reply("ana.home@home.example", "replied_positive")
+	w.mustRun()
+	home := w.id("ana.home@home.example")
+	contact := w.push("ana.home@home.example", "warm", "contact")["vendor_id"]
+	if contact == "" {
+		t.Fatal("setup: no contact step done")
+	}
+	w.rubric(`push: "hubspot:deals"`, `push: "fake:b"`) // the lane now pushes elsewhere; its done rows stay
+	w.override("ana@acme.example", "same_as", "ana.home@home.example", "")
+	lk := w.lookup("hubspot")
+	w.mustRun()
+	found := false
+	for _, call := range lk.Looked() {
+		for _, l := range call {
+			for _, d := range l.Done {
+				found = found || l.ID == w.id("ana@acme.example") && d.Key.LeadID == home && d.Key.LaneID == "warm" && d.VendorID == contact
+			}
+		}
+	}
+	if !found {
+		t.Errorf("the lookup did not get the merged-in lead's contact under the renamed lane: %v", lk.Looked())
+	}
+}

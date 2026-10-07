@@ -62,6 +62,13 @@ func TestFakeMatchesFixtures(t *testing.T) {
 			s.next = 300
 			s.Associate("contacts", c, "companies", s.AddCompany("example.com"))
 		},
+		"associations_batch_read/deals_companies": func(s *Server) {
+			s.next = 200
+			d := s.AddDeal(StageOpen, nil)
+			s.next = 300
+			s.Associate("deals", d, "companies", s.AddCompany("example.com"))
+		},
+		"companies_batch_read/by_id": func(s *Server) { s.next = 300; s.AddCompany("example.com") },
 		"associations_batch_read/companies_deals": func(s *Server) {
 			s.next = 200
 			d := s.AddDeal(StageOpen, nil)

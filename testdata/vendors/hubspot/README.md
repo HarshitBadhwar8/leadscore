@@ -23,7 +23,7 @@ What S0 must confirm (also marked "S0 confirms" in `adapters/hubspot`):
 - That reading a merged-away contact id (batch read or `GET`) answers with
   the surviving contact.
 - v4 association batch reads (contact to companies, contact to deals,
-  company to deals) answer a record with no associations with a
+  company to deals, deal to companies) and the company batch read by id answer a record with no associations with a
   `NO_ASSOCIATIONS_FOUND` error entry, and whether they lag a fresh create
   (the deal step's retry relies on the contact-to-deals read not lagging).
 - The v4 `PUT` association call (`associations_put`).

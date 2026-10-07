@@ -46,14 +46,18 @@ func (hubspotCheck) Run(ctx context.Context, env check.Env) []check.Problem {
 		return nil
 	}
 	block, ok := env.Config.Sinks["hubspot"]
-	if !ok || strings.TrimSpace(os.Getenv(TokenVariable)) == "" {
+	if !ok {
 		return nil
+	}
+	stuck := unknownStageProblem(env)
+	if strings.TrimSpace(os.Getenv(TokenVariable)) == "" {
+		return stuck
 	}
 	s, err := parse(block)
 	if err != nil {
 		return []check.Problem{{Key: "hubspot:config", Message: err.Error(), Fix: "fix sinks.hubspot in leadscore.yml"}}
 	}
-	var out []check.Problem
+	out := stuck
 	apiProblem := func(err error) []check.Problem {
 		return append(out, check.Problem{Key: "hubspot:api", Message: "HubSpot could not be read: " + err.Error(),
 			Fix: "check HUBSPOT_TOKEN and HubSpot's status"})
@@ -135,4 +139,26 @@ func (hubspotCheck) Run(ctx context.Context, env check.Env) []check.Problem {
 		}
 	}
 	return out
+}
+
+// unknownStageProblem raises hubspot:unknown_stage while a deal step waits
+// on a deal at a stage no pipeline lists (its last_error says so): the step
+// will not create a second deal, so it waits until someone moves that deal
+// to a known stage or fixes the pipelines.
+func unknownStageProblem(env check.Env) []check.Problem {
+	if env.Model == nil {
+		return nil
+	}
+	n := 0
+	for _, p := range env.Model.Pushes {
+		if p.Step == stepDeal && p.Dest == destDeals && p.State == "pending" && strings.Contains(p.LastError, unknownStageText) {
+			n++
+		}
+	}
+	if n == 0 {
+		return nil
+	}
+	return []check.Problem{{Key: "hubspot:unknown_stage",
+		Message: fmt.Sprintf("%d deal step(s) wait because a deal at their company is %s; no second deal is opened", n, unknownStageText),
+		Fix:     "move that deal to a stage of a deal pipeline in HubSpot (or restore its pipeline); the steps then go on"}}
 }

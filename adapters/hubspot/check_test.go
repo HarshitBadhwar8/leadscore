@@ -10,6 +10,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/check"
 	"github.com/HarshitBadhwar8/leadscore/internal/config"
 	fakehub "github.com/HarshitBadhwar8/leadscore/internal/fakes/hubspot"
+	"github.com/HarshitBadhwar8/leadscore/internal/model"
 	"github.com/HarshitBadhwar8/leadscore/internal/rules"
 )
 
@@ -107,5 +108,19 @@ func TestHubSpotCheck(t *testing.T) {
 	}
 	if got := c.Run(context.Background(), check.Env{Config: &config.Config{}}); len(got) != 0 {
 		t.Errorf("with no sinks.hubspot: %+v", got)
+	}
+}
+
+// A deal step waiting on a deal at an unknown stage raises
+// hubspot:unknown_stage, even with no token to call HubSpot.
+func TestHubSpotCheckUnknownStage(t *testing.T) {
+	c := hubspotCheck(t)
+	m := model.New()
+	m.Put(model.TablePushes, model.Push{LeadID: "a", LaneID: "warm", Step: "deal", Dest: "deals", State: "pending",
+		LastError: "hubspot: a deal at the company is at a stage no pipeline lists, so the deal step waits: transient"})
+	t.Setenv(hubspot.TokenVariable, "")
+	got := c.Run(context.Background(), check.Env{Config: &config.Config{Sinks: map[string]api.Config{"hubspot": {}}}, Model: m})
+	if keysOf(got) != "hubspot:unknown_stage" || !strings.Contains(got[0].Message, "1 deal step") {
+		t.Errorf("%+v", got)
 	}
 }

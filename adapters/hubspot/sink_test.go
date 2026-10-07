@@ -349,7 +349,7 @@ func TestDealWaitsOnAnUnknownStageCandidate(t *testing.T) {
 				r.Lead.CompanyDealID = ghost
 			}
 			_, err := s.Do(context.Background(), r)
-			if !errors.Is(err, api.ErrTransient) || f.Count("deal") != 0 {
+			if !errors.Is(err, api.ErrTransient) || !strings.Contains(err.Error(), "at a stage no pipeline lists") || f.Count("deal") != 0 {
 				t.Errorf("err %v, %d deals created", err, f.Count("deal"))
 			}
 		})
@@ -388,5 +388,39 @@ func TestDealOnTheContactForAnotherCompanyIsNotReused(t *testing.T) {
 	id, err := s.Do(context.Background(), req(l, "deals", "deal", map[string]string{"contact": c}))
 	if err != nil || id == old || f.Count("deal") != 1 {
 		t.Errorf("got %q %v; the old employer's deal is %s", id, err, old)
+	}
+}
+
+// The review probe: a salesperson's deal on the contact, with no domain
+// property and no company link, is reused, not doubled.
+func TestDealReusesAHandMadeDealOnTheContact(t *testing.T) {
+	f, cfg := portal(t)
+	s := newSink(t, cfg)
+	l := lead("lead-1", "acme.example", "ana@acme.example")
+	c := contactFor(t, s, l)
+	hand := f.AddDeal(fakehub.StageOpen, nil)
+	f.Associate("contacts", c, "deals", hand)
+	id, err := s.Do(context.Background(), req(l, "deals", "deal", map[string]string{"contact": c}))
+	if err != nil || id != hand || f.Count("deal") != 0 {
+		t.Errorf("got %q %v, %d created; want the hand-made %s", id, err, f.Count("deal"), hand)
+	}
+}
+
+// The lead's domain is normalized before it names, marks and finds the deal.
+func TestDealNormalizesTheDomain(t *testing.T) {
+	f, cfg := portal(t)
+	s := newSink(t, cfg)
+	l := lead("lead-1", "WWW.Acme.example", "ana@acme.example")
+	id, err := s.Do(context.Background(), req(l, "deals", "deal", map[string]string{"contact": contactFor(t, s, l)}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Prop("deals", id, "leadscore_company_domain") != "acme.example" || f.Prop("deals", id, "dealname") != "acme.example" {
+		t.Errorf("deal props %q %q", f.Prop("deals", id, "leadscore_company_domain"), f.Prop("deals", id, "dealname"))
+	}
+	other := lead("lead-2", "acme.example", "bo@acme.example")
+	again, err := newSink(t, cfg).Do(context.Background(), req(other, "deals", "deal", map[string]string{"contact": contactFor(t, s, other)}))
+	if err != nil || again != id {
+		t.Errorf("found by domain: %q %v, want %s", again, err, id)
 	}
 }
