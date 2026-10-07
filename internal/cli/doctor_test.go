@@ -107,7 +107,7 @@ func tables(t *testing.T, cfg string) map[string][]api.Row {
 }
 
 // A CSV-only install after its first run is green: every check passes or
-// warns, doctor exits 0, and prints one line per section 10 check, in its
+// warns, doctor exits 0, and prints one line per DoctorOrder check, in its
 // order.
 func TestDoctorCSVOnlyIsGreen(t *testing.T) {
 	doctorEnv(t)
@@ -125,7 +125,7 @@ func TestDoctorCSVOnlyIsGreen(t *testing.T) {
 			t.Errorf("doctor output lacks %q:\n%s", want, out)
 		}
 	}
-	// Section 10's order: each check's first line comes after the one before.
+	// Doctor's order: each check's first line comes after the one before.
 	last := -1
 	for _, name := range DoctorOrder {
 		i := strings.Index(out, "  "+name+"\n")
@@ -137,7 +137,7 @@ func TestDoctorCSVOnlyIsGreen(t *testing.T) {
 			continue
 		}
 		if i < last {
-			t.Errorf("%s is out of section 10's order:\n%s", name, out)
+			t.Errorf("%s is out of DoctorOrder's order:\n%s", name, out)
 		}
 		last = i
 	}
@@ -196,7 +196,7 @@ func TestDoctorExitCodes(t *testing.T) {
 }
 
 // On a hosted install doctor reads the keys its adapters need from Secret
-// Manager first (contracts section 3), so the adapter checks run with them.
+// Manager first, so the adapter checks run with them.
 func TestDoctorLoadsHostedKeys(t *testing.T) {
 	doctorEnv(t)
 	f := fakeGCP(t)
@@ -217,7 +217,7 @@ func TestDoctorLoadsHostedKeys(t *testing.T) {
 	}
 }
 
-// Every section 10 check is registered, doctor-only ones are not in-run, and
+// Every DoctorOrder check is registered, doctor-only ones are not in-run, and
 // DoctorOrder names each once.
 func TestDoctorOrderMatchesRegistry(t *testing.T) {
 	registered := map[string]check.Check{}

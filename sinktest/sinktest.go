@@ -1,5 +1,5 @@
-// Package sinktest is the conformance suite a plug-in sink runs against itself
-// (contracts section 1, RFC 6.11): every sink is find-or-create by its step
+// Package sinktest is the conformance suite a plug-in sink runs against
+// itself: every sink is find-or-create by its step
 // key, so a step replayed after a crash, or called twice, leaves one
 // vendor-side object, and each kind of vendor failure maps to its error.
 //

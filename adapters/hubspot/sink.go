@@ -15,9 +15,9 @@ import (
 )
 
 // Sink is the `hubspot` sink: `hubspot:contacts` has the step contact and
-// `hubspot:deals` the steps contact and deal (contracts section 6). Both
-// steps find before they create, so a step replayed after a crash, or called
-// twice, leaves one record.
+// `hubspot:deals` the steps contact and deal. Both steps
+// find before they create, so a step replayed after a crash, or called twice,
+// leaves one record.
 //
 // The engine builds one Sink per run, so the pipeline names are resolved once
 // per run, and the company-to-deal map below lasts one run.
@@ -161,7 +161,7 @@ func (k *Sink) contactProps(req api.StepRequest, email string) map[string]string
 const maxTextLen = 65536
 
 // deal settles the company's one open deal and associates the lead's
-// contact with it (contracts section 6). It looks in three tiers, reading
+// contact with it. It looks in three tiers, reading
 // each tier's deals and reusing the first it reads as open:
 //
 //  1. deals the engine already knows: another lead's done deal step

@@ -49,9 +49,10 @@ func noHubSpotProblems(t *testing.T, res api.RunResult) {
 	}
 }
 
-// S11 proof: two leads at one company pushed to a deals lane in one batch
-// open one deal. The second lead's deal step gets the first one's deal in
-// Related and is associated with it; the deal carries the company's domain.
+// The HubSpot deals proof: two leads at one company pushed to a deals lane in
+// one batch open one deal. The second lead's deal step gets the first one's
+// deal in Related and is associated with it; the deal carries the company's
+// domain.
 func TestHubSpotTwoLeadsOneCompanyOneDeal(t *testing.T) {
 	w := newWorld(t,
 		"ana@acme.example,Ana A,Clerk,acme.example",
@@ -81,11 +82,12 @@ func TestHubSpotTwoLeadsOneCompanyOneDeal(t *testing.T) {
 	}
 }
 
-// S11 proof: a deal a salesperson closed as lost releases its company. Ana's
-// deal holds Acme, so Ben stays out of the cold lane; once HubSpot shows the
-// deal closed-lost, the lookup (reading the stored deal by id, no search
-// involved) reports deal_lost, Ben is released and pushed; a later positive
-// reply at Acme opens a new deal rather than reusing the lost one.
+// The HubSpot deals proof: a deal a salesperson closed as lost releases its
+// company. Ana's deal holds Acme, so Ben stays out of the cold lane; once
+// HubSpot shows the deal closed-lost, the lookup (reading the stored deal by
+// id, no search involved) reports deal_lost, Ben is released and pushed; a
+// later positive reply at Acme opens a new deal rather than reusing the lost
+// one.
 func TestHubSpotClosedLostReleasesItsCompany(t *testing.T) {
 	w := newWorld(t,
 		"ana@acme.example,Ana A,Clerk,acme.example",

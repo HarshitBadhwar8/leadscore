@@ -297,7 +297,7 @@ func requiresNotReceiverOnly(n *yaml.Node) bool {
 	return false
 }
 
-// checkPush checks a lane's push target (contracts section 2, "Lanes"). That
+// checkPush checks a lane's push target. That
 // the sink is registered is checked at run start, not here.
 func checkPush(l Lane) string {
 	if l.Push == "" {

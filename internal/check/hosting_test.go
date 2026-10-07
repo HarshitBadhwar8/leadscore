@@ -221,7 +221,7 @@ func TestHostingCheckUnreadable(t *testing.T) {
 func TestHostingCheckIsDoctorOnly(t *testing.T) {
 	for _, c := range InRun() {
 		if c.Name() == "hosting" {
-			t.Fatal("the hosting check must not run inside runs (section 10)")
+			t.Fatal("the hosting check must not run inside runs")
 		}
 	}
 	found := false

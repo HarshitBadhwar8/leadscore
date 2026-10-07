@@ -12,7 +12,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/store/sqlite"
 )
 
-// doctorRow is one contracts section 10 row, driven through `leadscore
+// doctorRow is one doctor check's row, driven through `leadscore
 // doctor`: setup makes an install where the check finds its problem, and
 // want is the line doctor must print for it.
 type doctorRow struct {
@@ -39,7 +39,7 @@ func ran(t *testing.T, extra string, f func(m *model.Model)) string {
 	return cfg
 }
 
-// doctorRows has one entry per section 10 row, keyed by the check's name.
+// doctorRows has one entry per doctor check, keyed by the check's name.
 // TestEveryDoctorRowHasATestAndASkillEntry (root package) reads these keys.
 var doctorRows = map[string]doctorRow{
 	"secrets": {func(t *testing.T) string {
@@ -131,7 +131,7 @@ var doctorRows = map[string]doctorRow{
 	}, "FAIL  duplicates: merge_cycle:"},
 }
 
-// Each section 10 row, through doctor: the line and its fix are printed, and
+// Each doctor check's row, through doctor: the line and its fix are printed, and
 // the exit code follows the line (1 for FAIL, 0 when only warnings).
 func TestDoctorRows(t *testing.T) {
 	for name, row := range doctorRows {

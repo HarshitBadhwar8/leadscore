@@ -32,7 +32,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/store/sqlite"
 )
 
-// TestLiveCloudRun is LEADSCORE_LIVE_CLOUDRUN (RFC 8.4), S14b's proof. It sets
+// TestLiveCloudRun is the LEADSCORE_LIVE_CLOUDRUN live check. It sets
 // a throwaway Google Cloud project up with setup/gcp.sh exactly as the README
 // does, then checks what only real Cloud Run can show:
 //
@@ -49,9 +49,13 @@ import (
 // It prints the run's length and the measures the README's cost section needs.
 //
 // Variables: LEADSCORE_LIVE_CLOUDRUN=1; LEADSCORE_LIVE_PROJECT (a billed,
-// throwaway project, never the dogfood project leadscore-dev);
+// throwaway project, never one a real install uses);
 // LEADSCORE_LIVE_IMAGE (the image to deploy); optional LEADSCORE_LIVE_REGION
 // (asia-south1) and LEADSCORE_LIVE_ROWS (synthetic leads, 60000).
+// LEADSCORE_LIVE_DENY_PROJECTS is required: a comma-separated list of project
+// ids the test refuses to touch. Set it to your real projects (for example
+// leadscore-dev) so a mistyped LEADSCORE_LIVE_PROJECT fails before anything
+// is created. The test does not run while it is empty.
 //
 // Before it: `gcloud auth login --enable-gdrive-access` as a person who owns
 // the project; the Cloud Run service agent of the project may pull the image
@@ -66,8 +70,12 @@ func TestLiveCloudRun(t *testing.T) {
 	if project == "" || image == "" {
 		t.Fatal("LEADSCORE_LIVE_PROJECT and LEADSCORE_LIVE_IMAGE are required")
 	}
-	if project == "leadscore-dev" {
-		t.Fatal("run the live check in a throwaway project, not the dogfood project leadscore-dev")
+	deny := os.Getenv("LEADSCORE_LIVE_DENY_PROJECTS")
+	if strings.TrimSpace(strings.ReplaceAll(deny, ",", "")) == "" {
+		t.Fatal("set LEADSCORE_LIVE_DENY_PROJECTS to the projects the live check must never touch (for example leadscore-dev)")
+	}
+	if deniedProject(project, deny) {
+		t.Fatalf("project %s is in LEADSCORE_LIVE_DENY_PROJECTS; run the live check in a throwaway project", project)
 	}
 	region := envOr("LEADSCORE_LIVE_REGION", "asia-south1")
 	rows, err := strconv.Atoi(envOr("LEADSCORE_LIVE_ROWS", "60000"))
@@ -132,7 +140,7 @@ deadline: 12m
 		return strings.TrimSpace(string(out))
 	}
 
-	// The runbook (contracts section 9.1), steps 5 to 11.
+	// The Google Cloud runbook, steps 5 to 11.
 	sh("accounts", "--project", project, "--region", region)
 	sh("bucket")
 	ls("setup", "sheet")
@@ -254,6 +262,17 @@ deadline: 12m
 	} else if got := m.StateValue("config_version"); got != pushed[1] {
 		t.Errorf("the run recorded config_version %q, want the pushed %s", got, pushed[1])
 	}
+}
+
+// deniedProject reports whether project is in deny, a comma-separated list of
+// project ids. Spaces around each id and empty entries are ignored.
+func deniedProject(project, deny string) bool {
+	for _, p := range strings.Split(deny, ",") {
+		if strings.TrimSpace(p) == project {
+			return true
+		}
+	}
+	return false
 }
 
 func envOr(k, def string) string {
@@ -532,5 +551,24 @@ func TestLiveCloudRunHelpersOnFakes(t *testing.T) {
 
 	if got := syntheticLead(12); got[0] != "lead000012@co00001.example.com" || got[4] != "co00001.example.com" || len(got) != len(sheets.LeadsHeaders) {
 		t.Errorf("synthetic lead %v", got)
+	}
+}
+
+// TestDeniedProject runs without Google Cloud: the deny-list guard parses its
+// comma-separated list as the test's comment says.
+func TestDeniedProject(t *testing.T) {
+	for _, tt := range []struct {
+		project, deny string
+		want          bool
+	}{
+		{"scratch-1", "", false},
+		{"scratch-1", "prod-a,prod-b", false},
+		{"prod-b", "prod-a,prod-b", true},
+		{"prod-b", " prod-a , prod-b ", true},
+		{"prod", "prod-a,,", false},
+	} {
+		if got := deniedProject(tt.project, tt.deny); got != tt.want {
+			t.Errorf("deniedProject(%q, %q) = %v, want %v", tt.project, tt.deny, got, tt.want)
+		}
 	}
 }

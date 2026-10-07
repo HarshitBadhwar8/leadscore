@@ -66,7 +66,7 @@ func openStore(inv *invocation) (c *config.Config, b api.Backend, closeStore fun
 	return c, b, closeStore, nil
 }
 
-// healthResults is the order `status` prints the result rows in (section 4).
+// healthResults is the order `status` prints the result rows in.
 var healthResults = []string{"last_result", "last_run_at", "last_success_at", "run_id", "rubric_version", "schedule"}
 
 // runStatus prints the Health table: the last result, then open problems.
@@ -114,7 +114,7 @@ func runStatus(inv *invocation) int {
 	return exitOK
 }
 
-// rankedColumns returns Ranked's columns in section 4 order: the fixed ones,
+// rankedColumns returns Ranked's columns in their stored order: the fixed ones,
 // with the derived names (the rubric's order when it loads, else sorted) after
 // company_domain.
 func rankedColumns(c *config.Config, rows []api.Row) []string {
@@ -216,7 +216,7 @@ func runRanked(inv *invocation) int {
 }
 
 // runExplain prints a lead's verdict as the last run stored it in Ranked, in
-// rubric.Explain's layout (contracts section 12.3): its row, every derived
+// rubric.Explain's layout: its row, every derived
 // value, the score and its halves, and the reasons, with a note when the
 // local rubric has changed since.
 func runExplain(inv *invocation) int {

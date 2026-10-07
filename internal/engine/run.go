@@ -212,7 +212,7 @@ func missing(path string) bool {
 }
 
 // safeMain is main with a panic turned into the run's error, so a panicking
-// hook still writes run_failed under the lease (RFC 6.9).
+// hook still writes run_failed under the lease (the run order).
 func (x *exec) safeMain() (err error) {
 	defer func() {
 		if p := recover(); p != nil {
@@ -333,7 +333,7 @@ func (x *exec) main() error {
 	return nil
 }
 
-// Phase 1 tables (contracts section 12.6): with the keys and cursors, every
+// Phase 1 tables (the run's two-phase writes): with the keys and cursors, every
 // change merge makes because a row was applied (Company facts, its Log lines
 // and the key_conflicts count), so no crash leaves a row applied without them.
 // The day's enrichment count goes with the facts its calls bought.
@@ -409,9 +409,9 @@ func (x *exec) beforePhase1(chunk int) error {
 		return nil
 	}
 
-	// The in-run checks (contracts section 10) run here, after the merge and
-	// fold, so the rubric check sees this run's columns. A rubric field no
-	// input carries fails the run before scoring.
+	// The in-run checks (doctor checks that also run in a run) run here, after
+	// the merge and fold, so the rubric check sees this run's columns. A rubric
+	// field no input carries fails the run before scoring.
 	env := check.Env{Config: x.cfg, Model: r.Model, Store: x.store, Events: r.Events, Columns: x.columns, Rubric: r.Rubric, Now: r.Now}
 	var unknown []string
 	for _, c := range check.InRun() {
@@ -508,7 +508,7 @@ func (x *exec) cut(where string) bool {
 	return true
 }
 
-// push is steps 8 and 9. A dry run calls PrePush (whose lookups S10b skips
+// push is steps 8 and 9. A dry run calls PrePush (which skips its lookups
 // on a dry run) but never Push.
 func (x *exec) push() {
 	r := x.run

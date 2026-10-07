@@ -1,5 +1,5 @@
-// Package model holds the in-memory model of the store's tables (contracts
-// section 12.2): one Go struct per section 4 table, keyed tables in maps by
+// Package model holds the in-memory model of the store's tables:
+// one Go struct per store table, keyed tables in maps by
 // primary key, keyless tables (Overrides, Log) as ordered slices.
 //
 // Every change goes through Put, Delete or Trim, which record what changed;
@@ -18,13 +18,13 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 )
 
-// Key is a primary key: the key column values in section 4 key order, joined.
+// Key is a primary key: the key column values in key column order, joined.
 // A one-column key is the value itself, so m.People[model.Key(id)] works.
 type Key string
 
 const keySep = "\x1f"
 
-// K builds a Key from the key column values in section 4 key order.
+// K builds a Key from the key column values in key column order.
 func K(parts ...string) Key { return Key(strings.Join(parts, keySep)) }
 
 // Parts splits a Key back into its column values.
@@ -120,7 +120,7 @@ func (m *Model) track(table string) *tracked {
 }
 
 // Load replaces a table's contents with rows read from the store; codec.Load
-// calls it once per table. Rows are decoded with the section 4 formats.
+// calls it once per table. Rows are decoded with the store's cell formats.
 func (m *Model) Load(table string, rows []api.Row) error {
 	if table == TableCompanies {
 		m.Companies = make([]api.Row, 0, len(rows))
@@ -161,7 +161,7 @@ func (m *Model) Load(table string, rows []api.Row) error {
 // (export_lane:<lane id>), so codec.Load finds the table after the lane is gone.
 //
 // Put returns an error, and records nothing, for an export table whose lane id
-// breaks the section 2 rule (letters, digits, "-" and "_", starting with a
+// breaks the lane-id rule (letters, digits, "-" and "_", starting with a
 // letter or digit) or matches an already recorded lane only ignoring case:
 // such tables would share one SQLite table. A row of the wrong type for the
 // table is a programming error and panics.
@@ -194,12 +194,12 @@ func (m *Model) Put(table string, row Row) error {
 
 var laneIDForm = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 
-// ValidLaneID reports a lane id that follows the section 2 rule (letters,
+// ValidLaneID reports a lane id that follows the lane-id rule (letters,
 // digits, "-" and "_", starting with a letter or digit), so it is safe in a
 // table name and a file name.
 func ValidLaneID(id string) bool { return laneIDForm.MatchString(id) }
 
-// checkExportLane refuses an export table whose lane id breaks the section 2
+// checkExportLane refuses an export table whose lane id breaks the lane-id
 // rule, or that matches a recorded lane only ignoring case. Other tables pass.
 func (m *Model) checkExportLane(table string) error {
 	lane, ok := strings.CutPrefix(table, ExportPrefix)
@@ -222,7 +222,7 @@ func (m *Model) checkExportLane(table string) error {
 // export_lane:<lane id> = yes.
 const ExportLaneKey = "export_lane:"
 
-// Delete records a deleted row, by its key in section 4 key order. Overrides
+// Delete records a deleted row, by its key in key column order. Overrides
 // rows are deleted by all four columns (person, action, value, note), which
 // removes every row that matches. Log rows cannot be deleted, only trimmed.
 //
@@ -637,8 +637,8 @@ func (m *Model) PeopleAt(domain string) []api.LeadID {
 // CompanyDomainField is the People.fields name of a lead's company domain.
 const CompanyDomainField = "company.domain"
 
-// trackedNames lists every tracked table in section 4 order, export tables
-// last and sorted.
+// trackedNames lists every tracked table in the store's table order, export
+// tables last and sorted.
 func (m *Model) trackedNames() []string {
 	var out, exports []string
 	for _, d := range Tables {

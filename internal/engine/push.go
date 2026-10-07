@@ -12,7 +12,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/store/codec"
 )
 
-// pushHook is the Push hook (step 9, RFC 6.10, contracts section 8).
+// pushHook is the Push hook (step 9, the ledger rules).
 //
 // It first cancels every pending step whose lead now fails a cancelling check
 // (the built-in checks, the lane's `when`, the Apollo-held rule, the cold-lane
@@ -72,7 +72,7 @@ func pushHook(r *Run) error {
 
 // cancelPass cancels the pending steps of live leads that now fail a
 // cancelling check in their lane, and of lanes removed from the rubric
-// (contracts section 8). A merged lead's rows are left: its never-called
+// (the ledger rules). A merged lead's rows are left: its never-called
 // steps were cancelled at load, and no step is called for it.
 func cancelPass(r *Run, v *view) {
 	m := r.Model
@@ -230,7 +230,7 @@ func (p *pusher) batch(b []item) error {
 				row = model.Push{LeadID: it.lead, LaneID: it.lane.ID, Step: step, LaneKind: it.lane.Kind, Dest: it.lane.Dest, State: statePending}
 			}
 			if row.State == stateCancelled && row.CalledAt.IsZero() && row.IntentRun == "" {
-				row.State, row.LastError, row.Dest = statePending, "", it.lane.Dest // reselected for the lane (contracts section 8)
+				row.State, row.LastError, row.Dest = statePending, "", it.lane.Dest // reselected for the lane (the ledger rules)
 			}
 			if row.State != statePending {
 				continue
@@ -345,7 +345,7 @@ func (p *pusher) pushOne(it item) {
 	}
 }
 
-// record writes one call's result to the ledger row (contracts section 8)
+// record writes one call's result to the ledger row (the ledger rules)
 // and reports whether the push goes on to its next step.
 func (p *pusher) record(it item, k model.Key, id string, err error) bool {
 	r := p.r
@@ -490,7 +490,7 @@ func (v *view) rowSink(p model.Push, sinkType string) bool {
 }
 
 // commitPushes commits the ledger and State.ledger_rows under the lease
-// (contracts section 12.6: each pushing batch commits Pushes and
+// (the run's commit rules: each pushing batch commits Pushes and
 // ledger_rows), retrying once.
 func commitPushes(r *Run, what string) (err error) {
 	// ledger_rows is raised with the rows it counts, and put back when the

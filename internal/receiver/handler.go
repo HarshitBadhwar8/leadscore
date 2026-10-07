@@ -1,4 +1,4 @@
-// Package receiver is `leadscore serve` (contracts section 5.1): the HTTP
+// Package receiver is `leadscore serve`: the HTTP
 // receiver for Apollo workflow requests, /healthz, and on Docker the run
 // timer. The receiver only appends events to the store; every run reads them.
 //
@@ -25,19 +25,19 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/receiver/auth"
 )
 
-// Secret variables (RFC 6.13).
+// Secret variables.
 const (
 	SecretVar         = check.ReceiverSecretVar
 	PreviousSecretVar = check.ReceiverSecretPreviousVar
 )
 
-// SecretHeader carries the secret (contracts section 5.1).
+// SecretHeader carries the secret.
 //
 // S0 confirms: that Apollo's workflow webhook action can send a custom
 // header. The body field leadscore_secret is the fallback when it cannot.
 const SecretHeader = "X-Leadscore-Secret"
 
-// Routes (contracts section 5.1).
+// Routes.
 var routes = map[string]string{
 	"/apollo/visit": apollo.KindVisit,
 	"/apollo/reply": apollo.KindReply,
@@ -71,12 +71,12 @@ type Options struct {
 	BatchWindow time.Duration
 }
 
-// DefaultBatchWindow is the write queue's gathering time (contracts section
-// 5.1).
+// DefaultBatchWindow is the write queue's gathering time.
 const DefaultBatchWindow = 2 * time.Second
 
-// Handler is the receiver's HTTP handler. S17 builds one in process with its
-// own clock; serve wraps it in an http.Server. Close drains it.
+// Handler is the receiver's HTTP handler. The end-to-end suite builds one in
+// process with its own clock; serve wraps it in an http.Server. Close drains
+// it.
 type Handler struct {
 	o       Options
 	secrets []string
@@ -99,7 +99,7 @@ type Handler struct {
 }
 
 // NewHandler returns a receiver handler. It reads the secret variables now:
-// rotating them means restarting serve (contracts section 5.1).
+// rotating them means restarting serve.
 func NewHandler(o Options) *Handler {
 	if o.Now == nil {
 		o.Now = time.Now
@@ -181,7 +181,7 @@ var (
 func (h *Handler) receive(w http.ResponseWriter, r *http.Request, kind string) {
 	received := h.o.Now().UTC()
 	// With no current secret every request is refused, even one carrying a
-	// previous secret (contracts section 5.1).
+	// previous secret.
 	if h.secrets[0] == "" {
 		h.refuse(w, r)
 		return
@@ -305,7 +305,7 @@ func (h *Handler) RunFinished(failed bool) {
 	h.healthMu.Unlock()
 }
 
-// serveHealth answers /healthz (contracts section 5.1).
+// serveHealth answers /healthz.
 func (h *Handler) serveHealth(w http.ResponseWriter, r *http.Request) {
 	ok, msg := h.health(r)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")

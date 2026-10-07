@@ -135,7 +135,7 @@ func parseResultOf(raw api.RawEvent) parseResult {
 	return r
 }
 
-// The service contract (RFC 8.2): every golden body, posted with the secret
+// The service contract: every golden body, posted with the secret
 // in the header or in the body, is stored with the secret stripped and parsed
 // exactly as the body itself parses, on both stores.
 func TestGoldenBodiesStoredAndParsedTheSameOnBothStores(t *testing.T) {
@@ -480,7 +480,7 @@ func healthCode(h *Handler) (int, string) {
 	return rec.Code, string(body)
 }
 
-// /healthz with a timer (contracts section 5.1).
+// /healthz with a timer.
 func TestHealthzWithATimer(t *testing.T) {
 	every := 15 * time.Minute
 	start := time.Date(2026, 9, 14, 8, 0, 0, 0, time.UTC)

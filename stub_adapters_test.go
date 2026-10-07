@@ -1,7 +1,8 @@
 package leadscore_test
 
-// The S1 proof: a stub adapter of every kind compiles against the public API
-// and registers through it, exactly as an external adapter package would.
+// The public API's proof: a stub adapter of every kind compiles against the
+// public API and registers through it, exactly as an external adapter package
+// would.
 
 import (
 	"context"
@@ -250,10 +251,10 @@ func TestRunFailsWithoutConfig(t *testing.T) {
 }
 
 func TestConformanceSuitesAreDeclared(t *testing.T) {
-	// storetest is filled (S4) and runs against real stores; here only its
+	// storetest is filled and runs against real stores; here only its
 	// signature is held, since the stubs store nothing.
 	var _ func(*testing.T, func(*testing.T) (leadscore.Backend, leadscore.EventLog)) = storetest.Run
-	// sinktest is filled (S10b): it runs here against the fake vendor through
+	// sinktest is filled: it runs here against the fake vendor through
 	// the root's names, as an adopter's sink package would call it.
 	t.Run("sinktest", func(t *testing.T) {
 		v := fakesink.New(map[string][]string{"sequence/x": {"contact", "enroll"}})

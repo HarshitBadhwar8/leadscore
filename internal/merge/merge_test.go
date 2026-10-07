@@ -94,31 +94,31 @@ func TestTwoSightings(t *testing.T) {
 		wantOne       bool
 	}{
 		{name: "same email merges",
-			first: in("apollo", "email", "priya@acme.com"), second: in("quiz", "email", "Priya@Acme.com"), wantOne: true},
+			first: in("apollo", "email", "priya@acmeco.example"), second: in("quiz", "email", "Priya@Acmeco.example"), wantOne: true},
 		{name: "same linkedin url merges",
 			first:   in("kubecon", "linkedin", "linkedin.com/in/priya"),
 			second:  in("referral", "linkedin", "https://www.linkedin.com/in/priya/"),
 			wantOne: true},
 		{name: "same company domain and name merges when the source opts in",
 			sources: []config.Source{{ID: "list-a", MatchDomainName: true}, {ID: "list-b", MatchDomainName: true}},
-			first:   in("list-a", "domain", "acme.com", "name", "Priya R"),
-			second:  in("list-b", "domain", "acme.com", "name", "priya  r"),
+			first:   in("list-a", "domain", "acmeco.example", "name", "Priya R"),
+			second:  in("list-b", "domain", "acmeco.example", "name", "priya  r"),
 			wantOne: true},
 		// Two real people can share a company and a name, and a duplicate is
 		// recoverable where a false merge is not.
 		{name: "same company domain and name stays split when only the second source opts in",
 			sources: []config.Source{{ID: "list-a", MatchDomainName: true}, {ID: "list-b"}},
-			first:   in("list-a", "domain", "acme.com", "name", "Priya R"),
-			second:  in("list-b", "domain", "acme.com", "name", "Priya R", "linkedin", "linkedin.com/in/pr"),
+			first:   in("list-a", "domain", "acmeco.example", "name", "Priya R"),
+			second:  in("list-b", "domain", "acmeco.example", "name", "Priya R", "linkedin", "linkedin.com/in/pr"),
 			wantOne: false},
 		{name: "different emails stay separate",
-			first: in("apollo", "email", "priya@acme.com"), second: in("apollo", "email", "ravi@acme.com"), wantOne: false},
+			first: in("apollo", "email", "priya@acmeco.example"), second: in("apollo", "email", "ravi@acmeco.example"), wantOne: false},
 		// Email outranks domain + name, so two real people who share a name are
 		// not collapsed because the weaker key matches.
 		{name: "same name at one company but different emails stay separate",
 			sources: []config.Source{{ID: "s", MatchDomainName: true}},
-			first:   in("s", "email", "priya.r@acme.com", "domain", "acme.com", "name", "Priya R"),
-			second:  in("s", "email", "priya.raj@acme.com", "domain", "acme.com", "name", "Priya R"),
+			first:   in("s", "email", "priya.r@acmeco.example", "domain", "acmeco.example", "name", "Priya R"),
+			second:  in("s", "email", "priya.raj@acmeco.example", "domain", "acmeco.example", "name", "Priya R"),
 			wantOne: false},
 	}
 	for _, tt := range tests {
@@ -137,9 +137,9 @@ func TestTwoSightings(t *testing.T) {
 // what it lacked.
 func TestFillsOnlyMissingFields(t *testing.T) {
 	w := newWorld(t)
-	w.apply(in("apollo", "email", "priya@acme.com", "company", "Acme", "title", "VP Engineering"))
-	w.apply(in("apollo", "email", "priya@acme.com", "company", "acme inc", "name", "Priya R"))
-	p := w.person(w.lead("priya@acme.com"))
+	w.apply(in("apollo", "email", "priya@acmeco.example", "company", "Acme", "title", "VP Engineering"))
+	w.apply(in("apollo", "email", "priya@acmeco.example", "company", "acme inc", "name", "Priya R"))
+	p := w.person(w.lead("priya@acmeco.example"))
 	for f, want := range map[string]string{"company.name": "Acme", "title": "VP Engineering", "full_name": "Priya R"} {
 		if got := p.Fields[f].Value; got != want {
 			t.Errorf("%s = %q, want %q", f, got, want)
@@ -152,10 +152,10 @@ func TestFillsOnlyMissingFields(t *testing.T) {
 // email; the URL is not written and the conflict is counted and logged.
 func TestUnknownEmailWithAnotherLeadsLinkedIn(t *testing.T) {
 	w := newWorld(t)
-	w.apply(in("apollo", "email", "ravi@acme.com", "linkedin", "linkedin.com/in/shared"))
-	w.apply(in("apollo", "email", "priya@acme.com", "linkedin", "linkedin.com/in/shared"))
+	w.apply(in("apollo", "email", "ravi@acmeco.example", "linkedin", "linkedin.com/in/shared"))
+	w.apply(in("apollo", "email", "priya@acmeco.example", "linkedin", "linkedin.com/in/shared"))
 
-	ravi, priya := w.lead("ravi@acme.com"), w.lead("priya@acme.com")
+	ravi, priya := w.lead("ravi@acmeco.example"), w.lead("priya@acmeco.example")
 	if ravi == priya {
 		t.Fatal("one wrong URL joined two people")
 	}
@@ -179,11 +179,11 @@ func TestUnknownEmailWithAnotherLeadsLinkedIn(t *testing.T) {
 // from the one the lead has, is applied to the email's lead without the URL.
 func TestKnownEmailWithConflictingLinkedIn(t *testing.T) {
 	w := newWorld(t)
-	w.apply(in("a", "email", "ravi@acme.com", "linkedin", "linkedin.com/in/ravi"))
-	w.apply(in("a", "email", "priya@acme.com", "linkedin", "linkedin.com/in/priya"))
-	w.apply(in("b", "email", "priya@acme.com", "linkedin", "linkedin.com/in/ravi", "title", "CTO"))
-	w.apply(in("c", "email", "priya@acme.com", "linkedin", "linkedin.com/in/priya-2"))
-	priya := w.lead("priya@acme.com")
+	w.apply(in("a", "email", "ravi@acmeco.example", "linkedin", "linkedin.com/in/ravi"))
+	w.apply(in("a", "email", "priya@acmeco.example", "linkedin", "linkedin.com/in/priya"))
+	w.apply(in("b", "email", "priya@acmeco.example", "linkedin", "linkedin.com/in/ravi", "title", "CTO"))
+	w.apply(in("c", "email", "priya@acmeco.example", "linkedin", "linkedin.com/in/priya-2"))
+	priya := w.lead("priya@acmeco.example")
 	if w.person(priya).Fields["title"].Value != "CTO" {
 		t.Error("the row must still apply to the email's lead")
 	}
@@ -203,7 +203,7 @@ func TestKnownEmailWithConflictingLinkedIn(t *testing.T) {
 func TestRejectsRecordedOnce(t *testing.T) {
 	w := newWorld(t)
 	bad := in("list", "company", "Acme", "title", "CTO")
-	nameOnly := in("list", "domain", "acme.io", "name", "Ada")
+	nameOnly := in("list", "domain", "acme.example", "name", "Ada")
 	w.apply(bad, nameOnly)
 	w.apply(bad, nameOnly)
 	if len(w.m.People) != 0 {
@@ -223,7 +223,7 @@ func TestRejectsRecordedOnce(t *testing.T) {
 func TestReapplyingUnchangedRowsChangesNothing(t *testing.T) {
 	w := newWorld(t)
 	rows := []api.InputRow{
-		in("a", "email", "priya@acme.com", "title", "CTO"),
+		in("a", "email", "priya@acmeco.example", "title", "CTO"),
 		in("a", "linkedin", "linkedin.com/in/ravi", "name", "Ravi"),
 	}
 	w.apply(rows...)
@@ -239,20 +239,20 @@ func TestReapplyingUnchangedRowsChangesNothing(t *testing.T) {
 // primary email while the old address stays an identity.
 func TestSameSourceCorrection(t *testing.T) {
 	w := newWorld(t)
-	w.apply(in("receiver", "contact_id", "c-1", "email", "typo@acme.io", "name", "Dana Q"))
-	w.apply(in("receiver", "contact_id", "c-1", "email", "dana@acme.io", "name", "Dana Q"))
+	w.apply(in("receiver", "contact_id", "c-1", "email", "typo@acme.example", "name", "Dana Q"))
+	w.apply(in("receiver", "contact_id", "c-1", "email", "dana@acme.example", "name", "Dana Q"))
 	if w.liveLeads() != 1 {
 		t.Fatalf("a corrected answer made %d leads", w.liveLeads())
 	}
-	lead := w.lead("typo@acme.io")
-	if w.lead("dana@acme.io") != lead {
+	lead := w.lead("typo@acme.example")
+	if w.lead("dana@acme.example") != lead {
 		t.Fatal("the corrected email resolves to another lead")
 	}
 	x := NewIndex(w.m, w.sources)
-	if got := x.PrimaryEmail(lead); got != "dana@acme.io" {
+	if got := x.PrimaryEmail(lead); got != "dana@acme.example" {
 		t.Errorf("primary = %q, want the source's own correction", got)
 	}
-	if got := x.Emails(lead); !reflect.DeepEqual(got, []string{"dana@acme.io", "typo@acme.io"}) {
+	if got := x.Emails(lead); !reflect.DeepEqual(got, []string{"dana@acme.example", "typo@acme.example"}) {
 		t.Errorf("emails = %v: every email is kept, primary first", got)
 	}
 }
@@ -263,12 +263,12 @@ func TestSameSourceCorrection(t *testing.T) {
 func TestCorrectionRefusedWhenAnotherSourceVouched(t *testing.T) {
 	for name, order := range map[string][]api.InputRow{
 		"another source gave it first": {
-			in("list", "email", "shared@acme.io"),
-			in("receiver", "contact_id", "c-9", "email", "shared@acme.io"),
+			in("list", "email", "shared@acme.example"),
+			in("receiver", "contact_id", "c-9", "email", "shared@acme.example"),
 		},
 		"another source joined later": {
-			in("receiver", "contact_id", "c-9", "email", "shared@acme.io"),
-			in("list", "email", "shared@acme.io"),
+			in("receiver", "contact_id", "c-9", "email", "shared@acme.example"),
+			in("list", "email", "shared@acme.example"),
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -276,12 +276,12 @@ func TestCorrectionRefusedWhenAnotherSourceVouched(t *testing.T) {
 			for _, r := range order {
 				w.apply(r)
 			}
-			w.apply(in("receiver", "contact_id", "c-9", "email", "other@acme.io"))
-			lead := w.lead("shared@acme.io")
-			if got := NewIndex(w.m, w.sources).PrimaryEmail(lead); got != "shared@acme.io" {
-				t.Errorf("primary = %q, want shared@acme.io: another source vouched for it", got)
+			w.apply(in("receiver", "contact_id", "c-9", "email", "other@acme.example"))
+			lead := w.lead("shared@acme.example")
+			if got := NewIndex(w.m, w.sources).PrimaryEmail(lead); got != "shared@acme.example" {
+				t.Errorf("primary = %q, want shared@acme.example: another source vouched for it", got)
 			}
-			if w.lead("other@acme.io") != lead {
+			if w.lead("other@acme.example") != lead {
 				t.Error("the new address is still an identity of the same lead")
 			}
 		})
@@ -293,36 +293,36 @@ func TestCorrectionRefusedWhenAnotherSourceVouched(t *testing.T) {
 func TestCompanyDomain(t *testing.T) {
 	w := newWorld(t)
 	w.apply(
-		in("a", "email", "ada@acme.io"),
+		in("a", "email", "ada@acme.example"),
 		in("a", "email", "bo@gmail.com"),
 		in("a", "linkedin", "linkedin.com/in/cy"),
-		in("a", "email", "di@acme.io", "website", "https://www.di-corp.com/"),
+		in("a", "email", "di@acme.example", "website", "https://www.di-corp.example/"),
 	)
-	if f := w.person(w.lead("ada@acme.io")).Fields["company.domain"]; f.Value != "acme.io" || !f.Derived {
-		t.Errorf("ada's domain = %+v, want acme.io derived", f)
+	if f := w.person(w.lead("ada@acme.example")).Fields["company.domain"]; f.Value != "acme.example" || !f.Derived {
+		t.Errorf("ada's domain = %+v, want acme.example derived", f)
 	}
 	if f := w.person(w.lead("bo@gmail.com")).Fields["company.domain"]; f.Value != "" {
 		t.Errorf("a personal address names no company, got %q", f.Value)
 	}
-	if f := w.person(w.lead("di@acme.io")).Fields["company.domain"]; f.Value != "di-corp.com" || f.Derived {
+	if f := w.person(w.lead("di@acme.example")).Fields["company.domain"]; f.Value != "di-corp.example" || f.Derived {
 		t.Errorf("a row's own domain wins over deriving: %+v", f)
 	}
 
-	w.apply(in("b", "linkedin", "linkedin.com/in/cy", "domain", "cy.io"))
+	w.apply(in("b", "linkedin", "linkedin.com/in/cy", "domain", "cy.example"))
 	cy := w.lead("linkedin.com/in/cy")
-	if got := w.person(cy).Fields["company.domain"].Value; got != "cy.io" {
-		t.Errorf("late-arriving domain = %q, want cy.io filled", got)
+	if got := w.person(cy).Fields["company.domain"].Value; got != "cy.example" {
+		t.Errorf("late-arriving domain = %q, want cy.example filled", got)
 	}
-	if got := w.m.PeopleAt("cy.io"); !reflect.DeepEqual(got, []api.LeadID{cy}) {
-		t.Errorf("people at cy.io = %v", got)
+	if got := w.m.PeopleAt("cy.example"); !reflect.DeepEqual(got, []api.LeadID{cy}) {
+		t.Errorf("people at cy.example = %v", got)
 	}
 
-	w.apply(in("c", "email", "ada@acme.io", "domain", "elsewhere.io"))
-	ada := w.person(w.lead("ada@acme.io"))
-	if got := ada.Fields["company.domain"].Value; got != "acme.io" {
+	w.apply(in("c", "email", "ada@acme.example", "domain", "elsewhere.example"))
+	ada := w.person(w.lead("ada@acme.example"))
+	if got := ada.Fields["company.domain"].Value; got != "acme.example" {
 		t.Errorf("the domain was re-pointed to %q", got)
 	}
-	if got := ada.Conflicts["company.domain"]; len(got) != 1 || got[0].Value != "elsewhere.io" {
+	if got := ada.Conflicts["company.domain"]; len(got) != 1 || got[0].Value != "elsewhere.example" {
 		t.Errorf("the disagreement is recorded: %+v", got)
 	}
 }
@@ -332,17 +332,17 @@ func TestCompanyDomain(t *testing.T) {
 // value is not a conflict.
 func TestRecordedConflict(t *testing.T) {
 	w := newWorld(t)
-	w.apply(in("a", "email", "ada@acme.io", "segment", "AI-native"))
+	w.apply(in("a", "email", "ada@acme.example", "segment", "AI-native"))
 	// The same source changing its value: the row re-applies, nothing changes.
-	w.apply(in("a", "email", "ada@acme.io", "segment", "Data-curious"))
-	if p := w.person(w.lead("ada@acme.io")); len(p.Conflicts) != 0 || p.Fields["segment"].Value != "AI-native" {
+	w.apply(in("a", "email", "ada@acme.example", "segment", "Data-curious"))
+	if p := w.person(w.lead("ada@acme.example")); len(p.Conflicts) != 0 || p.Fields["segment"].Value != "AI-native" {
 		t.Fatalf("same source edit: segment %q, conflicts %v; want the first value and no conflict",
 			p.Fields["segment"].Value, p.Conflicts)
 	}
-	w.apply(in("b", "email", "ada@acme.io", "segment", "Legacy"))
-	w.apply(in("b", "email", "ada@acme.io", "segment", "Legacy", "note", "x")) // same row again, edited
-	w.apply(in("c", "email", "ada@acme.io", "segment", "AI-native"))
-	p := w.person(w.lead("ada@acme.io"))
+	w.apply(in("b", "email", "ada@acme.example", "segment", "Legacy"))
+	w.apply(in("b", "email", "ada@acme.example", "segment", "Legacy", "note", "x")) // same row again, edited
+	w.apply(in("c", "email", "ada@acme.example", "segment", "AI-native"))
+	p := w.person(w.lead("ada@acme.example"))
 	if p.Fields["segment"].Value != "AI-native" {
 		t.Errorf("kept value = %q, want the first", p.Fields["segment"].Value)
 	}
@@ -357,9 +357,9 @@ func TestRecordedConflict(t *testing.T) {
 // gains the field without re-importing.
 func TestAliasChangeReappliesRows(t *testing.T) {
 	w := newWorld(t)
-	r := in("a", "email", "ada@acme.io", "Current tool", "Looker")
+	r := in("a", "email", "ada@acme.example", "Current tool", "Looker")
 	w.apply(r)
-	lead := w.lead("ada@acme.io")
+	lead := w.lead("ada@acme.example")
 	if w.person(lead).Fields["currenttool"].Value != "Looker" {
 		t.Fatalf("an unaliased header is kept under its squashed name: %v", w.person(lead).Fields)
 	}
@@ -383,29 +383,29 @@ func TestBuiltInFields(t *testing.T) {
 		config.Source{ID: "crm"},
 	)
 	w.apply(
-		in("kubecon", "email", "ada@acme.io"),
-		in("saastr", "email", "ada@acme.io"),
-		in("receiver", "contact_id", "c-1", "email", "ada@acme.io"),
-		in("receiver", "contact_id", "c-2", "email", "bo@acme.io"),
-		in("crm", "email", "cy@beta.io"),
+		in("kubecon", "email", "ada@acme.example"),
+		in("saastr", "email", "ada@acme.example"),
+		in("receiver", "contact_id", "c-1", "email", "ada@acme.example"),
+		in("receiver", "contact_id", "c-2", "email", "bo@acme.example"),
+		in("crm", "email", "cy@beta.example"),
 	)
 	x := NewIndex(w.m, w.sources)
-	ada, bo, cy := w.lead("ada@acme.io"), w.lead("bo@acme.io"), w.lead("cy@beta.io")
+	ada, bo, cy := w.lead("ada@acme.example"), w.lead("bo@acme.example"), w.lead("cy@beta.example")
 	if got := x.SourcesSeen(ada); got != 2 {
 		t.Errorf("ada sources_seen = %d, want 2 (two conference CSVs count once, plus the receiver)", got)
 	}
 	if !x.ReceiverOnly(bo) || x.ReceiverOnly(ada) || x.ReceiverOnly(cy) {
 		t.Errorf("receiver_only: bo %v ada %v cy %v; want true false false", x.ReceiverOnly(bo), x.ReceiverOnly(ada), x.ReceiverOnly(cy))
 	}
-	if got := x.LeadsSeen(); got["acme.io"] != 2 || got["beta.io"] != 1 {
+	if got := x.LeadsSeen(); got["acme.example"] != 2 || got["beta.example"] != 1 {
 		t.Errorf("leads_seen = %v", got)
 	}
 
-	w.apply(in("crm", "email", "bo@acme.io"))
-	w.override("bo@acme.io", "same_as", "ada@acme.io")
+	w.apply(in("crm", "email", "bo@acme.example"))
+	w.override("bo@acme.example", "same_as", "ada@acme.example")
 	w.apply()
 	x = NewIndex(w.m, w.sources)
-	if x.ReceiverOnly(ada) || x.LeadsSeen()["acme.io"] != 1 {
+	if x.ReceiverOnly(ada) || x.LeadsSeen()["acme.example"] != 1 {
 		t.Errorf("after the merge: receiver_only %v, leads_seen %v", x.ReceiverOnly(ada), x.LeadsSeen())
 	}
 	if got := x.SourcesSeen(ada); got != 3 {
@@ -417,21 +417,21 @@ func TestBuiltInFields(t *testing.T) {
 // supplied, not only leads from new rows.
 func TestApolloHeldBackfill(t *testing.T) {
 	w := newWorld(t, config.Source{ID: "apollo-export"}, config.Source{ID: "crm"})
-	w.apply(in("apollo-export", "email", "ada@acme.io"), in("crm", "email", "bo@acme.io"))
-	if !w.person(w.lead("ada@acme.io")).ApolloHeldAt.IsZero() {
+	w.apply(in("apollo-export", "email", "ada@acme.example"), in("crm", "email", "bo@acme.example"))
+	if !w.person(w.lead("ada@acme.example")).ApolloHeldAt.IsZero() {
 		t.Fatal("held before the flag was on")
 	}
 	w.sources[0].ApolloHeld = true
 	at := w.now
 	w.apply() // no new rows
-	if got := w.person(w.lead("ada@acme.io")).ApolloHeldAt; !got.Equal(at) {
+	if got := w.person(w.lead("ada@acme.example")).ApolloHeldAt; !got.Equal(at) {
 		t.Errorf("apollo_held_at = %v, want %v", got, at)
 	}
-	if !w.person(w.lead("bo@acme.io")).ApolloHeldAt.IsZero() {
+	if !w.person(w.lead("bo@acme.example")).ApolloHeldAt.IsZero() {
 		t.Error("a lead the held source never supplied was marked")
 	}
 	w.apply()
-	if got := w.person(w.lead("ada@acme.io")).ApolloHeldAt; !got.Equal(at) {
+	if got := w.person(w.lead("ada@acme.example")).ApolloHeldAt; !got.Equal(at) {
 		t.Error("apollo_held_at is never moved once set")
 	}
 }
@@ -442,22 +442,22 @@ func TestNamesakes(t *testing.T) {
 	setup := func(t *testing.T) *world {
 		w := newWorld(t)
 		w.apply(
-			in("a", "email", "priya.r@acme.io", "name", "Priya R"),
-			in("a", "email", "priya.raj@acme.io", "name", "priya  r"),
-			in("a", "email", "ravi@acme.io", "name", "Ravi"),
+			in("a", "email", "priya.r@acme.example", "name", "Priya R"),
+			in("a", "email", "priya.raj@acme.example", "name", "priya  r"),
+			in("a", "email", "ravi@acme.example", "name", "Ravi"),
 		)
 		return w
 	}
 	t.Run("unresolved", func(t *testing.T) {
 		w := setup(t)
 		got := Duplicates(w.m)
-		if len(got) != 2 || !got[w.lead("priya.r@acme.io")] || !got[w.lead("priya.raj@acme.io")] {
+		if len(got) != 2 || !got[w.lead("priya.r@acme.example")] || !got[w.lead("priya.raj@acme.example")] {
 			t.Errorf("duplicates = %v, want both Priyas", got)
 		}
 	})
 	t.Run("distinct keeps them apart", func(t *testing.T) {
 		w := setup(t)
-		w.override("Priya.R@acme.io", "distinct", "priya.raj@acme.io")
+		w.override("Priya.R@acme.example", "distinct", "priya.raj@acme.example")
 		w.apply()
 		if got := Duplicates(w.m); len(got) != 0 {
 			t.Errorf("duplicates = %v, want none", got)
@@ -466,20 +466,20 @@ func TestNamesakes(t *testing.T) {
 			t.Error("distinct must not merge")
 		}
 		// A third namesake is blocked until paired with each.
-		w.apply(in("b", "email", "p.r@acme.io", "name", "Priya R"))
+		w.apply(in("b", "email", "p.r@acme.example", "name", "Priya R"))
 		if got := Duplicates(w.m); len(got) != 3 {
 			t.Errorf("with a third namesake duplicates = %v, want all three", got)
 		}
-		w.override("p.r@acme.io", "distinct", "priya.r@acme.io")
-		w.override("p.r@acme.io", "distinct", "priya.raj@acme.io")
+		w.override("p.r@acme.example", "distinct", "priya.r@acme.example")
+		w.override("p.r@acme.example", "distinct", "priya.raj@acme.example")
 		if got := Duplicates(w.m); len(got) != 0 {
 			t.Errorf("paired with each: duplicates = %v, want none", got)
 		}
 	})
 	t.Run("same_as merges them", func(t *testing.T) {
 		w := setup(t)
-		older, newer := w.lead("priya.r@acme.io"), w.lead("priya.raj@acme.io")
-		w.override("priya.raj@acme.io", "same_as", "priya.r@acme.io")
+		older, newer := w.lead("priya.r@acme.example"), w.lead("priya.raj@acme.example")
+		w.override("priya.raj@acme.example", "same_as", "priya.r@acme.example")
 		w.apply()
 		if got := w.person(newer).MergedInto; got != older {
 			t.Errorf("merged_into = %q, want the older lead %q", got, older)
@@ -487,14 +487,14 @@ func TestNamesakes(t *testing.T) {
 		if got := Duplicates(w.m); len(got) != 0 {
 			t.Errorf("duplicates = %v, want none", got)
 		}
-		if w.lead("priya.raj@acme.io") != older {
+		if w.lead("priya.raj@acme.example") != older {
 			t.Error("the absorbed lead's email resolves to the survivor")
 		}
 	})
 }
 
 // Proof: an opted-out lead merged by same_as into a clean one. The survivor
-// reads as unsubscribed through the fold's chain rule (contracts section 7),
+// reads as unsubscribed through the fold's chain rule (status precedence),
 // checked here with a stub fold that reads Outcomes across the family.
 func TestOptOutSurvivesSameAs(t *testing.T) {
 	stubFold := func(m *model.Model, lead api.LeadID) string {
@@ -509,23 +509,23 @@ func TestOptOutSurvivesSameAs(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			w := newWorld(t)
 			if optedOutFirst {
-				w.apply(in("a", "email", "old@acme.io", "title", "CTO"))
-				w.apply(in("b", "email", "new@acme.io", "title", "VP", "segment", "AI"))
+				w.apply(in("a", "email", "old@acme.example", "title", "CTO"))
+				w.apply(in("b", "email", "new@acme.example", "title", "VP", "segment", "AI"))
 			} else {
-				w.apply(in("b", "email", "new@acme.io", "title", "VP", "segment", "AI"))
-				w.apply(in("a", "email", "old@acme.io", "title", "CTO"))
+				w.apply(in("b", "email", "new@acme.example", "title", "VP", "segment", "AI"))
+				w.apply(in("a", "email", "old@acme.example", "title", "CTO"))
 			}
-			optedOut := w.lead("old@acme.io")
+			optedOut := w.lead("old@acme.example")
 			w.m.Put(model.TableOutcomes, model.Outcome{LeadID: optedOut, UnsubscribedAt: t0, UnsubscribedOrigin: "event"})
-			clean := w.lead("new@acme.io")
+			clean := w.lead("new@acme.example")
 			if stubFold(w.m, clean) != "new" {
 				t.Fatal("setup: the clean lead starts clean")
 			}
-			w.override("old@acme.io", "same_as", "new@acme.io")
+			w.override("old@acme.example", "same_as", "new@acme.example")
 			w.apply()
 
-			survivor := w.lead("new@acme.io")
-			if w.lead("old@acme.io") != survivor {
+			survivor := w.lead("new@acme.example")
+			if w.lead("old@acme.example") != survivor {
 				t.Fatal("same_as did not make one lead")
 			}
 			if got := stubFold(w.m, survivor); got != "unsubscribed" {
@@ -545,9 +545,9 @@ func TestOptOutSurvivesSameAs(t *testing.T) {
 // are recorded, apollo_held_at and first_seen take the earliest values.
 func TestSameAsFill(t *testing.T) {
 	w := newWorld(t)
-	w.apply(in("a", "email", "old@acme.io", "title", "CTO"))
-	w.apply(in("b", "email", "new@acme.io", "title", "VP", "segment", "AI"))
-	old, nw := w.lead("old@acme.io"), w.lead("new@acme.io")
+	w.apply(in("a", "email", "old@acme.example", "title", "CTO"))
+	w.apply(in("b", "email", "new@acme.example", "title", "VP", "segment", "AI"))
+	old, nw := w.lead("old@acme.example"), w.lead("new@acme.example")
 	p := w.person(nw)
 	p.ApolloHeldAt = t0.Add(-time.Hour)
 	p.FirstSeen = map[string]time.Time{"visit_pricing": t0.Add(-2 * time.Hour)}
@@ -556,7 +556,7 @@ func TestSameAsFill(t *testing.T) {
 	q.FirstSeen = map[string]time.Time{"visit_pricing": t0, "sent": t0}
 	w.m.Put(model.TablePeople, q)
 
-	w.override("new@acme.io", "same_as", "old@acme.io")
+	w.override("new@acme.example", "same_as", "old@acme.example")
 	w.apply()
 	s := w.person(old)
 	if s.Fields["title"].Value != "CTO" || s.Fields["segment"].Value != "AI" {
@@ -584,13 +584,13 @@ func TestSameAsFill(t *testing.T) {
 // person appears.
 func TestSameAsWaitsForThePerson(t *testing.T) {
 	w := newWorld(t)
-	w.apply(in("a", "email", "ada@acme.io"))
-	w.override("ada@acme.io", "same_as", "ada.l@acme.io")
+	w.apply(in("a", "email", "ada@acme.example"))
+	w.override("ada@acme.example", "same_as", "ada.l@acme.example")
 	w.apply()
 	if w.liveLeads() != 1 || len(ParseOverrides(w.m).Unmatched) != 1 {
 		t.Fatal("the row waits")
 	}
-	w.apply(in("b", "email", "ada.l@acme.io"))
+	w.apply(in("b", "email", "ada.l@acme.example"))
 	if w.liveLeads() != 1 || len(w.m.People) != 2 {
 		t.Errorf("live %d of %d: the row applies when the person appears", w.liveLeads(), len(w.m.People))
 	}
@@ -600,9 +600,9 @@ func TestSameAsWaitsForThePerson(t *testing.T) {
 // value; a source never replaces a higher origin.
 func TestCompanyFactOrigins(t *testing.T) {
 	w := newWorld(t)
-	w.apply(in("a", "email", "ada@acme.io", "company", "Acme", "employees", "40", "country", "India"))
-	w.apply(in("b", "email", "bo@acme.io", "company", "ACME Inc", "funding", "Series B"))
-	cf := w.m.CompanyFacts[model.Key("acme.io")]
+	w.apply(in("a", "email", "ada@acme.example", "company", "Acme", "employees", "40", "country", "India"))
+	w.apply(in("b", "email", "bo@acme.example", "company", "ACME Inc", "funding", "Series B"))
+	cf := w.m.CompanyFacts[model.Key("acme.example")]
 	for f, want := range map[string]string{"name": "Acme", "employees": "40", "region": "India", "funding_stage": "Series B"} {
 		if got := cf.Facts[f]; got.Value != want || got.Origin != OriginInput {
 			t.Errorf("%s = %+v, want %q from input", f, got, want)
@@ -610,24 +610,24 @@ func TestCompanyFactOrigins(t *testing.T) {
 	}
 
 	// An enrichment value is never replaced by input.
-	cf = w.m.CompanyFacts[model.Key("acme.io")]
+	cf = w.m.CompanyFacts[model.Key("acme.example")]
 	cf = cloneCompany(cf)
 	cf.Facts["employees"] = model.Fact{Value: "55", Origin: OriginEnrichment, At: t0}
 	w.m.Put(model.TableCompanyFacts, cf)
-	w.apply(in("c", "email", "cy@acme.io", "employees", "60"))
-	if got := w.m.CompanyFacts[model.Key("acme.io")].Facts["employees"]; got.Value != "55" {
+	w.apply(in("c", "email", "cy@acme.example", "employees", "60"))
+	if got := w.m.CompanyFacts[model.Key("acme.example")].Facts["employees"]; got.Value != "55" {
 		t.Errorf("employees = %+v, input replaced enrichment", got)
 	}
 
 	// The Companies tab wins: a changed value moves the old one to previous; the
 	// same value is taken over without counting as a change.
 	w.m.Load(model.TableCompanies, []api.Row{
-		{"Website": "https://www.acme.io", "Headcount": "70", "Name": "Acme Corp", "Region": "India", "Tier note": "key"},
-		{"domain": "acme.io", "Headcount": "1"}, // a second row for the domain is ignored
+		{"Website": "https://www.acme.example", "Headcount": "70", "Name": "Acme Corp", "Region": "India", "Tier note": "key"},
+		{"domain": "acme.example", "Headcount": "1"}, // a second row for the domain is ignored
 	})
 	at := w.now
 	w.apply()
-	cf = w.m.CompanyFacts[model.Key("acme.io")]
+	cf = w.m.CompanyFacts[model.Key("acme.example")]
 	if got := cf.Facts["employees"]; got.Value != "70" || got.Origin != OriginCompaniesTab || !got.At.Equal(at) {
 		t.Errorf("employees = %+v", got)
 	}
@@ -657,24 +657,24 @@ func TestCompanyFactOrigins(t *testing.T) {
 // so its company columns are not credited to the lead's company.
 func TestRowFactsOnlyForTheLeadsCompany(t *testing.T) {
 	w := newWorld(t)
-	w.apply(in("a", "email", "ada@acme.io"))
-	w.apply(in("b", "email", "ada@acme.io", "domain", "other.io", "employees", "9000"))
-	if _, ok := w.m.CompanyFacts[model.Key("acme.io")].Facts["employees"]; ok {
-		t.Error("another company's headcount was credited to acme.io")
+	w.apply(in("a", "email", "ada@acme.example"))
+	w.apply(in("b", "email", "ada@acme.example", "domain", "other.example", "employees", "9000"))
+	if _, ok := w.m.CompanyFacts[model.Key("acme.example")].Facts["employees"]; ok {
+		t.Error("another company's headcount was credited to acme.example")
 	}
-	if _, ok := w.m.CompanyFacts[model.Key("other.io")]; ok {
-		t.Error("the lead does not work at other.io")
+	if _, ok := w.m.CompanyFacts[model.Key("other.example")]; ok {
+		t.Error("the lead does not work at other.example")
 	}
 }
 
 func TestFindPerson(t *testing.T) {
 	w := newWorld(t)
 	w.apply(
-		in("receiver", "contact_id", "c-1", "email", "ada@acme.io"),
-		in("a", "email", "bo@acme.io", "linkedin", "linkedin.com/in/bo"),
+		in("receiver", "contact_id", "c-1", "email", "ada@acme.example"),
+		in("a", "email", "bo@acme.example", "linkedin", "linkedin.com/in/bo"),
 	)
 	w.m.Committed(w.m.Writes())
-	ada, bo := w.lead("ada@acme.io"), w.lead("bo@acme.io")
+	ada, bo := w.lead("ada@acme.example"), w.lead("bo@acme.example")
 	ev := func(email, li, cid string) api.Event {
 		return NormalizeEventKeys(api.Event{Kind: "unsubscribed", Email: email, LinkedInURL: li,
 			Attrs: map[string]string{"contact_id": cid}, ReceivedAt: t0})
@@ -684,11 +684,11 @@ func TestFindPerson(t *testing.T) {
 		want api.LeadID
 	}{
 		"by contact id":                   {ev("", "", "c-1"), ada},
-		"contact id wins over email":      {ev("bo@acme.io", "", "c-1"), ada},
-		"by email, any case":              {ev("Bo@Acme.io", "", ""), bo},
+		"contact id wins over email":      {ev("bo@acme.example", "", "c-1"), ada},
+		"by email, any case":              {ev("Bo@Acme.example", "", ""), bo},
 		"by linkedin":                     {ev("", "https://linkedin.com/in/bo/", ""), bo},
-		"unknown email never by linkedin": {ev("stranger@acme.io", "linkedin.com/in/bo", ""), ""},
-		"company-only":                    {api.Event{Kind: "visit_pricing", Domain: "acme.io"}, ""},
+		"unknown email never by linkedin": {ev("stranger@acme.example", "linkedin.com/in/bo", ""), ""},
+		"company-only":                    {api.Event{Kind: "visit_pricing", Domain: "acme.example"}, ""},
 	} {
 		got, ok := FindPerson(w.m, tt.e)
 		if got != tt.want || ok != (tt.want != "") {
@@ -700,7 +700,7 @@ func TestFindPerson(t *testing.T) {
 	}
 
 	// merged_into is followed.
-	w.override("bo@acme.io", "same_as", "ada@acme.io")
+	w.override("bo@acme.example", "same_as", "ada@acme.example")
 	w.apply()
 	if got, _ := FindPerson(w.m, ev("", "linkedin.com/in/bo", "")); got != ada {
 		t.Errorf("after the merge: %q, want the survivor %q", got, ada)
@@ -709,10 +709,10 @@ func TestFindPerson(t *testing.T) {
 
 func TestApplyEventPerson(t *testing.T) {
 	w := newWorld(t)
-	w.apply(in("a", "email", "bo@acme.io", "linkedin", "linkedin.com/in/bo"))
-	bo := w.lead("bo@acme.io")
+	w.apply(in("a", "email", "bo@acme.example", "linkedin", "linkedin.com/in/bo"))
+	bo := w.lead("bo@acme.example")
 
-	e := NormalizeEventKeys(api.Event{Kind: "visit_pricing", Email: "Stranger@Beta.io", LinkedInURL: "linkedin.com/in/bo",
+	e := NormalizeEventKeys(api.Event{Kind: "visit_pricing", Email: "Stranger@Beta.example", LinkedInURL: "linkedin.com/in/bo",
 		ReceivedAt: t0, Attrs: map[string]string{"contact_id": "c-7", "full_name": "S Tranger", "title": "CEO", "company": "Beta"}})
 	id := ApplyEventPerson(w.m, e)
 	if id == "" || id == bo {
@@ -730,7 +730,7 @@ func TestApplyEventPerson(t *testing.T) {
 			t.Errorf("the log row carries the lead id only: %+v", l)
 		}
 	}
-	if p.Fields["company.domain"].Value != "beta.io" || !p.Fields["company.domain"].Derived ||
+	if p.Fields["company.domain"].Value != "beta.example" || !p.Fields["company.domain"].Derived ||
 		p.Fields["full_name"].Value != "S Tranger" || p.Fields["company.name"].Value != "Beta" {
 		t.Errorf("fields = %v", p.Fields)
 	}
@@ -743,11 +743,11 @@ func TestApplyEventPerson(t *testing.T) {
 	if NewIndex(w.m, w.sources).ReceiverOnly(id) != true {
 		t.Error("a lead created for an event is receiver-only")
 	}
-	if got := ApplyEventPerson(w.m, api.Event{Kind: "visit_pricing", Domain: "acme.io"}); got != "" {
+	if got := ApplyEventPerson(w.m, api.Event{Kind: "visit_pricing", Domain: "acme.example"}); got != "" {
 		t.Errorf("a company-only event names no person, got %q", got)
 	}
 	// The receiver row for the contact later applies to the same lead.
-	w.apply(in("receiver", "contact_id", "c-7", "email", "stranger@beta.io", "title", "Founder"))
+	w.apply(in("receiver", "contact_id", "c-7", "email", "stranger@beta.example", "title", "Founder"))
 	if w.liveLeads() != 2 {
 		t.Errorf("leads = %d, want 2", w.liveLeads())
 	}
@@ -756,10 +756,10 @@ func TestApplyEventPerson(t *testing.T) {
 func TestIndexKeys(t *testing.T) {
 	w := newWorld(t)
 	w.apply(in("a", "linkedin", "linkedin.com/in/ada"))
-	w.apply(in("b", "email", "bo@acme.io"))
+	w.apply(in("b", "email", "bo@acme.example"))
 	x := NewIndex(w.m, w.sources)
-	ada, bo := w.lead("linkedin.com/in/ada"), w.lead("bo@acme.io")
-	if x.PersonKey(ada) != "linkedin.com/in/ada" || x.PersonKey(bo) != "bo@acme.io" {
+	ada, bo := w.lead("linkedin.com/in/ada"), w.lead("bo@acme.example")
+	if x.PersonKey(ada) != "linkedin.com/in/ada" || x.PersonKey(bo) != "bo@acme.example" {
 		t.Errorf("person keys %q %q", x.PersonKey(ada), x.PersonKey(bo))
 	}
 	if got := x.LiveLeads(); len(got) != 2 {

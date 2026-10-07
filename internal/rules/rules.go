@@ -1,9 +1,8 @@
-// Package rules is the rubric compiler and evaluator (RFC 6.4, contracts
-// sections 2 and 12.3). A rubric is one YAML file; Compile checks it and turns
-// every condition into one CEL program, and Evaluate runs it over a run's leads:
-// company rollups and company derive blocks, then each lead's derive blocks,
-// then both score halves. It reads only what Input carries and computes nothing
-// merge produces.
+// Package rules is the rubric compiler and evaluator. A rubric is one YAML
+// file; Compile checks it and turns every condition into one CEL program, and
+// Evaluate runs it over a run's leads: company rollups and company derive
+// blocks, then each lead's derive blocks, then both score halves. It reads only
+// what Input carries and computes nothing merge produces.
 package rules
 
 import (
@@ -12,8 +11,8 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 )
 
-// Input is what one evaluation reads. The engine builds it from the model; S3
-// builds it straight from fixture rows.
+// Input is what one evaluation reads. The engine builds it from the model; the
+// parity test builds it straight from fixture rows.
 type Input struct {
 	// Leads carry their merged fields, folded Status, SourcesSeen, ReceiverOnly,
 	// ConflictFields and FirstSeenAt (rollups take leads oldest first).
@@ -26,7 +25,8 @@ type Input struct {
 	Detectors DetectorResults
 }
 
-// DetectorResults says which detectors fired (S9 computes them): lead-subject
+// DetectorResults says which detectors fired (the detect package
+// computes them): lead-subject
 // detectors per lead, company-subject detectors per company domain. A detector
 // missing from a map did not fire.
 type DetectorResults struct {
@@ -35,7 +35,7 @@ type DetectorResults struct {
 }
 
 // DetectorSpec is one entry of the rubric's `detectors` block, parsed and
-// checked; S9 evaluates it. Fields a kind does not use are zero.
+// checked; the detect package evaluates it. Fields a kind does not use are zero.
 type DetectorSpec struct {
 	Name    string
 	Kind    string // count_in_window, first_seen, change, or a registered kind
@@ -72,7 +72,7 @@ type Limits struct {
 	Location        *time.Location
 }
 
-// Default limits (contracts section 2).
+// Default limits.
 const (
 	DefaultMaxPushesPerRun = 100
 	DefaultMaxPushesPerDay = 200
@@ -104,14 +104,14 @@ func (r *Rubric) Version() string { return r.version }
 
 // Fields returns every input field the rubric reads, sorted: lead fields by
 // name, company facts as `company.<name>`. Derived names, rollups, `status` and
-// detectors are not input fields and are left out. S10a fails a run when one is
-// not built in, declared, or a loaded column.
+// detectors are not input fields and are left out. The engine fails a run when
+// one is not built in, declared, or a loaded column.
 func (r *Rubric) Fields() []string { return append([]string(nil), r.reads...) }
 
 // Aliases returns the header spellings the rubric's declared fields add, as
 // squashed header to field name (`company.<name>` for a company field): each
 // declared field's own squashed name and its aliases. They win over the
-// built-in table on a clash (contracts section 2).
+// built-in table on a clash.
 func (r *Rubric) Aliases() map[string]string {
 	out := make(map[string]string, len(r.aliases))
 	for k, v := range r.aliases {

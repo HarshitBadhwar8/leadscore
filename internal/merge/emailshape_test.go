@@ -16,25 +16,25 @@ func TestValidateEmailShape(t *testing.T) {
 		{name: "unrendered handlebars placeholder", email: "{{contact.email}}", wantErr: true},
 		{name: "unrendered shell-style placeholder", email: "${lead.email}", wantErr: true},
 		{name: "unrendered bracket placeholder", email: "[[email]]", wantErr: true},
-		{name: "placeholder spliced into a real domain", email: "{{first}}@acme.io", wantErr: true},
+		{name: "placeholder spliced into a real domain", email: "{{first}}@acme.example", wantErr: true},
 
-		{name: "no at sign", email: "ada.acme.io", wantErr: true},
-		{name: "two at signs", email: "ada@@acme.io", wantErr: true},
+		{name: "no at sign", email: "ada.acme.example", wantErr: true},
+		{name: "two at signs", email: "ada@@acme.example", wantErr: true},
 		{name: "empty", email: "", wantErr: true},
-		{name: "whitespace inside", email: "ada lovelace@acme.io", wantErr: true},
+		{name: "whitespace inside", email: "ada lovelace@acme.example", wantErr: true},
 		// Stored whole, this would become a second lead for a person we already have.
-		{name: "display-name form", email: "Ada Lovelace <ada@acme.io>", wantErr: true},
+		{name: "display-name form", email: "Ada Lovelace <ada@acme.example>", wantErr: true},
 		{name: "dotless domain", email: "ada@localhost", wantErr: true},
-		{name: "over the length ceiling", email: strings.Repeat("a", 320) + "@acme.io", wantErr: true},
+		{name: "over the length ceiling", email: strings.Repeat("a", 320) + "@acme.example", wantErr: true},
 
 		// Addresses a real prospect can have: rejecting any would drop leads silently.
-		{name: "plain", email: "ada@acme.io"},
-		{name: "plus addressing", email: "ada+gtm@acme.io"},
-		{name: "subdomain", email: "ada@mail.eng.acme.io"},
-		{name: "dots and hyphens in the local part", email: "ada.b-lovelace@acme.io"},
+		{name: "plain", email: "ada@acme.example"},
+		{name: "plus addressing", email: "ada+gtm@acme.example"},
+		{name: "subdomain", email: "ada@mail.eng.acme.example"},
+		{name: "dots and hyphens in the local part", email: "ada.b-lovelace@acme.example"},
 		{name: "long tld", email: "ada@acme.technology"},
-		{name: "digits", email: "ada2@acme4.io"},
-		{name: "apostrophe in the local part", email: "o'hara@acme.io"},
+		{name: "digits", email: "ada2@acme4.example"},
+		{name: "apostrophe in the local part", email: "o'hara@acme.example"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -51,13 +51,13 @@ func TestValidateEmailShape(t *testing.T) {
 func TestValidateEmailShapeNeverEchoesTheAddress(t *testing.T) {
 	for _, email := range []string{
 		"ada@localhost",
-		"Ada Lovelace <ada@acme.io>",
-		"ada lovelace@acme.io",
-		"ada.acme.io",
-		strings.Repeat("a", 320) + "@acme.io",
+		"Ada Lovelace <ada@acme.example>",
+		"ada lovelace@acme.example",
+		"ada.acme.example",
+		strings.Repeat("a", 320) + "@acme.example",
 		// The standard library answers a trailing address by quoting it, so
 		// wrapping its error would put a second person's address in the log.
-		"ada@acme.io, evil@corp.com",
+		"ada@acme.example, evil@corp.example",
 	} {
 		err := ValidateEmailShape(email)
 		if err == nil {
@@ -81,10 +81,10 @@ func TestDeriveCompanyDomain(t *testing.T) {
 		name, email, want string
 		ok                bool
 	}{
-		{name: "work address", email: "ada@acme.io", want: "acme.io", ok: true},
-		{name: "subdomain is kept", email: "ada@eng.acme.io", want: "eng.acme.io", ok: true},
-		{name: "uppercase is normalised", email: "Ada@ACME.IO", want: "acme.io", ok: true},
-		{name: "sub-addressed local part is irrelevant", email: "ada+gtm@acme.io", want: "acme.io", ok: true},
+		{name: "work address", email: "ada@acme.example", want: "acme.example", ok: true},
+		{name: "subdomain is kept", email: "ada@eng.acme.example", want: "eng.acme.example", ok: true},
+		{name: "uppercase is normalised", email: "Ada@ACME.example", want: "acme.example", ok: true},
+		{name: "sub-addressed local part is irrelevant", email: "ada+gtm@acme.example", want: "acme.example", ok: true},
 		{name: "free provider rejected", email: "ada@gmail.com"},
 		{name: "free provider, uppercase", email: "ada@GMAIL.COM"},
 		{name: "another free provider", email: "ada@proton.me"},
@@ -94,15 +94,15 @@ func TestDeriveCompanyDomain(t *testing.T) {
 		{name: "broader provider: yahoo.co.uk", email: "ada@yahoo.co.uk"},
 		// Exact match, not a suffix rule: pinned so the behaviour is a decision.
 		{name: "free-provider subdomain is not matched", email: "ada@mail.gmail.com", want: "mail.gmail.com", ok: true},
-		{name: "no at sign", email: "ada.acme.io"},
+		{name: "no at sign", email: "ada.acme.example"},
 		{name: "trailing at", email: "ada@"},
-		{name: "leading at", email: "@acme.io"},
+		{name: "leading at", email: "@acme.example"},
 		{name: "empty", email: ""},
 		{name: "no dot in domain", email: "ada@localhost"},
-		{name: "embedded space", email: "ada@acme io.com"},
-		{name: "embedded tab", email: "ada@acme\tio.com"},
-		{name: "embedded newline", email: "ada@acme\nio.com"},
-		{name: "two at signs takes the last", email: "a@b@acme.io", want: "acme.io", ok: true},
+		{name: "embedded space", email: "ada@acme co.example"},
+		{name: "embedded tab", email: "ada@acme\tco.example"},
+		{name: "embedded newline", email: "ada@acme\nco.example"},
+		{name: "two at signs takes the last", email: "a@b@acme.example", want: "acme.example", ok: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

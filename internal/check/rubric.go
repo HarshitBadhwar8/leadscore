@@ -13,8 +13,8 @@ import (
 func init() { Register(rubric{}) }
 
 // rubric fails when the rubric does not compile, or reads a field that is not
-// built in, declared, or a loaded column (section 10). S2 owns the compile
-// part; S10a the field part, which every run also applies before scoring.
+// built in, declared, or a loaded column. Every run also applies the field
+// part before scoring.
 type rubric struct{}
 
 func (rubric) Name() string { return "rubric" }
@@ -71,7 +71,7 @@ const UnknownFieldKind = "rubric_unknown_field"
 func UnknownFields(r *rules.Rubric, m *model.Model, headers []string) []Problem {
 	aliases := r.Aliases()
 	known := map[string]bool{
-		// Built-in fields with no header spelling (RFC 6.4).
+		// Built-in fields with no header spelling.
 		"sources_seen": true, "receiver_only": true, "company.domain": true, "company.leads_seen": true,
 	}
 	for _, f := range api.BuiltinAliases() {

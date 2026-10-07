@@ -85,7 +85,7 @@ func assertOneColdPush(t *testing.T, w *world, email string) {
 	}
 }
 
-// RFC 8.1: a transient error, followed by the lead matching another cold
+// Ledger case: a transient error, followed by the lead matching another cold
 // lane, never gives a second cold push. The push's first step times out, so
 // only that pending (then cancelled) row's called_at holds the push.
 func TestColdPushTransientThenAnotherLane(t *testing.T) {
@@ -135,7 +135,7 @@ func TestTransientRetriesInTheSameLane(t *testing.T) {
 	}
 }
 
-// RFC 8.1: a skipped call (Stop arrived first) leaves the step pending and
+// Ledger case: a skipped call (Stop arrived first) leaves the step pending and
 // never called; while it is pending the lead stays in that lane even when a
 // higher lane would now match; and once the lane stops matching, the step
 // is cancelled with no call, so the lead's one cold push is still free.
@@ -171,8 +171,9 @@ func TestSkippedCallStaysInLaneThenAnotherLane(t *testing.T) {
 	assertOneColdPush(t, w, "cy@cyan.example")
 }
 
-// RFC 8.1: a skipped call, then the lane no longer matching: the never-called
-// step is cancelled and the lead may take its one cold push in another lane.
+// Ledger case: a skipped call, then the lane no longer matching: the
+// never-called step is cancelled and the lead may take its one cold push in
+// another lane.
 func TestSkippedCallThenCancelFreesTheColdPush(t *testing.T) {
 	w := newWorld(t,
 		"ana@acme.example,Ana A,Head of Ops,acme.example",
@@ -197,7 +198,7 @@ func TestSkippedCallThenCancelFreesTheColdPush(t *testing.T) {
 	assertOneColdPush(t, w, "cy@cyan.example")
 }
 
-// RFC 8.1: a crash between the two ledger writes leaves intent_run set; the
+// Ledger case: a crash between the two ledger writes leaves intent_run set; the
 // next run turns it into called_at, so the cold push stays held when the
 // lead then matches another lane.
 func TestCrashBetweenLedgerWritesHoldsTheColdPush(t *testing.T) {
@@ -229,7 +230,7 @@ func TestCrashBetweenLedgerWritesHoldsTheColdPush(t *testing.T) {
 	assertOneColdPush(t, w, "ana@acme.example")
 }
 
-// RFC 8.1: a crash, then a skipped call, then a cancel, then another cold
+// Ledger case: a crash, then a skipped call, then a cancel, then another cold
 // lane: still one cold push.
 func TestCrashSkippedCallCancelHoldsTheColdPush(t *testing.T) {
 	w := newWorld(t,
@@ -278,7 +279,7 @@ func TestCrashSkippedCallCancelHoldsTheColdPush(t *testing.T) {
 	assertOneColdPush(t, w, "ana@acme.example")
 }
 
-// RFC 8.1: two leads at one company in one batch open one deal: the second
+// Ledger case: two leads at one company in one batch open one deal: the second
 // lead's deal step carries the first's done deal step in Related.
 func TestTwoLeadsAtOneCompanyOpenOneDeal(t *testing.T) {
 	w := newWorld(t,

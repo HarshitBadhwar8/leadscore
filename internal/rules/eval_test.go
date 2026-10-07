@@ -36,7 +36,7 @@ func derive1(cond string) string {
 		"derive:\n  x:\n    - when: " + cond + "\n      then: 1\n    - else: 0\n"
 }
 
-// Text matching, types, and absent values (contracts section 2).
+// Text matching, types, and absent values.
 func TestConditions(t *testing.T) {
 	five := 5
 	in := func(fields map[string]string, facts api.CompanyFacts) Input {

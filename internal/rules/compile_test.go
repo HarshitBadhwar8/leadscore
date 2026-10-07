@@ -23,7 +23,7 @@ func mustCompile(t *testing.T, src string) *Rubric {
 	return r
 }
 
-// Every load error names the line and the field (RFC 6.4, "Load fails").
+// Every load error names the line and the field.
 func TestLoadErrors(t *testing.T) {
 	tests := []struct {
 		name, src string

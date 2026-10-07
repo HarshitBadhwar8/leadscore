@@ -13,14 +13,14 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/rules"
 )
 
-// Lane kinds (contracts section 2).
+// Lane kinds (the rubric's lanes).
 const (
 	kindCold    = "cold"
 	kindNonCold = "non-cold"
 	kindExport  = "export"
 )
 
-// Ledger states (contracts section 8).
+// Ledger states.
 const (
 	statePending   = "pending"
 	stateDone      = "done"
@@ -28,7 +28,7 @@ const (
 	stateCancelled = "cancelled"
 )
 
-// Statuses the engine reads (RFC 6.3).
+// Statuses the engine reads (the folded statuses).
 const (
 	statusNew          = "new"
 	statusContacted    = "contacted"
@@ -37,7 +37,7 @@ const (
 	statusBlocked      = "blocked"
 )
 
-// Fixed values (contracts section 11).
+// Fixed values (the engine defaults).
 const (
 	maxAttempts  = 3  // counted attempts before a step is failed
 	batchLeads   = 25 // leads per pushing batch
@@ -51,7 +51,7 @@ const (
 	dealSearchLag = 15 * time.Minute
 )
 
-// The sinks and destinations the engine's own rules name (RFC 6.10, 6.12):
+// The sinks and destinations the engine's own rules name (lanes and receivers):
 // an Apollo sequence lane (the Apollo-held rule) and a HubSpot deals lane
 // (the deal rule, and its need for a company).
 const (
@@ -60,7 +60,7 @@ const (
 	dealSink       = "hubspot"
 	dealDest       = "deals"
 	// dealStep is the step of a deals push whose vendor id is the deal
-	// (contracts section 6: hubspot:deals has steps contact, deal).
+	// (the vendor rules: hubspot:deals has steps contact, deal).
 	dealStep = "deal"
 )
 
@@ -74,7 +74,7 @@ var (
 	dealLookup = "hubspot"
 )
 
-// blocksCold reports a status that blocks cold lanes (RFC 6.3).
+// blocksCold reports a status that blocks cold lanes.
 func blocksCold(status string) bool {
 	switch status {
 	case statusDeal, statusUnsubscribed, statusBlocked:
@@ -89,16 +89,16 @@ func isSequence(l rules.Lane) bool {
 
 func isDealLane(l rules.Lane) bool { return l.Sink == dealSink && l.Dest == dealDest }
 
-// holdsCold is the one-cold-push rule (RFC 6.10 rule 3, contracts section
-// 8): a cold step holds a lead's one cold push once its call may have gone
-// out, whatever the outcome: called_at is set (a timeout or a refusal
-// included), intent_run is set (the pre-batch write ran, so a crash may have
-// left the call in flight), or the step is done or failed. Only a cold step
-// never called releases it. cold says whether the row counts as cold: its
-// stored kind, or its lane's current kind (view.isCold), so changing a
-// lane's kind can never release a hold. Its backups: a stored cold kind is
-// never downgraded, the intent_run left by a crash becomes called_at at
-// load, and the check just before each push reads the in-memory ledger.
+// holdsCold is the one-cold-push rule (the lanes' rule 3 and the ledger rules):
+// a cold step holds a lead's one cold push once its call may have gone out,
+// whatever the outcome: called_at is set (a timeout or a refusal included),
+// intent_run is set (the pre-batch write ran, so a crash may have left the call
+// in flight), or the step is done or failed. Only a cold step never called
+// releases it. cold says whether the row counts as cold: its stored kind, or
+// its lane's current kind (view.isCold), so changing a lane's kind can never
+// release a hold. Its backups: a stored cold kind is never downgraded, the
+// intent_run left by a crash becomes called_at at load, and the check just
+// before each push reads the in-memory ledger.
 func holdsCold(p model.Push, cold bool) bool {
 	if !cold {
 		return false
@@ -220,8 +220,8 @@ func (v *view) domain(id api.LeadID) string {
 	return v.m.People[model.Key(id)].Fields[model.CompanyDomainField].Value
 }
 
-// unsubscribed reports an opt-out anywhere in the lead's family (contracts
-// section 7: the fold reads Outcomes across the lead and every lead merged
+// unsubscribed reports an opt-out anywhere in the lead's family (the
+// status rules: the fold reads Outcomes across the lead and every lead merged
 // into it). It is read from Outcomes directly, so an opt-out learned after
 // the last fold still blocks.
 func (v *view) unsubscribed(id api.LeadID) bool {
@@ -270,7 +270,7 @@ func (v *view) matchesWhen(id api.LeadID, lane string) bool {
 }
 
 // apolloHeld reports apollo_held_at set on the lead or a lead merged into it
-// (RFC 6.10, rule 4).
+// (the lanes' rule 4).
 func (v *view) apolloHeld(id api.LeadID) bool {
 	for _, f := range v.family(id) {
 		if !v.m.People[model.Key(f)].ApolloHeldAt.IsZero() {
@@ -281,7 +281,7 @@ func (v *view) apolloHeld(id api.LeadID) bool {
 }
 
 // laneCheck is every check that cancels a lead's pending steps in a lane
-// (contracts section 8): the built-in checks, the lane's `when`, the
+// (the ledger rules): the built-in checks, the lane's `when`, the
 // Apollo-held rule on an Apollo sequence lane, and for a cold lane the
 // cold-lane statuses, the deal rule and the one cold push. It returns why
 // the lead fails, or "" when it passes. id must be live.
@@ -411,7 +411,7 @@ func (v *view) dealFacts(id api.LeadID) []*company {
 	return out
 }
 
-// deal is the deal rule (contracts section 7, rule 4), read from the
+// deal is the deal rule (status precedence rule 4), read from the
 // in-memory model: the lead or any lead at its company has a deal at an open
 // or won stage, or a hubspot:deals `deal` step at the company was called (the
 // deal may exist even if the call timed out) and no lookup since has shown the
@@ -450,12 +450,12 @@ func (v *view) deal(id api.LeadID, exceptLane string) bool {
 // company's deal hold.
 func (v *view) dealStepRow(p model.Push) bool { return p.Step == dealStep && p.Dest == dealDest }
 
-// dealWaits reports that the lead's deal step must wait (contracts section
-// 8): another lead at its company has a deal step that was called and has no
-// result yet (no deal id; pending, or cancelled after its call), and no
-// lookup has read the company since that call. The deal may exist, so a
-// second deal step would open a second deal; it waits for a later run, when
-// the first has its deal id (passed in Related) or a lookup has the answer.
+// dealWaits reports that the lead's deal step must wait (the ledger rules):
+// another lead at its company has a deal step that was called and has no result
+// yet (no deal id; pending, or cancelled after its call), and no lookup has
+// read the company since that call. The deal may exist, so a second deal step
+// would open a second deal; it waits for a later run, when the first has its
+// deal id (passed in Related) or a lookup has the answer.
 func (v *view) dealWaits(id api.LeadID) bool {
 	d := v.domain(id)
 	if d == "" {
@@ -481,7 +481,7 @@ func (v *view) dealWaits(id api.LeadID) bool {
 // recentDealCall reports a deal step at the company whose latest call was
 // less than dealSearchLag ago and has no deal id: its deal may exist and not
 // yet show in HubSpot's search, so a lookup's deal_lost for the company is
-// not trusted (contracts section 8). called_at keeps the first call, so the
+// not trusted (the ledger rules). called_at keeps the first call, so the
 // latest is read from updated_at, which every call's result write sets
 // (any later write only makes the hold longer: the safe direction).
 func (v *view) recentDealCall(domain string, now time.Time) bool {
@@ -586,7 +586,7 @@ type item struct {
 
 // route decides a live lead's pushes this run, before limits, lookups and
 // pushes_enabled: each matching non-cold lane it passes and has not been
-// pushed to, and its one cold lane (RFC 6.10, contracts section 8). It also
+// pushed to, and its one cold lane (the lane and ledger rules). It also
 // returns why each matching lane was skipped.
 func (v *view) route(id api.LeadID) ([]item, map[string]string) {
 	skipped := map[string]string{}
@@ -750,7 +750,7 @@ func (v *view) routeAll() ([]item, map[api.LeadID]string, map[api.LeadID][]strin
 	return items, planned, reasons
 }
 
-// order sorts pushes as the budget takes them (contracts section 8):
+// order sorts pushes as the budget takes them (the ledger rules):
 // non-cold first, then cold, each by lane priority (highest first), then
 // score (highest first), then lead id. Within a company this also runs
 // non-cold steps before cold ones.
@@ -822,22 +822,22 @@ func budget(items []item, allowed int) []item {
 // pushes plus a 10% margin, rounded up.
 func withMargin(n int) int { return n + int(math.Ceil(float64(n)*lookupMargin/100)) }
 
-// Blocked reports a lead blocked on every lane, and why (contracts section
-// 12.6): unsubscribed, blocked by Overrides (conflicting status rows, an
-// unknown value, or a manual `blocked`), an unresolved duplicate, or a
-// rubric conflict. A merged lead is judged as the lead it was merged into.
-// S13 uses it for an export row's do_not_contact.
+// Blocked reports a lead blocked on every lane, and why (an accessor for other
+// packages): unsubscribed, blocked by Overrides (conflicting status rows, an
+// unknown value, or a manual `blocked`), an unresolved duplicate, or a rubric
+// conflict. A merged lead is judged as the lead it was merged into. The export
+// hook uses it for an export row's do_not_contact.
 func Blocked(r *Run, id api.LeadID) (bool, string) {
 	v := r.view()
 	return v.blocked(v.live(id))
 }
 
-// MatchesLane reports whether the lead (or, for a merged lead, the lead it
-// was merged into) may be routed to the lane: the lane's `when` held at
-// scoring and the lead passes every check that would cancel its steps there
-// (the built-in checks; the Apollo-held rule on an Apollo sequence lane; and
-// on a cold lane the cold-lane statuses, the deal rule and the one cold
-// push). Limits, lookups and pushes_enabled do not count. S13 uses it.
+// MatchesLane reports whether the lead (or, for a merged lead, the lead it was
+// merged into) may be routed to the lane: the lane's `when` held at scoring and
+// the lead passes every check that would cancel its steps there (the built-in
+// checks; the Apollo-held rule on an Apollo sequence lane; and on a cold lane
+// the cold-lane statuses, the deal rule and the one cold push). Limits, lookups
+// and pushes_enabled do not count. The export hook uses it.
 func MatchesLane(r *Run, id api.LeadID, laneID string) bool {
 	v := r.view()
 	l, ok := v.lanes[laneID]

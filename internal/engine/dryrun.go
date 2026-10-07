@@ -9,7 +9,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
 )
 
-// report prints the dry run (RFC 6.4): one line per lead whose verdict,
+// report prints the dry run: one line per lead whose verdict,
 // status or planned lane differs from the last run's Ranked, then totals. It
 // names leads by id only, since stdout may be a hosted log.
 func (x *exec) report() {

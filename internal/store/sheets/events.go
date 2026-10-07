@@ -22,7 +22,7 @@ import (
 )
 
 // Raw receiver events live in one tab per UTC month of their received time,
-// "Events 2026-10" (RFC 6.6, "Monthly tabs"). Rows are only ever appended, so
+// "Events 2026-10". Rows are only ever appended, so
 // an event's sequence is its (tab, row). Each row's `seq` cell holds a random
 // id, so a read can tell that rows moved. A cursor holds, for every tab read,
 // how many data rows were read from it and the id of the last one, written
@@ -141,7 +141,7 @@ func deletedMonths(book *sheetsapi.Spreadsheet) map[string]bool {
 	return out
 }
 
-// eventColumns are the Events columns in order (contracts section 4).
+// eventColumns are the Events columns in order.
 var eventColumns = func() []string {
 	d, _ := model.Def(model.EventsPrefix + "x")
 	return d.Columns
@@ -353,7 +353,7 @@ func blankCells(cells []any) bool {
 }
 
 // graceAfterMonth is how long after its month ends a tab may still be
-// appended to (RFC 6.6): a receiver's clock may lag.
+// appended to: a receiver's clock may lag.
 const graceAfterMonth = time.Hour
 
 // DeleteProcessed deletes whole monthly tabs: a tab goes when every row in it

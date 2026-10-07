@@ -43,7 +43,7 @@ func (w *world) pushesOff() {
 
 // A deal step called earlier in the run blocks a colleague's cold push at
 // the same company, even in the same batch and even when the deal call timed
-// out (contracts section 8); the next run's fold marks the colleague `deal`
+// out (the ledger rules); the next run's fold marks the colleague `deal`
 // from the ledger; a lookup that finds the deal closed-lost releases the
 // company, and the colleague's never-called cold steps return to pending.
 func TestDealEarlierInRunBlocksColleaguesColdPush(t *testing.T) {
@@ -296,7 +296,7 @@ func TestNonColdOnceAndExportNeverCold(t *testing.T) {
 	}
 }
 
-// Blocked and MatchesLane (contracts section 12.6), as S13 calls them.
+// Blocked and MatchesLane, as the export hook calls them.
 func TestBlockedAndMatchesLane(t *testing.T) {
 	w := newWorld(t,
 		"ana@acme.example,Ana A,Head of Ops,acme.example",
@@ -340,7 +340,7 @@ func boolText(b bool) string {
 
 // A lead blocked on every lane is explained on an export lane too: with only
 // an export lane, an unsubscribed lead's reasons still say why it is not
-// listed (S17 review: the export lane's skip was missing).
+// listed (a review found the export lane's skip missing).
 func TestBlockedExportLaneIsExplained(t *testing.T) {
 	w := newWorld(t, "ana@acme.example,Ana A,Head of Ops,acme.example", "bo@beta.example,Bo B,Clerk,beta.example")
 	w.write("rubric.yml", `version: 1

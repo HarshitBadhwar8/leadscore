@@ -14,7 +14,8 @@ import (
 )
 
 // goldenDir holds one stored body per file (testdata/events/README.md). They
-// are provisional: built from core's test bodies until S0's real captures land.
+// are provisional: built from earlier working code's test bodies until S0's
+// real captures land.
 const goldenDir = "../../testdata/events"
 
 var goldenReceived = time.Date(2026, 8, 23, 7, 0, 0, 0, time.UTC)

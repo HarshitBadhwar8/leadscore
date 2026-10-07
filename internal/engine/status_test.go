@@ -197,7 +197,7 @@ func TestRemovingManualStatusReleases(t *testing.T) {
 	}
 }
 
-// The C7 precedence on one lead: each rule beats the ones below it.
+// The status precedence on one lead: each rule beats the ones below it.
 func TestStatusPrecedence(t *testing.T) {
 	now := time.Now().UTC()
 	cases := []struct {

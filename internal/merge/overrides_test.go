@@ -10,8 +10,8 @@ import (
 func overridesWorld(t *testing.T) *world {
 	w := newWorld(t)
 	w.apply(
-		in("a", "email", "ada@acme.io", "linkedin", "linkedin.com/in/ada"),
-		in("a", "email", "bo@acme.io"),
+		in("a", "email", "ada@acme.example", "linkedin", "linkedin.com/in/ada"),
+		in("a", "email", "bo@acme.example"),
 		in("a", "linkedin", "linkedin.com/in/cy"),
 	)
 	return w
@@ -19,17 +19,17 @@ func overridesWorld(t *testing.T) *world {
 
 func TestParseOverrides(t *testing.T) {
 	w := overridesWorld(t)
-	ada, bo, cy := w.lead("ada@acme.io"), w.lead("bo@acme.io"), w.lead("linkedin.com/in/cy")
-	w.override(" ADA@Acme.IO ", "Status", "Unsubscribed")                    // 1: a capitalized email matches
+	ada, bo, cy := w.lead("ada@acme.example"), w.lead("bo@acme.example"), w.lead("linkedin.com/in/cy")
+	w.override(" ADA@Acme.example ", "Status", "Unsubscribed")               // 1: a capitalized email matches
 	w.override("https://www.linkedin.com/in/ada/", "status", "unsubscribed") // 2: same value under another key
-	w.override("bo@acme.io", "status", "replied_positive")                   // 3
-	w.override("BO@acme.io", "status", "unsubscribed")                       // 4: conflicts with 3
+	w.override("bo@acme.example", "status", "replied_positive")              // 3
+	w.override("BO@acme.example", "status", "unsubscribed")                  // 4: conflicts with 3
 	w.override("linkedin.com/in/cy", "status", "unsubscibed")                // 5: a typo blocks
-	w.override("dee@acme.io", "status", "unsubscribed")                      // 6: unknown person waits
-	w.override("ada@acme.io", "status", "resubscribe")                       // 7: not a status row
+	w.override("dee@acme.example", "status", "unsubscribed")                 // 6: unknown person waits
+	w.override("ada@acme.example", "status", "resubscribe")                  // 7: not a status row
 	w.override("*", "retry", "")                                             // 8: every lead
 	w.override("*", "status", "unsubscribed")                                // 9: * is only for retry
-	w.override("ada@acme.io", "same_as", "eve@acme.io")                      // 10: other person unknown
+	w.override("ada@acme.example", "same_as", "eve@acme.example")            // 10: other person unknown
 
 	ov := ParseOverrides(w.m)
 	if got := ov.Status[ada]; got != "unsubscribed" {
@@ -62,12 +62,12 @@ func TestParseOverrides(t *testing.T) {
 // A status row under an absorbed lead's email counts for the survivor.
 func TestOverridesFollowMerges(t *testing.T) {
 	w := overridesWorld(t)
-	w.override("bo@acme.io", "same_as", "ada@acme.io")
+	w.override("bo@acme.example", "same_as", "ada@acme.example")
 	w.apply()
-	w.override("bo@acme.io", "status", "unsubscribed")
-	w.override("ada@acme.io", "status", "replied_negative")
+	w.override("bo@acme.example", "status", "unsubscribed")
+	w.override("ada@acme.example", "status", "replied_negative")
 	ov := ParseOverrides(w.m)
-	survivor := w.lead("ada@acme.io")
+	survivor := w.lead("ada@acme.example")
 	if !strings.Contains(ov.Blocked[survivor], "conflicting") {
 		t.Errorf("survivor blocked = %q: rows under both leads' keys count for it", ov.Blocked[survivor])
 	}
@@ -75,14 +75,14 @@ func TestOverridesFollowMerges(t *testing.T) {
 
 func TestSetStatus(t *testing.T) {
 	w := overridesWorld(t)
-	ada := w.lead("ada@acme.io")
+	ada := w.lead("ada@acme.example")
 	w.override("linkedin.com/in/ada", "status", "replied_neutral")
-	w.override("ADA@acme.io", "status", "blocked")
-	w.override("ada@acme.io", "status", "resubscribe") // waiting; the newer status wins
-	w.override("bo@acme.io", "status", "replied_neutral")
+	w.override("ADA@acme.example", "status", "blocked")
+	w.override("ada@acme.example", "status", "resubscribe") // waiting; the newer status wins
+	w.override("bo@acme.example", "status", "replied_neutral")
 
 	key, err := SetStatus(w.m, "https://linkedin.com/in/ada", "Unsubscribed", t0)
-	if err != nil || key != "ada@acme.io" {
+	if err != nil || key != "ada@acme.example" {
 		t.Fatalf("SetStatus = %q, %v; want the primary email", key, err)
 	}
 	ov := ParseOverrides(w.m)
@@ -98,7 +98,7 @@ func TestSetStatus(t *testing.T) {
 		}
 	}
 
-	if _, err := SetStatus(w.m, "ada@acme.io", "resubscribe", t0); err != nil {
+	if _, err := SetStatus(w.m, "ada@acme.example", "resubscribe", t0); err != nil {
 		t.Fatal(err)
 	}
 	ov = ParseOverrides(w.m)
@@ -115,21 +115,21 @@ func TestSetStatus(t *testing.T) {
 		t.Error("resubscribe writes a row with the request time in note")
 	}
 
-	if _, err := SetStatus(w.m, "bo@acme.io", "none", t0); err != nil {
+	if _, err := SetStatus(w.m, "bo@acme.example", "none", t0); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := ParseOverrides(w.m).Status[w.lead("bo@acme.io")]; ok {
+	if _, ok := ParseOverrides(w.m).Status[w.lead("bo@acme.example")]; ok {
 		t.Error("none deletes the status rows")
 	}
 
-	if _, err := SetStatus(w.m, "ada@acme.io", "deal", t0); err == nil {
+	if _, err := SetStatus(w.m, "ada@acme.example", "deal", t0); err == nil {
 		t.Error("deal is not a status Overrides accepts")
 	}
 	if _, err := SetStatus(w.m, "0190-unknown", "unsubscribed", t0); err == nil {
 		t.Error("an unknown lead id is refused")
 	}
-	key, err = SetStatus(w.m, "Dee@Acme.io", "unsubscribed", t0)
-	if err != nil || key != "dee@acme.io" {
+	key, err = SetStatus(w.m, "Dee@Acme.example", "unsubscribed", t0)
+	if err != nil || key != "dee@acme.example" {
 		t.Errorf("an unknown person by email waits: %q, %v", key, err)
 	}
 	if key, _ := SetStatus(w.m, "linkedin.com/in/cy", "blocked", t0); key != "linkedin.com/in/cy" {
@@ -149,17 +149,17 @@ func countRows(m *model.Model, action string) int {
 
 func TestAddPairAndRetry(t *testing.T) {
 	w := overridesWorld(t)
-	if _, _, err := AddPair(w.m, ActionSameAs, "ada@acme.io", "linkedin.com/in/ada"); err == nil {
+	if _, _, err := AddPair(w.m, ActionSameAs, "ada@acme.example", "linkedin.com/in/ada"); err == nil {
 		t.Error("two keys of one lead are already the same lead")
 	}
-	a, b, err := AddPair(w.m, ActionDistinct, "linkedin.com/in/ada", "BO@acme.io")
-	if err != nil || a != "ada@acme.io" || b != "bo@acme.io" {
+	a, b, err := AddPair(w.m, ActionDistinct, "linkedin.com/in/ada", "BO@acme.example")
+	if err != nil || a != "ada@acme.example" || b != "bo@acme.example" {
 		t.Errorf("AddPair = %q %q %v", a, b, err)
 	}
 	if k, err := AddRetry(w.m, "", "warm", t0); err != nil || k != "*" {
 		t.Errorf("AddRetry every lead = %q %v", k, err)
 	}
-	if k, err := AddRetry(w.m, "bo@acme.io", "", t0.Add(1)); err != nil || k != "bo@acme.io" {
+	if k, err := AddRetry(w.m, "bo@acme.example", "", t0.Add(1)); err != nil || k != "bo@acme.example" {
 		t.Errorf("AddRetry one lead = %q %v", k, err)
 	}
 	last := w.m.Overrides[len(w.m.Overrides)-1]

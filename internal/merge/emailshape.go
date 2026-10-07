@@ -37,14 +37,14 @@ func ValidateEmailShape(email string) error {
 			return fmt.Errorf("email carries the template marker %q: the sending workflow emitted the variable instead of its value", marker)
 		}
 	}
-	// Round-tripped against the input so a display-name form ("Ada <a@b.io>")
+	// Round-tripped against the input so a display-name form ("Ada <a@b.example>")
 	// is refused rather than stored whole: the same person arriving both ways
 	// would otherwise become two leads.
 	parsed, err := mail.ParseAddress(email)
 	if err != nil {
 		// Inspected for its class, never wrapped: the standard library's error
-		// quotes its input, which on "ada@acme.io, evil@corp.com" would put a
-		// second person's address in the log.
+		// quotes its input, which on "ada@acme.example, evil@corp.example"
+		// would put a second person's address in the log.
 		if strings.Contains(err.Error(), "expected single address") {
 			return errors.New("email carries more than one address")
 		}

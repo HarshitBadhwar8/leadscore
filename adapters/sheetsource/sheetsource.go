@@ -1,11 +1,11 @@
-// Package sheetsource is the Google Sheet tab source (contracts section 3,
+// Package sheetsource is the Google Sheet tab source (leadscore.yml's
 // `sources[]`): it reads people-owned tabs of the team's spreadsheet as they
 // appear on screen (FORMATTED_VALUE), headers in order as written, one
 // InputRow per non-blank row. Like the CSV source it only parses; merge
 // applies aliases, checks emails and computes row ids.
 //
 // A source marked `events: true` returns one event per row instead, by the
-// same rules as a CSV events file (contracts section 5.2).
+// same rules as a CSV events file.
 //
 // The engine copies the spreadsheet id (store.spreadsheet, or
 // store.view_spreadsheet on SQLite) and store.credentials into the entry as

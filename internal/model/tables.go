@@ -3,15 +3,15 @@ package model
 import "strings"
 
 // SchemaVersion is the store layout this binary writes, as `major.minor`
-// (contracts section 4). A release that only adds tables or columns bumps the
+// A release that only adds tables or columns bumps the
 // minor; the store's State.schema_version is never lowered.
 const SchemaVersion = "1.0"
 
 // TimeFormat is the one stored time form: UTC, never trimmed, so text order is
-// time order (contracts, "Formats used everywhere").
+// time order.
 const TimeFormat = "2006-01-02T15:04:05.000Z"
 
-// Table names (section 4), exactly as TableWrite.Table carries them.
+// Table names, exactly as TableWrite.Table carries them.
 const (
 	TableOverrides        = "Overrides"
 	TableAppliedOverrides = "Applied overrides"
@@ -36,16 +36,16 @@ const (
 	EventsPrefix = "Events "
 )
 
-// TableDef is one section 4 table with fixed columns.
+// TableDef is one store table with fixed columns.
 type TableDef struct {
-	Name         string   // section 4 name; for a pattern, the prefix ("Events ", "Export ")
+	Name         string   // the store table name; for a pattern, the prefix ("Events ", "Export ")
 	Key          []string // primary key columns in order; nil for a keyless table
 	Columns      []string // fixed columns in order
 	Pattern      bool     // Events YYYY-MM and Export <lane id>
 	DynamicAfter string   // Ranked: derived-name columns go after this column
 }
 
-// Tables is every section 4 table with fixed columns, in section 4 order:
+// Tables is every store table with fixed columns, in the store's table order:
 // `storetest.Schema` is built from it. `Leads` and `Companies` take any columns
 // and are not listed. On SQLite the events table is plain `Events`.
 var Tables = []TableDef{
@@ -98,7 +98,7 @@ func Def(name string) (TableDef, bool) {
 func ExportTable(laneID string) string { return ExportPrefix + laneID }
 
 // appendNew names the keyed tables whose new rows are written with OpAppend
-// (they only grow); every other keyed table upserts (contracts section 12.2).
+// (they only grow); every other keyed table upserts.
 var appendNew = map[string]bool{
 	TableSeenEvents:   true,
 	TableWindowEvents: true,

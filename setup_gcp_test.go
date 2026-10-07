@@ -232,7 +232,7 @@ func TestGCPScript(t *testing.T) {
 		for _, s := range []string{"leadscore-config", "leadscore-config-version", "apollo-api-key", "hubspot-token", "receiver-secret", "receiver-secret-previous"} {
 			wantCall(t, calls, "secrets create "+s+" --project p")
 		}
-		// The C9 role table.
+		// The runbook's role table.
 		for _, g := range [][2]string{
 			{"apollo-api-key", runSA + " --role roles/secretmanager.secretAccessor"},
 			{"hubspot-token", runSA + " --role roles/secretmanager.secretAccessor"},
@@ -302,7 +302,7 @@ func TestGCPScript(t *testing.T) {
 		calls, _ = e.mustRun("redeploy")
 		wantCall(t, calls, "run jobs deploy leadscore-run", "HUBSPOT_TOKEN=hubspot-token:latest")
 
-		// Rotation (C5.1): the previous secret is attached while it has an
+		// Rotation: the previous secret is attached while it has an
 		// enabled version; --finish-rotation detaches it, and only then are
 		// its versions disabled.
 		e.touch("version-receiver-secret-previous")

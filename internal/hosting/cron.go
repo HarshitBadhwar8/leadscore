@@ -8,8 +8,8 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/config"
 )
 
-// Cron converts `schedule` into Cloud Scheduler's cron form (contracts section
-// 3): a whole number of minutes dividing 60 is `*/N * * * *`, a whole number of
+// Cron converts leadscore.yml's `schedule` into Cloud Scheduler's cron form:
+// a whole number of minutes dividing 60 is `*/N * * * *`, a whole number of
 // hours dividing 24 is `0 */N * * *`, and 24h is `0 0 * * *`. Anything else
 // cannot be written as a fixed cron interval and is refused. setup/gcp.sh does
 // the same conversion in bash; a test holds the two equal.
@@ -33,8 +33,8 @@ func Cron(schedule time.Duration) (string, error) {
 	return "", bad
 }
 
-// TaskTimeout is the run job's task timeout: the deadline plus the save budget
-// (contracts section 9.1 step 9).
+// TaskTimeout is the run job's task timeout: the deadline plus the save
+// budget, as `setup/gcp.sh deploy` sets it.
 func TaskTimeout(deadline time.Duration) time.Duration { return deadline + config.SaveBudget }
 
 // scriptDuration is the duration form setup/gcp.sh reads: whole days, hours,

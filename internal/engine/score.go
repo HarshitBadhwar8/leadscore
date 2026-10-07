@@ -115,8 +115,8 @@ func joinReason(a, b string) string {
 	return a + "; " + b
 }
 
-// formatValue writes a derived value in the stored forms (contracts,
-// "Formats used everywhere"): plain decimal numbers, booleans as yes or
+// formatValue writes a derived value in the stored forms (the
+// store's formats): plain decimal numbers, booleans as yes or
 // empty, times in the one time form, and no value as empty.
 func formatValue(v any) string {
 	switch t := v.(type) {

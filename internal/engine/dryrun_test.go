@@ -32,7 +32,7 @@ func TestDryRun(t *testing.T) {
 	hooks := DefaultHooks()
 	hooks.Enrich = func(*Run) error { enriched = true; return nil }
 	hooks.Push = func(*Run) error { pushed = true; return nil }
-	// PrePush runs (S10b skips its lookups on a dry run) and its result is
+	// PrePush runs (it skips its lookups on a dry run) and its result is
 	// what the report plans: here it holds Ed back from every lane.
 	hooks.PrePush = func(r *Run, _ []api.LeadID) error {
 		prepushed = r.DryRun

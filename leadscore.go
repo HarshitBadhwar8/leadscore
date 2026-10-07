@@ -6,7 +6,7 @@
 //
 // Every name here is defined in internal/api and re-exported as a type alias or
 // a thin wrapper, so the engine can use the same types without importing this
-// package. The doc comments below repeat the contract (contracts section 1).
+// package. The doc comments below repeat the public API's contract.
 // This surface is frozen at v0.1.0: interfaces never gain methods; a new
 // capability is a separate optional interface found by type assertion.
 package leadscore
@@ -45,7 +45,7 @@ type StepKey = api.StepKey
 type InputRow = api.InputRow
 
 // Event is something that happened to a person or a company. ID is empty from
-// sources (the engine sets it). Kind is a section 5.3 kind, or empty with
+// sources (the engine sets it). Kind is a known event kind, or empty with
 // Attrs["reject"] set for a rejected source row. Email and LinkedInURL are the
 // person keys, both empty for a company-only event. Domain is the person's
 // employer domain, or the company for a company-only event. At and ReceivedAt
@@ -62,7 +62,7 @@ type RawEvent = api.RawEvent
 
 // CompanyFacts is what an enricher learned about a company domain. Region is
 // the vendor's country, trimmed, with no bucketing. FundingStage is one of the
-// section 6 values, or empty. Employees is nil when unknown. Extra holds other
+// known funding stages, or empty. Employees is nil when unknown. Extra holds other
 // facts; the Apollo enricher writes latest_funding_at. An empty Extra value
 // means the vendor sent a value that cannot be used, and clears that fact.
 // NotFound means the vendor had no record (retried after max age).
@@ -143,7 +143,7 @@ type RunLease = api.RunLease
 // taken over; it must be a real compare-and-swap, so two callers can never both
 // hold it. Commit applies every write all-or-nothing (one Sheets batchUpdate,
 // one SQL transaction); it rejects an OpUpsert or OpDelete with no Key before
-// applying anything; an OpAppend to a keyed section 4 table of a key the table
+// applying anything; an OpAppend to a keyed store table of a key the table
 // already holds (or that the same commit already wrote) fails the whole commit;
 // it creates a missing table, and appends a missing column,
 // the first time a write names it; it returns ErrTooLarge rather than splitting.
@@ -172,14 +172,14 @@ type Row = api.Row
 // WriteOp is the kind of a TableWrite.
 type WriteOp = api.WriteOp
 
-// TableWrite is one write in a Backend.Commit. Table is the section 4 table
+// TableWrite is one write in a Backend.Commit. Table is the store table's
 // name exactly; Key names the columns for OpUpsert and OpDelete (required for
 // both); Column and Before are for OpTrim only.
 type TableWrite = api.TableWrite
 
 const (
 	OpReplace = api.OpReplace // rewrite the whole table
-	OpAppend  = api.OpAppend  // add rows; on a keyed section 4 table, a key the table already holds fails the commit
+	OpAppend  = api.OpAppend  // add rows; on a keyed store table, a key the table already holds fails the commit
 	OpUpsert  = api.OpUpsert  // insert or update by Key columns
 	OpDelete  = api.OpDelete  // delete rows matching Key columns
 	OpTrim    = api.OpTrim    // delete rows whose Column is before Before

@@ -20,7 +20,7 @@ type Result struct {
 	Blocked map[api.LeadID]string
 	// Lanes holds the ids of the lanes whose `when` holds for each lead,
 	// highest priority first (file order on a tie). The built-in lane checks,
-	// the ledger and limits are the engine's (S10b), not applied here.
+	// the ledger and limits are the engine's, not applied here.
 	Lanes map[api.LeadID][]string
 	// Warnings (a value that does not parse as its declared type, a raw
 	// expression that fails) are given once per run each, for the engine to
@@ -28,9 +28,9 @@ type Result struct {
 	Warnings []string
 }
 
-// Evaluate runs the rubric over every lead in Input (RFC 6.4, "Evaluation per
-// run"): company rollups and company derive blocks once per company, then each
-// lead's derive blocks, both halves of its score, and its lanes.
+// Evaluate runs the rubric over every lead in Input: company rollups and
+// company derive blocks once per company, then each lead's derive blocks, both
+// halves of its score, and its lanes.
 func (r *Rubric) Evaluate(in Input) Result {
 	res, _ := r.EvaluateContext(context.Background(), in)
 	return res

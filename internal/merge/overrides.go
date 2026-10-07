@@ -14,7 +14,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
 )
 
-// Overrides actions (contracts section 4).
+// Overrides actions.
 const (
 	ActionStatus   = "status"
 	ActionSameAs   = "same_as"
@@ -27,7 +27,7 @@ const (
 const Resubscribe = "resubscribe"
 
 // ManualStatuses are the statuses an Overrides row may set: every status
-// except new, contacted and deal (RFC 6.3).
+// except new, contacted and deal.
 var ManualStatuses = []string{
 	"replied_positive", "replied_negative", "replied_neutral", "replied_unlabelled", "unsubscribed", "blocked",
 }
@@ -71,7 +71,7 @@ func (o OverrideRow) Matched() bool {
 	return true
 }
 
-// Overrides is the Overrides tab read against the model (contracts section 7).
+// Overrides is the Overrides tab read against the model.
 type Overrides struct {
 	Rows []OverrideRow
 	// Status is each live lead's one manual status (rule 3), for leads not in
@@ -182,7 +182,7 @@ func OverrideHash(o model.Override) string {
 }
 
 // Duplicates returns the leads every lane skips as unresolved duplicates:
-// namesakes (RFC 6.5), two live leads with the same company domain and
+// namesakes, two live leads with the same company domain and
 // normalized full name not kept apart by an Overrides `distinct` row naming
 // that pair (a third namesake stays blocked until paired with each of the
 // others), and every lead in a hand-edited merged_into cycle (Cycles).
@@ -242,7 +242,7 @@ func pair(a, b api.LeadID) [2]api.LeadID {
 	return [2]api.LeadID{a, b}
 }
 
-// The CLI writers (contracts section 7). Each changes only the model's
+// The CLI writers. Each changes only the model's
 // Overrides; the caller encodes and commits that table. They write the same
 // rows on every store.
 

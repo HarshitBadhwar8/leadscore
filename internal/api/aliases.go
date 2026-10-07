@@ -1,9 +1,9 @@
 package api
 
-// builtinAliases maps a squashed header spelling to the field it names
-// (contracts section 2). Taken from core's CSV import aliases, renamed to the
-// rubric's field names, plus three company facts. Core's data_quality_note,
-// primary_ai_coding_tool and visited_domain aliases encode our ICP and do not ship.
+// builtinAliases maps a squashed header spelling to the field it names:
+// common header spellings of the built-in fields, plus three company facts.
+// It names built-in fields only; a team's own fields get their spellings from
+// the rubric's `aliases`.
 var builtinAliases = map[string]string{
 	"email":        "email",
 	"emailaddress": "email",

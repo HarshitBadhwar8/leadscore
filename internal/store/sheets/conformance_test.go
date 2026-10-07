@@ -44,8 +44,8 @@ func openStore(t *testing.T, f *fakeGoogle) *sheets.Store {
 	return s
 }
 
-// The S5 proof, first half: the public conformance suite, green on the Sheets
-// store over the Sheets and Cloud Storage fakes.
+// The Sheets store's proof, first half: the public conformance suite, green on
+// the Sheets store over the Sheets and Cloud Storage fakes.
 func TestStoretest(t *testing.T) {
 	storetest.Run(t, func(t *testing.T) (api.Backend, api.EventLog) {
 		s := openStore(t, newFakeGoogle(t))

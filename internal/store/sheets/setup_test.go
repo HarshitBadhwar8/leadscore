@@ -18,7 +18,7 @@ import (
 
 var testAccounts = sheets.Accounts{Run: "run@p.iam.gserviceaccount.com", Receiver: "recv@p.iam.gserviceaccount.com"}
 
-// The template: every section 4 tab at its exact width with a frozen header,
+// The template: every store tab at its exact width with a frozen header,
 // in reading order; people tabs open, Events tabs protected for both
 // accounts, every other tool tab for the run account; hourly recalculation
 // on UTC; the staleness formula in Health!H1.
