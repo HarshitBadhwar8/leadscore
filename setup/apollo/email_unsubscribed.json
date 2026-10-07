@@ -1,0 +1,11 @@
+{
+  "event": "email_unsubscribed",
+  "contact_email": "<Apollo's contact email variable>",
+  "contact_stage": "<Apollo's contact stage variable>",
+  "last_conversation_link": "<Apollo's last conversation link variable>",
+  "contact_id": "<Apollo's contact id variable>",
+  "contact_name": "<Apollo's contact full name variable>",
+  "contact_title": "<Apollo's contact title variable>",
+  "contact_linkedin_url": "<Apollo's contact LinkedIn URL variable>",
+  "account_domain": "<Apollo's account domain variable>"
+}

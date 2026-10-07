@@ -1,0 +1,31 @@
+# leadscore.yml for Docker on your own machine (contracts section 9.2). Copy it
+# into the folder holding compose.yaml and your rubric, as leadscore.yml.
+# Every key is in the contracts doc, section 3.
+version: 1
+
+# The rubric file, beside this one.
+rubric: rubric.yml
+
+# SQLite on the compose file's named volume.
+store: { type: sqlite, path: /data/leadscore.db }
+
+# Your lead files, in this folder (mounted at /config).
+sources:
+  - { id: leads, type: csv, path: leads.csv }
+
+# A laptop has no public address, so replies are read by polling Apollo, and
+# website visits come from Apollo's visitor CSV export (a source with
+# events: true). With a Cloudflare Tunnel you can use the receiver instead:
+# set replies: receiver and point the Apollo workflows at the tunnel's URL.
+# A tunnel works only while the laptop is awake; webhooks sent while it
+# sleeps are lost unless Apollo retries them.
+replies: polling
+
+# The export lists, in ./out on your machine.
+export: { dir: /out }
+
+# Off until you have reviewed a dry run (`leadscore run --dry-run`).
+pushes_enabled: false
+
+# How often the container runs the loop (read when it starts).
+schedule: 15m

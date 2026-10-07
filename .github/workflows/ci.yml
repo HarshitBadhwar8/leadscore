@@ -54,6 +54,27 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # RFC 8.4: `docker compose up` with the repo's compose.yaml and the image
+  # built from this commit, then a timer run end to end (testdata/compose).
+  compose:
+    name: docker compose up and a timer run
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: build the image for this machine
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          push: false
+          tags: leadscore:ci
+          cache-from: type=gha
+      - name: compose up, a webhook, and timer runs
+        run: testdata/compose/smoke.sh leadscore:ci
+
   # Pushes the image, tagged by commit, through keyless sign-in (Workload
   # Identity Federation). Skipped until the repo variables GCP_WIF_PROVIDER and
   # GCP_CI_SERVICE_ACCOUNT are set, and for pull requests from forks, which get

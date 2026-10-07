@@ -80,7 +80,7 @@ var commands = []*command{
 		flags: map[string]flagKind{"every": optValueFlag},
 		args:  "[--every [interval]]",
 		help:  "the receiver and /healthz; with --every, also runs the loop",
-		slice: "S14a",
+		run:   runServe,
 	},
 	{
 		path: []string{"status"},
@@ -161,9 +161,9 @@ var commands = []*command{
 		run:   runSetupSheet,
 	},
 	{
-		path:  []string{"healthz"},
-		help:  "call the local /healthz",
-		slice: "S14a",
+		path: []string{"healthz"},
+		help: "call the local /healthz",
+		run:  runHealthz,
 	},
 }
 
