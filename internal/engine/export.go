@@ -88,19 +88,22 @@ func exportHook(r *Run) error {
 	r.invalidate() // Push and PrePush may have changed the ledger and Outcomes
 	v := r.view()
 	defer r.invalidate()
+	// One time for the whole hook, so a row listed this run has updated_at equal
+	// to first_listed_at even when the refresh below changes it.
+	now := r.Now()
 	var errs []error
 	if r.judged {
 		budget := r.Config.IngestChunkRows
 		for _, l := range r.Rubric.Lanes() {
 			if l.Kind == kindExport {
-				if err := addListed(r, v, l.ID, &budget); err != nil {
+				if err := addListed(r, v, l.ID, now, &budget); err != nil {
 					errs = append(errs, err)
 				}
 			}
 		}
 	}
 	for _, lane := range exportLanes(r.Model) {
-		if err := refreshListed(r, v, lane); err != nil {
+		if err := refreshListed(r, v, lane, now); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -110,13 +113,12 @@ func exportHook(r *Run) error {
 // addListed adds the live leads that newly match the lane to its table, at
 // most *budget of them, lowering it. The new rows' status and do_not_contact
 // are set by refreshListed.
-func addListed(r *Run, v *view, lane string, budget *int) error {
+func addListed(r *Run, v *view, lane string, now time.Time, budget *int) error {
 	m := r.Model
 	listed := map[api.LeadID]bool{}
 	for _, row := range m.Exports[lane] {
 		listed[v.live(row.LeadID)] = true
 	}
-	now := r.Now()
 	for _, ref := range r.Input.Leads { // sorted by lead id
 		if *budget <= 0 {
 			break
@@ -144,7 +146,7 @@ func addListed(r *Run, v *view, lane string, budget *int) error {
 
 // refreshListed recomputes status and do_not_contact on every row of one
 // export table and puts the rows that changed.
-func refreshListed(r *Run, v *view, lane string) error {
+func refreshListed(r *Run, v *view, lane string, now time.Time) error {
 	m := r.Model
 	rows := m.Exports[lane]
 	keys := make([]model.Key, 0, len(rows))
@@ -167,7 +169,6 @@ func refreshListed(r *Run, v *view, lane string) error {
 		}
 	}
 
-	now := r.Now()
 	for _, k := range keys {
 		row := rows[k]
 		live := v.live(row.LeadID)
