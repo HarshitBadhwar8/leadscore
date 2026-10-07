@@ -113,7 +113,13 @@ var (
 // pointing a block at a fake writes that block's base_url in its own YAML.
 // The dry-run report goes to stdout.
 func RunWith(ctx context.Context, opts api.RunOptions, hooks Hooks, now func() time.Time, client *http.Client) (api.RunResult, error) {
-	return execute(ctx, opts, settings{hooks: hooks, now: now, client: client, out: os.Stdout, getenv: os.Getenv})
+	return RunWithOutput(ctx, opts, hooks, now, client, os.Stdout)
+}
+
+// RunWithOutput is RunWith writing the run's summary line (and a dry run's
+// report) to out instead of standard output, so a test can log or drop it.
+func RunWithOutput(ctx context.Context, opts api.RunOptions, hooks Hooks, now func() time.Time, client *http.Client, out io.Writer) (api.RunResult, error) {
+	return execute(ctx, opts, settings{hooks: hooks, now: now, client: client, out: out, getenv: os.Getenv})
 }
 
 // RunTo is one production run with DefaultHooks, writing its summary line
