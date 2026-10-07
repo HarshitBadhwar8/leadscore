@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"context"
 	"encoding/csv"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +14,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/events"
 	"github.com/HarshitBadhwar8/leadscore/internal/merge"
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
+	"github.com/HarshitBadhwar8/leadscore/internal/rules"
 	"github.com/HarshitBadhwar8/leadscore/internal/store/codec"
 )
 
@@ -367,7 +370,8 @@ func TestExportUnscoredRunNeverReopens(t *testing.T) {
 }
 
 // The CSV is rewritten once phase 2 committed even when the Ranked write
-// after it fails, so a list never lags an opt-out phase 2 saved.
+// after it fails, so a list never lags an opt-out phase 2 saved; the rest of
+// AfterSave (deleting processed events) does not run.
 func TestExportCSVAfterRankedFailure(t *testing.T) {
 	csvStores["flaky"] = true
 	t.Cleanup(func() { delete(csvStores, "flaky") })
@@ -386,8 +390,14 @@ func TestExportCSVAfterRankedFailure(t *testing.T) {
 	flaky.failRanked = 2
 	flaky.Unlock()
 	t.Cleanup(func() { flaky.Lock(); flaky.failRanked = 0; flaky.Unlock() })
-	if _, out, err := in.run(DefaultHooks()); err == nil {
+	hooks := DefaultHooks()
+	afterSave := false
+	hooks.AfterSave = func(*Run) error { afterSave = true; return nil }
+	if _, out, err := in.run(hooks); err == nil {
 		t.Fatalf("the Ranked write should fail the run: %s", out)
+	}
+	if afterSave {
+		t.Error("a failed Ranked write ran the whole AfterSave (deleting processed events), not only the CSV writer")
 	}
 	f, err := os.Open(filepath.Join(in.dir, "out", "list.csv"))
 	if err != nil {
@@ -465,4 +475,340 @@ func TestExportDoNotContactReasons(t *testing.T) {
 			t.Errorf("%s: do_not_contact %q, reason %q", e, v, want[e])
 		}
 	}
+}
+
+// exportInstall is an install with the export rubric, a CSV source holding
+// the given lead lines (Email,Name,Title,Domain) and extra config lines.
+func exportInstall(t *testing.T, store, extra string, leads ...string) *install {
+	t.Helper()
+	in := newInstall(t, "store: { type: "+store+", path: leadscore.db }\nsources:\n  - { id: leads, type: csv, path: leads.csv }\n"+extra, exportRubric(false))
+	in.write("leads.csv", csvText(append([]string{"Email,Name,Title,Domain"}, leads...)...))
+	return in
+}
+
+func (in *install) mustRun(hooks Hooks, mod ...func(*api.RunOptions, *settings)) api.RunResult {
+	in.t.Helper()
+	res, out, err := in.run(hooks, mod...)
+	if err != nil {
+		in.t.Fatalf("run: %v\n%s", err, out)
+	}
+	return res
+}
+
+func (in *install) dnc(lane string) map[string]string {
+	out := map[string]string{}
+	for _, r := range in.rows(model.ExportTable(lane)) {
+		out[r["email"]] = r["do_not_contact"]
+	}
+	return out
+}
+
+func (in *install) override(person, action, value string) {
+	in.t.Helper()
+	s := in.store()
+	m := mustLoad(in.t, s)
+	m.Put(model.TableOverrides, model.Override{Person: person, Action: action, Value: value})
+	if err := s.Commit(in.t.Context(), codec.Encode(m)); err != nil {
+		in.t.Fatal(err)
+	}
+}
+
+// A manual opt-out in Overrides reaches the list even in a run that did not
+// score: one stopped before the status fold, and one whose phase 1 was too
+// large twice (so the fold's work was discarded).
+func TestExportManualOptOutInUnscoredRuns(t *testing.T) {
+	t.Run("stopped before the fold", func(t *testing.T) {
+		in := exportInstall(t, "sqlite", "", "ana@acme.example,Ana A,Head of Ops,acme.example", "bo@beta.example,Bo B,Clerk,beta.example")
+		in.mustRun(DefaultHooks())
+		in.override("ana@acme.example", "status", "unsubscribed")
+		stop := make(chan struct{})
+		hooks := DefaultHooks()
+		hooks.Enrich = func(r *Run) error { close(stop); <-r.PushCtx.Done(); return nil }
+		res := in.mustRun(hooks, func(o *api.RunOptions, _ *settings) { o.Stop = stop })
+		if !hasKey(res.Problems, "run_stopped") {
+			t.Fatalf("problems %v", res.Problems)
+		}
+		for _, r := range in.rows(model.TableOutcomes) {
+			if r["status"] == statusUnsubscribed {
+				t.Fatal("the fold ran; the test needs a run stopped before it")
+			}
+		}
+		if got := in.dnc("list"); got["ana@acme.example"] != "yes" || got["bo@beta.example"] != "no" {
+			t.Errorf("do_not_contact %v", got)
+		}
+		recs := readInstallCSV(t, in, "list")
+		for _, r := range recs[1:] {
+			if r[1] == "ana@acme.example" && r[9] != "yes" {
+				t.Errorf("CSV row %v", r)
+			}
+		}
+	})
+	t.Run("phase 1 too large twice", func(t *testing.T) {
+		in := exportInstall(t, "flaky", "", "ana@acme.example,Ana A,Head of Ops,acme.example", "bo@beta.example,Bo B,Clerk,beta.example")
+		in.mustRun(DefaultHooks())
+		in.override("bo@beta.example", "status", "replied_negative")
+		in.write("leads.csv", csvText("Email,Name,Title,Domain", "ana@acme.example,Ana A,Head of Ops,acme.example",
+			"bo@beta.example,Bo B,Clerk,beta.example", "cy@gamma.example,Cy C,Clerk,gamma.example"))
+		flaky.Lock()
+		flaky.tooLarge = 2
+		flaky.Unlock()
+		t.Cleanup(func() { flaky.Lock(); flaky.tooLarge = 0; flaky.Unlock() })
+		res := in.mustRun(DefaultHooks())
+		if !hasKey(res.Problems, "commit_too_large") {
+			t.Fatalf("problems %v", res.Problems)
+		}
+		if got := in.dnc("list"); got["bo@beta.example"] != "yes" || got["ana@acme.example"] != "no" || len(got) != 2 {
+			t.Errorf("do_not_contact %v", got)
+		}
+	})
+}
+
+// New rows are capped at ingest_chunk_rows per lane per run (the rest come
+// in later runs), while refreshes of listed rows are always written.
+func TestExportNewRowsCapped(t *testing.T) {
+	in := exportInstall(t, "sqlite", "", "a@a.example,A A,Head,a.example", "b@b.example,B B,Head,b.example",
+		"c@c.example,C C,Clerk,c.example", "d@d.example,D D,Clerk,d.example", "e@e.example,E E,Clerk,e.example")
+	in.write("rubric.yml", strings.Replace(exportRubric(false), "lte: 2", "eq: 1", 1))
+	in.mustRun(DefaultHooks())
+	if got := in.dnc("list"); len(got) != 2 {
+		t.Fatalf("listed %v, want the two heads", got)
+	}
+	// The lane widens to every lead with a chunk of 2.
+	in.config("sources:\n  - { id: leads, type: csv, path: leads.csv }\ningest_chunk_rows: 2\n")
+	in.write("rubric.yml", exportRubric(false))
+	in.override("a@a.example", "status", "unsubscribed")
+	in.mustRun(DefaultHooks())
+	got := in.dnc("list")
+	if len(got) != 4 || got["a@a.example"] != "yes" {
+		t.Fatalf("after one capped run: %v (2 listed before + 2 new; a's refresh written)", got)
+	}
+	in.mustRun(DefaultHooks())
+	if got := in.dnc("list"); len(got) != 5 {
+		t.Errorf("the rest is listed next run: %v", got)
+	}
+}
+
+// Rows where only the "blocked on every lane" part of the rule holds: an
+// unresolved duplicate and a rubric conflict, each by its reason.
+func TestExportBlockedOnly(t *testing.T) {
+	capture := func(w *world) map[string]string {
+		got := map[string]string{}
+		hooks := DefaultHooks()
+		hooks.Export = func(r *Run) error {
+			err := exportHook(r)
+			v := r.view()
+			for _, row := range r.Model.Exports["list"] {
+				got[row.Email] = doNotContact(r, v, row.LeadID)
+			}
+			return err
+		}
+		if _, out, err := w.install.run(hooks); err != nil {
+			t.Fatal(err, out)
+		}
+		return got
+	}
+	t.Run("unresolved duplicate", func(t *testing.T) {
+		w := exportWorld(t, false, "ana@acme.example,Ana A,Head of Ops,acme.example", "bo@beta.example,Bo B,Clerk,beta.example")
+		w.mustRun()
+		w.leads("ana@acme.example,Ana A,Head of Ops,acme.example", "bo@beta.example,Bo B,Clerk,beta.example",
+			"ana.two@acme.example,Ana A,Clerk,acme.example")
+		got := capture(w)
+		if !strings.Contains(got["ana@acme.example"], "unresolved duplicate") || got["bo@beta.example"] != "" {
+			t.Errorf("reasons %v", got)
+		}
+		wantDNC(t, w, "list", map[string]string{"ana@acme.example": "yes", "bo@beta.example": "no"})
+	})
+	t.Run("rubric conflict", func(t *testing.T) {
+		w := exportWorld(t, false, "ana@acme.example,Ana A,Head of Ops,acme.example", "bo@beta.example,Bo B,Clerk,beta.example")
+		w.mustRun()
+		w.write("rubric.yml", exportRubric(false)+"conflicts:\n  - { field: title }\n")
+		ana := w.id("ana@acme.example")
+		w.edit(func(m *model.Model) {
+			p := m.People[model.Key(ana)]
+			p.Conflicts = map[string][]model.Conflict{"title": {{Value: "CFO", SourceID: "other"}}}
+			m.Put(model.TablePeople, p)
+		})
+		got := capture(w)
+		if !strings.HasPrefix(got["ana@acme.example"], "a rubric conflict") || got["bo@beta.example"] != "" {
+			t.Errorf("reasons %v", got)
+		}
+		wantDNC(t, w, "list", map[string]string{"ana@acme.example": "yes", "bo@beta.example": "no"})
+	})
+}
+
+// A run whose Detect (or Enrich) failed lists nobody new and never turns a
+// row back to no; the next full run does.
+func TestExportDegradedRunNeverReopens(t *testing.T) {
+	in := exportInstall(t, "sqlite", "", "ana@acme.example,Ana A,Head of Ops,acme.example")
+	in.mustRun(DefaultHooks())
+	s := in.store()
+	row := in.rows(model.ExportTable("list"))[0]
+	row["do_not_contact"] = "yes"
+	if err := s.Commit(t.Context(), []api.TableWrite{{Table: model.ExportTable("list"), Op: api.OpUpsert, Key: []string{"lead_id"}, Rows: []api.Row{row}}}); err != nil {
+		t.Fatal(err)
+	}
+	in.write("leads.csv", csvText("Email,Name,Title,Domain", "ana@acme.example,Ana A,Head of Ops,acme.example", "bo@beta.example,Bo B,Clerk,beta.example"))
+	hooks := DefaultHooks()
+	hooks.Detect = func(*Run) (rules.DetectorResults, error) { return rules.DetectorResults{}, errors.New("detector down") }
+	in.run(hooks)
+	if got := in.dnc("list"); len(got) != 1 || got["ana@acme.example"] != "yes" {
+		t.Fatalf("a run with a failed Detect listed or reopened: %v", got)
+	}
+	in.mustRun(DefaultHooks())
+	if got := in.dnc("list"); len(got) != 2 || got["ana@acme.example"] != "no" {
+		t.Errorf("the next full run judges again: %v", got)
+	}
+}
+
+// The CSV rewrite reads the tables under its own timeout, so it works even
+// once the run's context is cancelled (a hard stop during the Ranked write).
+func TestExportCSVAfterRunContextCancelled(t *testing.T) {
+	in := exportInstall(t, "sqlite", "", "ana@acme.example,Ana A,Head of Ops,acme.example")
+	var cerr error
+	hooks := DefaultHooks()
+	hooks.AfterSave = func(r *Run) error {
+		ctx, cancel := context.WithCancel(r.Ctx)
+		cancel()
+		rr := *r
+		rr.Ctx = ctx
+		cerr = writeExportCSVs(&rr)
+		return cerr
+	}
+	in.mustRun(hooks)
+	if cerr != nil {
+		t.Fatal(cerr)
+	}
+	if recs := readInstallCSV(t, in, "list"); len(recs) != 2 {
+		t.Errorf("CSV %v", recs)
+	}
+}
+
+// Lane ids read from State are filtered through the lane id rule before
+// they name a file, and a rubric lane matching a recorded lane only by case
+// gets no file of its own.
+func TestExportLaneIDsForFiles(t *testing.T) {
+	m := model.New()
+	m.SetState(model.ExportLaneKey+"../evil", "yes")
+	m.SetState(model.ExportLaneKey+"List", "yes")
+	m.SetState(model.ExportLaneKey+"", "yes")
+	if got := exportLanes(m); strings.Join(got, ",") != "List" {
+		t.Errorf("exportLanes %v", got)
+	}
+	rub, err := rules.Compile([]byte(exportRubric(false)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := csvLanes(&Run{Model: m, Rubric: rub}); strings.Join(got, ",") != "List" {
+		t.Errorf("csvLanes %v: the rubric's `list` would overwrite List.csv on a case-insensitive disk", got)
+	}
+}
+
+// Stale temporary files are removed; an export.dir others can read raises a
+// warning.
+func TestExportDirHousekeeping(t *testing.T) {
+	in := exportInstall(t, "sqlite", "", "ana@acme.example,Ana A,Head of Ops,acme.example")
+	dir := filepath.Join(in.dir, "out")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o755); err != nil { // past the umask
+		t.Fatal(err)
+	}
+	stale := filepath.Join(dir, ".list.csv.123.tmp")
+	if err := os.WriteFile(stale, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res := in.mustRun(DefaultHooks())
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Error("a stale temporary file was left")
+	}
+	if !hasKey(res.Problems, exportDirProblem) || !res.Healthy {
+		t.Errorf("want the %s warning on a healthy run: %+v", exportDirProblem, res)
+	}
+	if v := in.health()["problem:"+exportDirProblem]; !strings.HasPrefix(v, "warning: ") {
+		t.Errorf("Health %q", v)
+	}
+	os.Chmod(dir, 0o700)
+	if res := in.mustRun(DefaultHooks()); hasKey(res.Problems, exportDirProblem) {
+		t.Error("the warning stays after chmod 700")
+	}
+}
+
+// Export runs during an ingest backlog (pushing waits, listing does not).
+func TestExportDuringBacklog(t *testing.T) {
+	in := exportInstall(t, "sqlite", "ingest_chunk_rows: 1\n", "ana@acme.example,Ana A,Head of Ops,acme.example", "bo@beta.example,Bo B,Clerk,beta.example")
+	in.mustRun(DefaultHooks())
+	if got := in.dnc("list"); len(got) != 1 {
+		t.Fatalf("listed %v during the backlog", got)
+	}
+	in.mustRun(DefaultHooks())
+	if got := in.dnc("list"); len(got) != 2 {
+		t.Errorf("listed %v", got)
+	}
+}
+
+// A lane nobody matches still gets a header-only CSV.
+func TestExportHeaderOnlyCSV(t *testing.T) {
+	in := exportInstall(t, "sqlite", "", "bo@beta.example,Bo B,Clerk,beta.example")
+	in.write("rubric.yml", strings.Replace(exportRubric(false), "lte: 2", "eq: 1", 1))
+	in.mustRun(DefaultHooks())
+	if recs := readInstallCSV(t, in, "list"); len(recs) != 1 || strings.Join(recs[0], ",") != exportHeader {
+		t.Errorf("CSV %v", recs)
+	}
+}
+
+// A CSV write that fails keeps the old file and removes its temporary file.
+func TestExportFailedCSVWriteKeepsOldFile(t *testing.T) {
+	in := exportInstall(t, "sqlite", "", "ana@acme.example,Ana A,Head of Ops,acme.example")
+	in.mustRun(DefaultHooks())
+	path := filepath.Join(in.dir, "out", "list.csv")
+	before, _ := os.ReadFile(path)
+	in.override("ana@acme.example", "status", "unsubscribed")
+	renameFile = func(string, string) error { return errors.New("disk full") }
+	t.Cleanup(func() { renameFile = os.Rename })
+	res, _, _ := in.run(DefaultHooks())
+	if !hasKey(res.Problems, "step_failed:aftersave") {
+		t.Errorf("problems %v", res.Problems)
+	}
+	if after, _ := os.ReadFile(path); string(after) != string(before) {
+		t.Error("the old CSV was changed by a failed write")
+	}
+	entries, _ := os.ReadDir(filepath.Join(in.dir, "out"))
+	if len(entries) != 1 {
+		t.Errorf("out holds %d files, want only list.csv", len(entries))
+	}
+}
+
+// csvsafe guards every column: a reasons cell starting with "+" is quoted.
+func TestExportCSVReasonsCellIsSafe(t *testing.T) {
+	in := exportInstall(t, "sqlite", "", "ana@acme.example,Ana A,Head of Ops,acme.example")
+	in.write("rubric.yml", `version: 1
+score:
+  contact:
+    - { when: { field: title, contains: head }, points: 5 }
+lanes:
+  - { id: list, kind: export, when: { field: title, contains: head }, push: "export:list" }
+`)
+	in.mustRun(DefaultHooks())
+	recs := readInstallCSV(t, in, "list")
+	if len(recs) != 2 || recs[1][6] != "'+5 contact: title contains head" {
+		t.Errorf("reasons cell %q", recs[1][6])
+	}
+	if got := in.rows(model.ExportTable("list"))[0]["reasons"]; got != "+5 contact: title contains head" {
+		t.Errorf("the table keeps the text as is: %q", got)
+	}
+}
+
+func readInstallCSV(t *testing.T, in *install, lane string) [][]string {
+	t.Helper()
+	f, err := os.Open(filepath.Join(in.dir, "out", lane+".csv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	recs, err := csv.NewReader(f).ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return recs
 }

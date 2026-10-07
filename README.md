@@ -94,6 +94,10 @@ at a company with an open deal, already contacted, or headed for a cold lane.
 Opt-outs reach the list from the receiver, polling and Overrides; the vendor
 opt-out lookups run only for leads about to be pushed.
 
+A cold lane claims its leads even before its sink is set up: anyone it matches
+is `do_not_contact`. So a CSV-only team removes the cold lanes from its rubric
+and lists leads only through export lanes.
+
 Without `--config`, commands read `/config/bundle.yaml`, else
 `/config/leadscore.yml`, else `./leadscore.yml`.
 

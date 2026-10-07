@@ -49,6 +49,7 @@ type exec struct {
 	backlog      int      // input rows left for later runs
 	cursors      []cursorSet
 	scored       bool
+	degraded     bool // Enrich or Detect failed: the lanes were judged on partial inputs
 	phase1Failed bool
 	cutShort     bool // the deadline or Stop came before the run finished its steps
 	oldRanked    map[model.Key]model.RankedRow
@@ -269,7 +270,7 @@ func (x *exec) main() error {
 	if !x.phase1Failed {
 		x.push()
 	}
-	r.scored = x.scored
+	r.judged = x.scored && !x.degraded
 	if x.s.hooks.Export != nil {
 		if err := x.s.hooks.Export(r); err != nil {
 			x.hookFailed("export", err)
@@ -288,20 +289,25 @@ func (x *exec) main() error {
 	if err := x.commit("phase 2", codec.Encode(r.Model, phase2Tables(r.Model)...), false); err != nil {
 		return err
 	}
-	// AfterSave runs once phase 2 is committed, even when the Ranked write
-	// then fails: the export CSVs must show the opt-outs phase 2 saved.
-	var rankedErr error
 	if x.scored {
 		if err := x.writeRanked(); err != nil {
-			rankedErr = fmt.Errorf("writing Ranked: %w", err)
+			// The run fails, but phase 2 is committed: the export CSVs
+			// (and only they) are still rewritten, so a list never lags an
+			// opt-out phase 2 saved.
+			if x.s.hooks.Export != nil && !x.lost {
+				if cerr := writeExportCSVs(r); cerr != nil {
+					x.problem("step_failed:aftersave", "the step after saving failed: "+cerr.Error(), "see the message; the next run tries again", false)
+				}
+			}
+			return fmt.Errorf("writing Ranked: %w", err)
 		}
 	}
-	if x.s.hooks.AfterSave != nil && !x.lost {
+	if x.s.hooks.AfterSave != nil {
 		if err := x.s.hooks.AfterSave(r); err != nil {
 			x.lateProblem("step_failed:aftersave", "the step after saving failed: "+err.Error(), "see the message; the next run tries again")
 		}
 	}
-	return rankedErr
+	return nil
 }
 
 // Phase 1 tables (contracts section 12.6): with the keys and cursors, every
@@ -375,6 +381,7 @@ func (x *exec) beforePhase1(chunk int) error {
 	if h := x.s.hooks.Enrich; h != nil && !r.DryRun {
 		if err := h(r); err != nil {
 			x.hookFailed("enrich", err)
+			x.degraded = true
 		}
 	}
 	if x.cut("during enrichment") {
@@ -412,6 +419,7 @@ func (x *exec) beforePhase1(chunk int) error {
 		d, err := h(r)
 		if err != nil {
 			x.hookFailed("detect", err)
+			x.degraded = true
 		} else {
 			det = d
 		}
@@ -433,7 +441,7 @@ func (x *exec) resetAttempt() {
 	r.Input, r.Result = rules.Input{}, rules.Result{}
 	r.lv, r.pushing = nil, nil
 	x.columns, x.merged, x.backlog, x.cursors = nil, 0, 0, nil
-	x.scored, x.cutShort = false, false
+	x.scored, x.cutShort, x.degraded = false, false, false
 	x.oldRanked, x.tierLogs = nil, nil
 }
 
