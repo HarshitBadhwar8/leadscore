@@ -61,7 +61,7 @@ func TestPragmas(t *testing.T) {
 	}
 }
 
-// The RFC's unique keys and indexes, created with the tables.
+// The store's unique keys and indexes, created with the tables.
 func TestKeysAndIndexes(t *testing.T) {
 	s := open(t)
 	ctx := context.Background()
@@ -267,10 +267,10 @@ func TestRefusedNames(t *testing.T) {
 	}
 }
 
-// Lane ids hold letters, digits, "-" and "_" and are unique ignoring case
-// (section 2; the model refuses the rest). Over such ids TableName is one to
-// one: two lanes share a SQLite table exactly when they match ignoring case,
-// which the model refuses.
+// Lane ids hold letters, digits, "-" and "_" and are unique ignoring case (the
+// rubric's lane-id rule; the model refuses the rest). Over such ids TableName
+// is one to one: two lanes share a SQLite table exactly when they match
+// ignoring case, which the model refuses.
 func TestTableNameOneToOne(t *testing.T) {
 	lanes := []string{"a-b", "a_b", "ab", "a__b", "a--b", "a-_b", "a_-b", "facts", "applied", "Warm", "warm",
 		"my_lane", "my-lane", "A1", "a1", "rows", "x"}

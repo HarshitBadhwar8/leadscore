@@ -15,15 +15,16 @@ import (
 )
 
 // enrichCountPrefix is the State key counting a UTC day's enrichment calls:
-// enrich_count:<YYYY-MM-DD> (contracts section 4). Only today's key is kept.
+// enrich_count:<YYYY-MM-DD> (the State table). Only today's key is kept.
 const enrichCountPrefix = "enrich_count:"
 
-// Fixed values (contracts section 11). Variables so tests can change them.
+// Fixed values (the engine defaults). Variables so tests can change them.
 var (
 	// enrichFailWait is how long a domain whose lookup failed waits before it
 	// is tried again, so a domain that always fails cannot take the budget.
 	enrichFailWait = 24 * time.Hour
-	// enrichMaxFailuresInARow stops the run's enrichment (contracts section 1).
+	// enrichMaxFailuresInARow stops the run's enrichment (the Enricher
+	// contract).
 	enrichMaxFailuresInARow = 3
 )
 
@@ -56,17 +57,17 @@ type enrichMemo struct {
 	logs     []model.LogEntry
 }
 
-// enrichHook is the Enrich hook (step 4, RFC 6.8). It looks up the domains
+// enrichHook is the Enrich hook (step 4, enrichment). It looks up the domains
 // that are due, within the per-run and per-day budgets, and writes the facts
 // with origin `enrichment`. The engine skips it on a dry run.
 //
-// Every call made counts toward both budgets, whatever came back (contracts
-// section 6), and the day's count goes to phase 1 with the facts it paid for.
-// A rate limit stops enrichment for the run and keeps what came back before
-// it; it is not a failure. A lookup that fails stamps enrich_failed_at, so
-// that domain waits a day; three failures in a row stop the run's
-// enrichment; either raises the warning enrich_failed. Any error from the
-// enricher keeps the facts so far and fails the step.
+// Every call made counts toward both budgets, whatever came back (the vendor
+// rules), and the day's count goes to phase 1 with the facts it paid for. A
+// rate limit stops enrichment for the run and keeps what came back before it;
+// it is not a failure. A lookup that fails stamps enrich_failed_at, so that
+// domain waits a day; three failures in a row stop the run's enrichment; either
+// raises the warning enrich_failed. Any error from the enricher keeps the facts
+// so far and fails the step.
 //
 // The enricher is asked about one domain per call, so the count is exact for
 // any enricher, and a deadline or Stop between two calls stops new calls.
@@ -317,7 +318,7 @@ func writeFailed(m *model.Model, domain string, at time.Time) {
 	m.Put(model.TableCompanyFacts, cf)
 }
 
-// writeFacts records one answer in Company facts (contracts section 4). A
+// writeFacts records one answer in Company facts (the store tables). A
 // not-found sets not_found_at and leaves the facts alone. Found facts are
 // written with origin enrichment, never over a companies_tab fact:
 //   - a field the vendor left out (empty) keeps the stored fact;

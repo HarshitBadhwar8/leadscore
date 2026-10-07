@@ -18,7 +18,7 @@ import (
 // so a base_url in a real file is refused.
 var testHubSpotClient *http.Client
 
-// runSetupHubSpot is `leadscore setup hubspot` (RFC 6.11): it creates the
+// runSetupHubSpot is `leadscore setup hubspot`: it creates the
 // custom properties and their group, and resolves sinks.hubspot.pipeline and
 // stage by name. It reads HUBSPOT_TOKEN and is safe to run again.
 func runSetupHubSpot(inv *invocation) int {

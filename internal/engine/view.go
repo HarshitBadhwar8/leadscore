@@ -12,8 +12,7 @@ import (
 )
 
 // viewProblem is the Health problem a failed view write raises. It is a
-// warning: the view is a convenience, so the run stays healthy (contracts
-// section 9.2).
+// warning: the view is a convenience, so the run stays healthy.
 const viewProblem = "view_write_failed"
 
 // afterSaveProblems are problems only an AfterSave step raises. Phase 2's
@@ -30,7 +29,7 @@ var (
 	viewChunkRows = 5000
 )
 
-// writeView is S16's AfterSave step (contracts section 9.2): on a SQLite
+// writeView is the Sheet view's AfterSave step (Docker setup): on a SQLite
 // store with store.view_spreadsheet set, it copies the committed Ranked,
 // every export table and Health into the read-only Sheet view, straight
 // through the Sheets API, with no lease and no schema version. Each tab is

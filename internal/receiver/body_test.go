@@ -411,7 +411,7 @@ func TestALongCutListNeverDropsParserFields(t *testing.T) {
 	}
 }
 
-// The read limit is 1 MB (contracts section 5.4).
+// The read limit is 1 MB.
 func TestTheReadLimitIsOneMB(t *testing.T) {
 	if maxRequestBytes != 1<<20 {
 		t.Errorf("maxRequestBytes = %d, want 1 MB", maxRequestBytes)

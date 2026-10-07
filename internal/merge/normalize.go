@@ -1,7 +1,7 @@
 // Package merge turns input rows from many sources into one person per human
-// (RFC 6.5, contracts section 12.5). It owns header aliasing, the per-row id
-// and hash, the identity rules (which rows become one lead), the event-key
-// normalizer, `same_as` merges, and reading the Overrides tab.
+// (merge owns persons, aliases and row ids). It owns header aliasing, the
+// per-row id and hash, the identity rules (which rows become one lead), the
+// event-key normalizer, `same_as` merges, and reading the Overrides tab.
 //
 // A wrong merge transfers one person's opt-out to a stranger, so every rule
 // here errs towards keeping two people apart: a duplicate is recoverable (a
@@ -37,7 +37,7 @@ const (
 // Normalized is one input row with its headers resolved to field names.
 type Normalized struct {
 	SourceID string
-	// RowID is the row's identity within its source (RFC 6.5): the lowercased
+	// RowID is the row's identity within its source: the lowercased
 	// email, else the canonical LinkedIn URL, else the company domain and the
 	// normalized full name. For source `receiver` it is the contact id first.
 	// A rejected row with no key at all gets "row:" plus its hash.
@@ -185,7 +185,7 @@ func headersOf(row api.InputRow) []string {
 }
 
 // AliasTable is the built-in alias table with the rubric's aliases laid
-// over it: squashed header to field name (contracts section 2).
+// over it: squashed header to field name.
 func AliasTable(rubric map[string]string) map[string]string {
 	t := api.BuiltinAliases()
 	for k, v := range rubric {
@@ -313,7 +313,7 @@ func NormalizeName(raw string) string {
 	return strings.Join(strings.Fields(strings.ToLower(norm.NFC.String(raw))), " ")
 }
 
-// NormalizeEventKeys is the one normalizer for event keys (contracts 12.5):
+// NormalizeEventKeys is the one normalizer for event keys:
 // sources pass keys trimmed only. The run's intake applies it once to every
 // event before keying, resolving persons, or writing windows and companies,
 // so nothing downstream reads a raw key.

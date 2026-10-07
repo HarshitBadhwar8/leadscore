@@ -14,7 +14,7 @@ func init() {
 }
 
 // CellCap is Google Sheets' cell limit per spreadsheet; the `sheets` check
-// warns past CellWarnShare of it (contracts section 11).
+// warns past CellWarnShare of it.
 const (
 	CellCap       = 10_000_000
 	CellWarnShare = 0.70
@@ -50,7 +50,7 @@ func sheetTargetOf(ctx context.Context, env Env) (t sheetTarget, ok bool, err er
 	return t, true, err
 }
 
-// sheetAccess is the `sheet-access` check (contracts section 10): this
+// sheetAccess is the `sheet-access` check: this
 // account must open the spreadsheet, and on Google Cloud both service
 // accounts must be among its editors.
 type sheetAccess struct{}
@@ -72,7 +72,7 @@ func (sheetAccess) Run(ctx context.Context, env Env) []Problem {
 			Message: fmt.Sprintf("this account cannot open the spreadsheet %s: %v", t.id, err), Fix: fix}
 		if t.view {
 			// The view is a convenience: a run that cannot reach it stays
-			// healthy (contracts section 9.2); doctor still fails it.
+			// healthy; doctor still fails it.
 			p.Warning = !env.Doctor
 			p.Fix += "; if the view was deleted, remove store.view_spreadsheet and run `leadscore setup sheet --view` again"
 		}
@@ -100,7 +100,7 @@ func (sheetAccess) Run(ctx context.Context, env Env) []Problem {
 	return out
 }
 
-// sheetsSettings is the `sheets` check (contracts section 10): the
+// sheetsSettings is the `sheets` check: the
 // spreadsheet recalculates hourly on UTC, so the Health staleness formula
 // moves on its own, and its cell use stays under 70% of the cap.
 type sheetsSettings struct{}
@@ -119,7 +119,7 @@ func (sheetsSettings) Run(ctx context.Context, env Env) []Problem {
 	}
 	repair := "leadscore setup sheet --repair"
 	// On the SQLite view a wrong setting only misleads its Health!H1: a
-	// warning in a run, which stays healthy (contracts section 9.2).
+	// warning in a run, which stays healthy.
 	viewWarn := t.view && !env.Doctor
 	var out []Problem
 	if info.AutoRecalc != sheets.AutoRecalc {

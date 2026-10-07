@@ -1,6 +1,6 @@
 package leadscore_test
 
-// The S15 proof through the public entry point: an unsubscribe the receiver
+// Outcomes, end to end through the public entry point: an unsubscribe the receiver
 // stores while leadscore.Run is pushing blocks its lead in the next batch,
 // with the production hooks (the default re-read before each batch).
 

@@ -1,5 +1,5 @@
-// Package check is the framework for doctor checks (contracts section 12.4).
-// Each check registers itself under its section 10 name; `doctor` runs them
+// Package check is the framework for doctor checks.
+// Each check registers itself under its doctor check name; `doctor` runs them
 // all, and every run also runs the ones marked InRun.
 package check
 
@@ -16,7 +16,7 @@ import (
 )
 
 type Check interface {
-	Name() string // unique; the section 10 names
+	Name() string // unique; the doctor check names
 	InRun() bool  // also runs inside every run
 	Run(ctx context.Context, env Env) []Problem
 }
@@ -58,7 +58,7 @@ func (e Env) Clock() time.Time {
 // Problem is written to Health under Key as given, and cleared when a later run
 // of the same check stops returning it.
 type Problem struct {
-	Key, Message, Fix string // Key in the section 4 form <kind>:<id>
+	Key, Message, Fix string // Key in the problem-key form <kind>:<id>
 	Warning           bool
 }
 
@@ -69,7 +69,7 @@ var (
 )
 
 // Register adds a check. It panics on a nil check, an empty name, or a name
-// already registered: check names are unique (section 10).
+// already registered: check names are unique.
 func Register(c Check) {
 	if c == nil {
 		panic("check: Register(nil)")

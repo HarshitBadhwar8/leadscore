@@ -20,7 +20,7 @@ import (
 )
 
 // MaxCommitBytes is the largest encoded batchUpdate a commit sends; a bigger
-// one is ErrTooLarge (contracts section 4), under Sheets' 10 MB request cap.
+// one is ErrTooLarge, under Sheets' 10 MB request cap.
 var MaxCommitBytes = 9 << 20 // a variable so tests can reach Sheets' own limit
 
 // MaxCellChars is the most characters a Sheets cell holds.
@@ -496,7 +496,7 @@ func (wk *work) lookup(cols []string, r api.Row) []*wrow {
 
 // addColumns adds to the header every column a write names that the tab
 // lacks, sorted, after the last used column (never into an unnamed column
-// that holds stray data). A new tab gets its section 4 columns first
+// that holds stray data). A new tab gets its fixed columns first
 // (Ranked's derived columns after company_domain).
 func (wk *work) addColumns(names map[string]bool) {
 	if !wk.exists && len(wk.header) == 0 && wk.known {
@@ -619,7 +619,8 @@ func (wk *work) drop(cur *wrow) {
 }
 
 // appendRows adds new rows. With checkKeys, a key the tab already holds (or
-// that this commit already wrote) fails the commit (contracts section 1).
+// that this commit already wrote) fails the commit, as the Backend contract
+// says.
 func (wk *work) appendRows(rows []api.Row, checkKeys bool) error {
 	for _, r := range rows {
 		if wk.keyed() {

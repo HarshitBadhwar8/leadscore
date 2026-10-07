@@ -12,7 +12,7 @@ import (
 
 func init() { Register(apolloKey{getenv: os.Getenv}) }
 
-// apolloKey is the `apollo-key` check (contracts section 10). It signs in
+// apolloKey is the `apollo-key` check. It signs in
 // with Apollo's free auth-health call, never an enrichment call, so running
 // it every run spends no credits. A missing key is the secrets check's to
 // report; a block the client refuses is apollo-key:config, a key Apollo

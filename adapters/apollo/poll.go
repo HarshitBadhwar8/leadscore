@@ -12,11 +12,11 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 )
 
-// The reply Poller (contracts sections 1, 5.3 and 5.5; RFC 6.12): with
+// The reply Poller: with
 // `replies: polling`, the engine asks it for the replies to sequence emails
 // since a time it works out, and keys, de-duplicates and applies them itself.
 
-// KindPolledReply is the kind of a polled reply event (contracts section 5.3).
+// KindPolledReply is the kind of a polled reply event.
 const KindPolledReply = "reply"
 
 // Poller reads replied sequence emails from Apollo's email search.
@@ -35,13 +35,13 @@ func NewPoller(cfg api.Config) (api.Poller, error) {
 	return &Poller{c: c, now: time.Now}, nil
 }
 
-// Poll returns one `reply` event per replied email sent on or after since,
-// with the reply's label and the email's message id in Attrs, and the
-// contact id when Apollo gives one. It uses since as given: the window is the
-// engine's to choose (contracts section 3), and Apollo's date filter is by
-// day, so the poll starts at since's UTC day and may return a little more,
-// which the engine's keys de-duplicate. A label Apollo adds later is a new
-// event, since the key is the message id plus the label (events.Key).
+// Poll returns one `reply` event per replied email sent on or after since, with
+// the reply's label and the email's message id in Attrs, and the contact id
+// when Apollo gives one. It uses since as given: the window is the engine's to
+// choose, and Apollo's date filter is by day, so the poll starts at since's UTC
+// day and may return a little more, which the engine's keys de-duplicate. A
+// label Apollo adds later is a new event, since the key is the message id plus
+// the label (events.Key).
 //
 // Every page is read; any failure (a 429 included) fails the whole poll, so
 // the engine keeps last_poll_at and reads the same window next time.

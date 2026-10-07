@@ -1,4 +1,4 @@
-// Package cli is the leadscore command line (RFC 6.13). Every command takes
+// Package cli is the leadscore command line. Every command takes
 // --config and --rubric, before or after the command name. A command whose slice
 // has not landed prints "not built yet" and exits 2.
 package cli
@@ -44,7 +44,7 @@ type command struct {
 
 func (c *command) name() string { return strings.Join(c.path, " ") }
 
-// commands is RFC 6.13's table, in its order. A slice that builds a command
+// commands is the command table, in its design order. A slice that builds a command
 // replaces its `slice:` field with `run:` on its own line only; do not reorder
 // or reformat the table, so parallel slices touching it merge cleanly.
 var commands = []*command{

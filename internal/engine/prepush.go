@@ -21,7 +21,7 @@ type pushRun struct {
 	reasons  map[api.LeadID][]string
 }
 
-// prePushHook is the PrePush hook (step 8, contracts section 8). It makes the
+// prePushHook is the PrePush hook (step 8, the ledger rules). It makes the
 // provisional selection (every open push, plus new pushes within the limits
 // and a 10% margin), calls every configured Lookup for those leads when this
 // run may push, and sends the deal lookup one live lead per company with a
@@ -155,10 +155,10 @@ func lookupOne(ctx context.Context, typ string, block api.Config, leads []api.Le
 // dealCompanies picks, for the deal lookup, one live lead (the lowest id) at
 // each company with a stored open deal (in Outcomes, or a called deal step in
 // the ledger, even one that timed out) or a row in any Export table, unless a
-// candidate there is already being looked up (contracts section 8). A
+// candidate there is already being looked up (the ledger rules). A
 // closed-lost deal, or a company found with no open or won deal, then
-// releases the company even when no lead there is a candidate (RFC 6.9 step
-// 8).
+// releases the company even when no lead there is a candidate (step 8 of
+// the run).
 func dealCompanies(v *view, sent map[api.LeadID]bool) []api.LeadID {
 	domains := map[string]bool{}
 	for _, id := range v.idx.LiveLeads() {
@@ -211,7 +211,7 @@ func (v *view) leadRef(id api.LeadID) api.LeadRef {
 	return ref
 }
 
-// applyLookupEvents applies a lookup's events (contracts section 5.3: optout
+// applyLookupEvents applies a lookup's events (the event kinds optout
 // and deal_*), each to the lead it names, through events.Apply. Lookup events
 // are not de-duplicated: applying them is idempotent. An event with no time
 // takes the run's clock, so an opt-out is never stored at the zero time.
@@ -241,7 +241,7 @@ func applyLookupEvents(r *Run, typ string, evs []api.Event, failed map[api.LeadI
 			e.ReceivedAt = r.Now()
 		}
 		if e.At.IsZero() || strings.HasPrefix(e.Kind, "deal_") {
-			// deal_checked_at is the lookup time (contracts section 7): a
+			// deal_checked_at is the lookup time (the status rules): a
 			// release compares it with the deal step's called_at.
 			e.At = r.Now()
 		}

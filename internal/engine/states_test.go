@@ -13,8 +13,8 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/sinktest"
 )
 
-// C8 `pending, called` from a rate limit: no attempt counted, and the sink
-// stops for the run while other sinks go on.
+// Ledger state `pending, called` from a rate limit: no attempt counted, and the
+// sink stops for the run while other sinks go on.
 func TestRateLimitStopsTheSinkForTheRun(t *testing.T) {
 	w := newWorld(t,
 		"ana@acme.example,Ana A,Head of Ops,acme.example",
@@ -49,8 +49,8 @@ func TestRateLimitStopsTheSinkForTheRun(t *testing.T) {
 	}
 }
 
-// C8 `failed`: three counted attempts; the step then waits for a retry row,
-// which resets it once; the `pushes` check reports it meanwhile.
+// Ledger state `failed`: three counted attempts; the step then waits for a
+// retry row, which resets it once; the `pushes` check reports it meanwhile.
 func TestThreeFailuresThenRetry(t *testing.T) {
 	w := newWorld(t, "ana@acme.example,Ana A,Head of Ops,acme.example")
 	for i := 0; i < 3; i++ {
@@ -93,9 +93,9 @@ func TestThreeFailuresThenRetry(t *testing.T) {
 	}
 }
 
-// C8 `cancelled` by a refusal: the call went out, so the cancelled row's
-// called_at holds the cold push (a one-step push, so nothing else holds it);
-// it is logged, and does not make the run unhealthy.
+// Ledger state `cancelled` by a refusal: the call went out, so the cancelled
+// row's called_at holds the cold push (a one-step push, so nothing else holds
+// it); it is logged, and does not make the run unhealthy.
 func TestRefusalCancelsAndHolds(t *testing.T) {
 	w := newWorld(t, "bo@beta.example,Bo B,Clerk,beta.example")
 	w.fake.Fail("push", sinktest.Refused)
@@ -124,8 +124,8 @@ func TestRefusalCancelsAndHolds(t *testing.T) {
 	}
 }
 
-// C8 `cancelled` with neither called_at nor intent_run returns to pending
-// when the lead is selected for the lane again.
+// Ledger state `cancelled` with neither called_at nor intent_run returns to
+// pending when the lead is selected for the lane again.
 func TestNeverCalledCancelReselects(t *testing.T) {
 	w := newWorld(t, "ana@acme.example,Ana A,Head of Ops,acme.example")
 	w.pushesOff()
@@ -196,7 +196,7 @@ func TestMergedLeadIsNeverCalled(t *testing.T) {
 	}
 }
 
-// Deleted ledger rows block every push (contracts section 8): the run raises
+// Deleted ledger rows block every push (the ledger rules): the run raises
 // ledger_shrank, keeps ledger_rows, and pushes nothing until restored.
 func TestDeletedLedgerRowsBlockPushes(t *testing.T) {
 	w := newWorld(t,

@@ -45,7 +45,7 @@ type deps struct {
 }
 
 // Serve runs `leadscore serve` until ctx is done (SIGTERM), then shuts down
-// in the contracts section 5.1 order: stop the timer, close the running
+// in this order: stop the timer, close the running
 // run's Stop and keep storing events until it returns, drain the write
 // queue, and return.
 func Serve(ctx context.Context, o ServeOptions) error {
@@ -190,7 +190,7 @@ func secretSet(getenv func(string) string) bool {
 	return strings.TrimSpace(getenv(SecretVar)) != ""
 }
 
-// timer runs the loop on Docker (RFC 6.9): the first run when serve starts,
+// timer runs the loop on Docker: the first run when serve starts,
 // each next one `every` after the previous ended, so runs never overlap and
 // a missed tick is never queued.
 type timer struct {

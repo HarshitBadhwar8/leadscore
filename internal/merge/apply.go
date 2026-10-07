@@ -21,7 +21,7 @@ type ApplyCtx struct {
 	Aliases map[string]string
 }
 
-// Company fact origins (contracts section 4), highest first.
+// Company fact origins, highest first.
 const (
 	OriginCompaniesTab = "companies_tab"
 	OriginEnrichment   = "enrichment"
@@ -44,12 +44,12 @@ var inputFacts = map[string]string{
 	"company.region":        "region",
 }
 
-// Apply merges rows into the model, in order (RFC 6.5). Rows are applied by
+// Apply merges rows into the model, in order. Rows are applied by
 // row group (Group): every row of a source that shares a row id, as one unit
 // under one hash, so a group applied before and unchanged is skipped. Each row
 // of a changed group is matched to a lead, or makes a new one, and fills that
 // lead's empty fields. Apply then applies the Companies tab, the Overrides
-// `same_as` merges (contracts section 7), and marks every lead an
+// `same_as` merges, and marks every lead an
 // `apollo_held` source supplied.
 //
 // Matching, in order: the same source and row id; the row's email; with no
@@ -490,7 +490,7 @@ func (a *applier) companiesTab() {
 }
 
 // sameAs applies every Overrides `same_as` row whose two persons are known
-// and are not yet one lead (contracts section 7). Merges are permanent.
+// and are not yet one lead. Merges are permanent.
 func (a *applier) sameAs() {
 	for _, o := range ParseOverrides(a.m).Rows {
 		if o.Action != ActionSameAs || o.Lead == "" || o.Other == "" {
@@ -569,7 +569,7 @@ func (a *applier) mergeLeads(s, x model.Person) {
 }
 
 // apolloHeld marks every lead an apollo_held source supplied, including leads
-// from rows applied before the flag was switched on (RFC 6.5).
+// from rows applied before the flag was switched on.
 func (a *applier) apolloHeld() {
 	held := map[string]bool{}
 	for _, s := range a.c.Sources {

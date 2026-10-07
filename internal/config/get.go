@@ -67,7 +67,7 @@ func (c *Config) Get(key string) (string, error) {
 
 // SetHosting writes key=value pairs into the `hosting` block of the
 // leadscore.yml at path, keeping its comments, and leaves every other key as it
-// was. Only the section 3 hosting keys are accepted. The result must still load,
+// was. Only the documented hosting keys are accepted. The result must still load,
 // and the file is replaced atomically, so a failed write never leaves half a file.
 func SetHosting(path string, pairs []string) error {
 	if len(pairs) == 0 {

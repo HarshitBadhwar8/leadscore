@@ -45,7 +45,7 @@ var personalProviders = map[string]bool{
 // provider, so an address there names no company.
 func IsPersonalProvider(domain string) bool { return personalProviders[domain] }
 
-// DeriveCompanyDomain takes the domain part of a work email (RFC 6.4: the
+// DeriveCompanyDomain takes the domain part of a work email (the
 // company domain is derived from a work email when absent). It reports false
 // for a personal provider and for anything that is not a single well-formed
 // address: a false positive manufactures a junk company from a personal

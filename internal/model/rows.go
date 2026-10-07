@@ -10,12 +10,12 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 )
 
-// Row is one typed row of a section 4 table. Every table has its own type;
+// Row is one typed row of a store table. Every table has its own type;
 // Model.Put takes any of them. Known columns are typed fields; Extra holds the
 // columns this version does not know, so a write keeps them.
 type Row interface {
 	table() string   // the TableDef name this type belongs to
-	encode() api.Row // the stored form (contracts section 4 formats)
+	encode() api.Row // the stored form (the store's cell formats)
 }
 
 // Override is one `Overrides` row (people-owned; held as an ordered list).

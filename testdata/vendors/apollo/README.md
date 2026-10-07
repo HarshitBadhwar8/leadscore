@@ -1,7 +1,7 @@
 # Provisional Apollo fixtures
 
-These files are **provisional**. They are built from core's Apollo client
-tests and Apollo's public API docs, with made-up companies and example
+These files are **provisional**. They are built from earlier working code's
+Apollo client tests and Apollo's public API docs, with made-up companies and example
 domains, not from S0's real captures. Each file carries `"provisional": true`;
 a shape taken from the docs because a real reply cannot be had safely (the
 429) also carries `"documented": true`.
@@ -33,7 +33,7 @@ with no organization is not-found; a 404 is treated as a failure until S0 says
 otherwise).
 
 The outreach calls (everything after `organizations_enrich`) come from
-Apollo's public API docs only: core never enrolled or polled. Assumed and
+Apollo's public API docs only: the earlier code never enrolled or polled. Assumed and
 unseen: every path above, `run_dedupe` returning the existing contact,
 `contact_campaign_statuses` on a contact, the `skipped_contact_ids` shape and
 its reasons, whether adding a contact already in the sequence is a no-op, the

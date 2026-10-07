@@ -17,21 +17,21 @@ import (
 // liveSize is how much the live check saves.
 type liveSize struct{ leads, days, perDay int }
 
-// The RFC's 20,000-lead target and a year of events at 1,000 a day
-// (contracts section 4, "Sheets cell budget"), loaded within a minute.
+// The 20,000-lead target and a year of events at 1,000 a day (the Sheets
+// cell budget), loaded within a minute.
 var (
 	liveFull      = liveSize{leads: 20_000, days: 365, perDay: 1_000}
 	liveLoadLimit = time.Minute
 )
 
-// TestLiveSheets is S5's measurement proof (RFC 8.4, LEADSCORE_LIVE_SHEETS):
-// it creates a scratch spreadsheet in real Google Sheets, saves 20,000 leads
-// and a year of synthetic events, and checks a run's load of them takes
-// under a minute. It builds the spreadsheet from the setup template, checks
-// that text Sheets would otherwise reinterpret round-trips exactly, and that
-// Health!H1 reads "ok" after a fresh last_success_at. It signs in with Google's standard credentials, or
-// with the service-account key file LEADSCORE_LIVE_SHEETS names, and deletes
-// the spreadsheet at the end.
+// TestLiveSheets is the Sheets store's live measurement
+// (LEADSCORE_LIVE_SHEETS): it creates a scratch spreadsheet in real Google
+// Sheets, saves 20,000 leads and a year of synthetic events, and checks a run's
+// load of them takes under a minute. It builds the spreadsheet from the setup
+// template, checks that text Sheets would otherwise reinterpret round-trips
+// exactly, and that Health!H1 reads "ok" after a fresh last_success_at. It
+// signs in with Google's standard credentials, or with the service-account key
+// file LEADSCORE_LIVE_SHEETS names, and deletes the spreadsheet at the end.
 func TestLiveSheets(t *testing.T) {
 	v := os.Getenv("LEADSCORE_LIVE_SHEETS")
 	if v == "" {

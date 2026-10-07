@@ -11,8 +11,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 )
 
-// property is one custom property setup creates (contracts section 6,
-// "HubSpot properties").
+// property is one custom property setup creates.
 type property struct {
 	object, name, label string
 	number, unique      bool
@@ -76,7 +75,7 @@ func (p property) mismatch(e existing) string {
 	return ""
 }
 
-// Setup is `leadscore setup hubspot` (RFC 6.11): it creates the `leadscore`
+// Setup is `leadscore setup hubspot`: it creates the `leadscore`
 // property group and the custom properties on contacts and deals (keeping
 // any that already exist and fit), and resolves the configured pipeline and
 // stage by name. It is safe to run again. The private app needs the schema

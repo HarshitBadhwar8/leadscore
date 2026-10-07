@@ -11,7 +11,7 @@ func TestSquashHeader(t *testing.T) {
 		{"work_email", "workemail"},
 		{"WORK-EMAIL", "workemail"},
 		{"  E-mail  ", "email"},
-		{"Primary AI coding tool", "primaryaicodingtool"},
+		{"Favourite Editor", "favouriteeditor"},
 		{"Number of Employees (2024)", "numberofemployees2024"},
 		{"Ünïcode Fïeld", "ncodefeld"},
 		{"", ""},
@@ -24,7 +24,7 @@ func TestSquashHeader(t *testing.T) {
 	}
 }
 
-// The table must be exactly contracts section 2's: a missing spelling silently
+// The table must be exactly as documented: a missing spelling silently
 // loses a whole column of data, and an extra one can steal a column a rubric
 // meant to read under its own name.
 func TestBuiltinAliasesMatchContract(t *testing.T) {
@@ -62,15 +62,6 @@ func TestBuiltinAliasSpellingsAreSquashed(t *testing.T) {
 	for spelling := range BuiltinAliases() {
 		if SquashHeader(spelling) != spelling {
 			t.Errorf("spelling %q is not in squashed form; it could never match", spelling)
-		}
-	}
-}
-
-func TestBuiltinAliasesDropsCoreICPFields(t *testing.T) {
-	for spelling, field := range BuiltinAliases() {
-		switch field {
-		case "data_quality_note", "primary_ai_coding_tool", "visited_domain":
-			t.Errorf("core ICP alias %q -> %q must not ship", spelling, field)
 		}
 	}
 }

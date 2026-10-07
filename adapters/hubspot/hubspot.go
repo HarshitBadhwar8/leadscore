@@ -1,7 +1,7 @@
-// Package hubspot is the HubSpot adapter (RFC 6.11, 6.12; contracts section
-// 6): the `hubspot` sink, which finds or creates contacts and one deal per
-// company; the HubSpot Lookup, which reads opt-outs and each company's deals
-// before pushing; `leadscore setup hubspot`; and the `hubspot` check.
+// Package hubspot is the HubSpot adapter: the `hubspot` sink, which finds or
+// creates contacts and one deal per company; the HubSpot Lookup, which reads
+// opt-outs and each company's deals before pushing; `leadscore setup hubspot`;
+// and the `hubspot` check.
 //
 // Configured under sinks.hubspot in leadscore.yml:
 //
@@ -14,7 +14,7 @@
 // Request and answer shapes are provisional: they come from HubSpot's public
 // API documentation and earlier working code, not from recorded calls. Every
 // behaviour that rests on an answer still to be checked is marked
-// "S0 confirms" (RFC 10).
+// "S0 confirms".
 package hubspot
 
 import (
@@ -39,7 +39,7 @@ func init() {
 	check.Register(hubspotCheck{})
 }
 
-// callTimeout bounds every call (contracts section 11); a variable so a test
+// callTimeout bounds every call (a fixed default); a variable so a test
 // can shorten it.
 var callTimeout = 30 * time.Second
 
@@ -55,7 +55,7 @@ const (
 	groupName = "leadscore"
 )
 
-// Destinations and their steps (contracts section 6).
+// Destinations and their steps.
 const (
 	destContacts = "contacts"
 	destDeals    = "deals"
@@ -126,8 +126,7 @@ func parse(cfg api.Config) (settings, error) {
 
 func (s settings) prop(name string) string { return s.prefix + name }
 
-// stageClass is a deal stage's class: open, won or lost (contracts section
-// 6, "Deal stages").
+// stageClass is a deal stage's class: open, won or lost.
 type stageClass string
 
 const (

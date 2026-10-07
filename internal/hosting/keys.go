@@ -25,7 +25,7 @@ func (f Connector) Open(ctx context.Context) (*Client, error) {
 }
 
 // LoadKeys fills, from Secret Manager, the empty key variables that this
-// configuration's adapters need (contracts section 3, "Keys on Google Cloud").
+// configuration's adapters need.
 // It does nothing unless hosting.project is set, and nothing inside Cloud Run,
 // where the service and job get their keys as environment variables from
 // secret references. Only the keys a configured adapter needs are read, as

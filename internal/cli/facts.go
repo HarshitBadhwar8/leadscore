@@ -15,8 +15,8 @@ import (
 )
 
 // runFacts prints the Company facts table, one row per domain sorted by
-// domain, or writes it as CSV with --csv: the table's own columns (section 4)
-// with their stored text, so the CSV matches a `SELECT *` of the SQLite table
+// domain, or writes it as CSV with --csv: the table's own columns in their
+// stored order, with their stored text, so the CSV matches a `SELECT *` of the SQLite table
 // or a download of the Sheets tab. Like doctor, it never writes the store and
 // never takes the lease: SQLite is opened read-only and a missing file is not
 // created.
@@ -67,8 +67,8 @@ func runFacts(inv *invocation) int {
 	return exitOK
 }
 
-// factsColumns is Company facts' section 4 columns, then any other column a
-// newer version kept, sorted.
+// factsColumns is Company facts' columns in their stored order, then any
+// other column a newer version kept, sorted.
 func factsColumns(rows []api.Row) []string {
 	def, _ := model.Def(model.TableCompanyFacts)
 	cols := append([]string{}, def.Columns...)
@@ -95,8 +95,8 @@ type shownFact struct {
 }
 
 // factsSummary is a row's facts on one line, by name: value (origin), with
-// the value a change replaced, if any. A facts cell that is not section 4's
-// JSON is shown as stored.
+// the value a change replaced, if any. A facts cell that is not the stored
+// JSON shape is shown as stored.
 func factsSummary(r api.Row) string {
 	var facts, prev map[string]shownFact
 	if s := strings.TrimSpace(r["facts"]); s != "" {

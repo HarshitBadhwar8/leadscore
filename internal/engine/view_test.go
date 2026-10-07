@@ -164,7 +164,7 @@ func TestNoViewNoCalls(t *testing.T) {
 
 // A view that cannot be opened at all (deleted, or no longer shared) leaves
 // the run healthy: sheet-access on the view is a warning inside a run, and
-// the write failure is view_write_failed (contracts section 9.2).
+// the write failure is view_write_failed.
 func TestViewThatCannotBeOpenedKeepsTheRunHealthy(t *testing.T) {
 	v := newViewWorld(t, "ana@acme.example,Ana A,Head of Ops,acme.example")
 	v.mustRun(v.withClient)

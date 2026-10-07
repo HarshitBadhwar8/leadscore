@@ -152,9 +152,10 @@ func TestIndexes(t *testing.T) {
 	}
 }
 
-// Lane ids follow section 2 (letters, digits, "-", "_", starting with a letter
-// or digit) and are unique ignoring case: anything else would share a SQLite
-// table with another lane. Put refuses it with an error and records nothing.
+// Lane ids follow the rubric's rule (letters, digits, "-", "_", starting with a
+// letter or digit) and are unique ignoring case: anything else would share a
+// SQLite table with another lane. Put refuses it with an error and records
+// nothing.
 func TestExportLaneRule(t *testing.T) {
 	m := New()
 	for _, lane := range []string{"", "my lane", "-x", "_x", "a.b", "a/b", "ünï"} {

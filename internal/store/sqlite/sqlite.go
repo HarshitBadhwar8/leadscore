@@ -1,4 +1,4 @@
-// Package sqlite is the built-in SQLite store (RFC 6.6, "SQLite specifics"):
+// Package sqlite is the built-in SQLite store:
 // a Backend and EventLog over one database file in WAL mode with a busy
 // timeout, so `leadscore serve` can append events during a run. Every table
 // column is text; the run lease is a pair of State rows; events use
@@ -137,7 +137,7 @@ func OpenReadOnly(path string) (*Store, error) {
 // Close closes the database.
 func (s *Store) Close() error { return s.db.Close() }
 
-// TableName maps a section 4 table name to its SQLite name: lower snake case
+// TableName maps a store table name to its SQLite name: lower snake case
 // ("Company facts" is company_facts, "Export warm" is export_warm).
 func TableName(name string) string {
 	return strings.ReplaceAll(strings.ToLower(name), " ", "_")
@@ -369,8 +369,8 @@ func apply(ctx context.Context, tx *sql.Tx, w api.TableWrite) error {
 }
 
 // canonical respells a write's columns as the table already spells them (or,
-// for a table not yet created, as section 4 does), since SQLite column names
-// ignore case: "Score" in a row writes the existing "score" column.
+// for a table not yet created, as the store tables do), since SQLite column
+// names ignore case: "Score" in a row writes the existing "score" column.
 func canonical(w api.TableWrite, existing []string) api.TableWrite {
 	spell := map[string]string{}
 	if def, ok := model.Def(w.Table); ok && len(existing) == 0 {
@@ -406,7 +406,7 @@ func canonical(w api.TableWrite, existing []string) api.TableWrite {
 	return out
 }
 
-// ensureTable creates the table when missing, with the section 4 columns of a
+// ensureTable creates the table when missing, with the fixed columns of a
 // known table first (Ranked's derived columns after company_domain), and
 // appends any named column it lacks. A known keyed table gets a unique index
 // on its key.

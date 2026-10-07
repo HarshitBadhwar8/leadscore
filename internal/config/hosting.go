@@ -9,15 +9,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// SaveBudget is how long a run may save after its deadline (contracts section
-// 11). The Cloud Run job's task timeout is the deadline plus this.
+// SaveBudget is how long a run may save after its deadline. The Cloud Run job's
+// task timeout is the deadline plus this.
 const SaveBudget = 90 * time.Second
 
 // AdapterKeyVariables names the key variable each built-in vendor adapter
-// reads (RFC 6.13). S8 owns the apollo entry and S11 the hubspot one; a slice
-// that changes its adapter's key keeps its entry here. The receiver's secret
-// is the receiver-secret check's, not an adapter key. Stores sign in through
-// Google's standard credentials and need none.
+// reads. Whoever changes an adapter's key variable keeps its entry here. The
+// receiver's secret is the receiver-secret check's, not an adapter key. Stores
+// sign in through Google's standard credentials and need none.
 var AdapterKeyVariables = map[string]string{
 	"apollo":  "APOLLO_API_KEY",
 	"hubspot": "HUBSPOT_TOKEN",
@@ -51,7 +50,7 @@ func (c *Config) KeyVariables() map[string][]string {
 // MaxBundleBytes is Secret Manager's limit on one secret version.
 const MaxBundleBytes = 64 * 1024
 
-// MakeBundle builds the hosted bundle (section 3): one YAML document with the
+// MakeBundle builds the hosted bundle: one YAML document with the
 // keys `config` and `rubric`, each holding that file's text, which Load reads
 // back as the same pair.
 func MakeBundle(configText, rubricText []byte) ([]byte, error) {

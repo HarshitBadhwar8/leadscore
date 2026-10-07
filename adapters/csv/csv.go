@@ -1,11 +1,11 @@
-// Package csv is the CSV file source (contracts section 12.5). It only parses:
+// Package csv is the CSV file source. It only parses:
 // UTF-8 with an optional byte-order mark, comma-delimited, ragged rows allowed,
 // headers returned as written. Merge, not this package, applies aliases to
 // input rows, checks email shapes and computes row ids.
 //
-// A source marked `events: true` returns one event per row instead (contracts
-// section 5.2). Finding the event, time and person columns there uses the
-// built-in alias table from internal/api.
+// A source marked `events: true` returns one event per row instead. Finding
+// the event, time and person columns there uses the built-in alias table
+// from internal/api.
 //
 // It registers as source type `csv`:
 //
@@ -65,8 +65,8 @@ func New(cfg api.Config) (api.Source, error) {
 
 func (s *Source) ID() string { return s.id }
 
-// Limits that keep one bad file from exhausting memory (contracts section
-// 12.5). Variables, not constants, so tests can lower them.
+// Limits that keep one bad file from exhausting memory. Variables, not
+// constants, so tests can lower them.
 var (
 	maxFileBytes int64 = 100 << 20  // 100 MB
 	maxColumns         = 1000       // header columns
@@ -149,8 +149,8 @@ func parse(data []byte) ([]string, []record, error) {
 	}
 	r := stdcsv.NewReader(bytes.NewReader(data))
 	r.FieldsPerRecord = -1 // ragged rows: merge decides whether a row is usable
-	// Leading spaces are trimmed, as core does, so `a, "b"` reads; this is the
-	// one change to the text as written (contracts section 12.5).
+	// Leading spaces are trimmed, so `a, "b"` reads; this is the one change
+	// to the text as written.
 	r.TrimLeadingSpace = true
 
 	headers, err := r.Read()
@@ -268,7 +268,7 @@ func cell(cells []string, i int) string {
 	return ""
 }
 
-// Event-row column names after resolving a header (contracts section 2): the
+// Event-row column names after resolving a header: the
 // built-in aliases, plus the two event-only names.
 const (
 	colEvent  = "event"
@@ -293,7 +293,7 @@ func resolve(aliases map[string]string, header string) string {
 }
 
 // attrKey is the Attrs key for an extra column: the resolved name, except that
-// the company name uses the Event.Attrs name `company` (contracts section 1).
+// the company name uses the Event.Attrs name `company`.
 func attrKey(field string) string {
 	if field == "company.name" {
 		return "company"
@@ -301,13 +301,13 @@ func attrKey(field string) string {
 	return field
 }
 
-// ParseEvents returns one event per record (contracts section 5.2), as a
+// ParseEvents returns one event per record, as a
 // source marked `events: true` reads them; the Sheet-tab source uses it too,
 // so both follow one set of rules. A row that cannot be an event comes back
 // with Kind empty and Attrs["reject"] saying why; the engine logs it. Reasons
 // carry the line number, never a cell's value, so the log carries no email. A
-// file with no `at` column, or no person-key column, fails as a whole, as core
-// refused such files. received stamps every event's ReceivedAt.
+// file with no `at` column, or no person-key column, fails as a whole, since
+// none of its rows could be placed. received stamps every event's ReceivedAt.
 func ParseEvents(sourceID string, headers []string, records []EventRecord, received time.Time) ([]api.Event, error) {
 	aliases := api.BuiltinAliases()
 	// The first header in file order that resolves to a name owns it.
@@ -413,7 +413,7 @@ func plainKind(kind string) bool {
 	return true
 }
 
-// forbidden reports a kind only a vendor may report (contracts section 5.2):
+// forbidden reports a kind only a vendor may report:
 // a file claiming a send, reply, opt-out or deal could suppress or unblock a
 // person on no evidence. Case is ignored, so `Sent` is refused too.
 func forbidden(kind string) bool {

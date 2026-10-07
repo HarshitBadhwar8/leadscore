@@ -24,7 +24,7 @@ const (
 	NoSuccessMessage = "STALE: no successful run yet"
 )
 
-// Formula is the staleness formula for Health!H1 (contracts section 4), given
+// Formula is the staleness formula for Health!H1, given
 // the Health tab's header and its rows in sheet order (nil for a blank row).
 // It names the cell holding the `last_success_at` result and compares it with
 // NOW() against three `schedule` intervals; the schedule comes from the

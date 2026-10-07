@@ -15,7 +15,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/store/codec"
 )
 
-// Health kinds and result keys (contracts section 4).
+// Health kinds and result keys (the Health table).
 const (
 	healthResult  = "result"
 	healthProblem = "problem"
@@ -136,7 +136,7 @@ const crashLeaseTTL = 2 * time.Minute
 // RecordCrash writes Health for a run that crashed before it could write it
 // itself (a panic that escaped the run, recovered by serve's timer): the
 // result unhealthy, last_run_at startAt, and run_failed naming err, keeping
-// every other open problem, as a failed run does (contracts section 5.1). It
+// every other open problem, as a failed run does. It
 // writes under the run lease, taken for this write only. When another run
 // holds the lease it writes nothing and returns an error wrapping
 // api.ErrLeaseHeld: that run writes Health itself.

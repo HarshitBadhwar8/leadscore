@@ -12,7 +12,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 )
 
-// Write queue timing (contracts sections 5.1 and 11). Variables so tests can
+// Write queue timing. Variables so tests can
 // shrink them; timers use the real clock.
 var (
 	// holdCap bounds how long a request waits: the append's context ends this

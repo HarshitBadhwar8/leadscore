@@ -11,7 +11,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
 )
 
-// The lease is two State rows (contracts section 4). Each read-check-write runs
+// The lease is two State rows. Each read-check-write runs
 // in one immediate transaction, which holds SQLite's write lock: that is the
 // compare-and-swap, so two callers can never both hold the lease.
 const (

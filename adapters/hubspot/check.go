@@ -27,7 +27,7 @@ var requiredScopes = []string{
 
 const dealsWriteScope = "crm.objects.deals.write"
 
-// hubspotCheck is the `hubspot` check (contracts section 10): the token has
+// hubspotCheck is the `hubspot` doctor check: the token has
 // the scopes, the custom properties exist and fit, and the pipeline and stage
 // resolve. It runs only when sinks.hubspot is configured and the token is
 // set (the secrets check reports a missing token).

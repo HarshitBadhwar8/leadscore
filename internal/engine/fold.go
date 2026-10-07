@@ -13,10 +13,10 @@ import (
 )
 
 // ledgerRowsKey is the State key holding the highest committed ledger row
-// count (contracts section 4); a run never lowers it.
+// count (the State table); a run never lowers it.
 const ledgerRowsKey = "ledger_rows"
 
-// Unsubscribed origin a manual Overrides row sets (contracts section 7).
+// Unsubscribed origin a manual Overrides row sets (the status rules).
 const unsubManual = "manual"
 
 // Log kinds the fold and the push loop write.
@@ -30,7 +30,7 @@ const (
 )
 
 // foldHook is the Fold hook (step 5). It first fixes the ledger as loaded
-// (contracts section 8): a ledger with fewer rows than State.ledger_rows
+// (the ledger rules): a ledger with fewer rows than State.ledger_rows
 // blocks pushing; a row whose intent_run another run left gets called_at and
 // loses intent_run; a merged lead's pending rows never called are
 // cancelled, as are pending rows of a lane removed from the rubric; a row
@@ -38,7 +38,7 @@ const (
 // row whose lane's destination changed moves to it if never called, else is
 // cancelled. It then
 // applies each new `retry` and `resubscribe` Overrides row once (Applied
-// overrides), and folds every live lead's status (contracts section 7).
+// overrides), and folds every live lead's status (the status precedence).
 // Everything it changes is saved in phase 1. Last, it keeps open the
 // receiver_only_push problems whose lead is still known only from webhooks.
 func foldHook(r *Run) error {
@@ -54,7 +54,7 @@ func foldHook(r *Run) error {
 	return nil
 }
 
-// loadLedger is the load-time ledger work (contracts section 8).
+// loadLedger is the load-time ledger work (the ledger rules).
 func loadLedger(r *Run, v *view) {
 	m, now := r.Model, r.Now()
 	n := len(m.Pushes)
@@ -152,7 +152,7 @@ func applyRetries(r *Run, v *view) {
 }
 
 // applyResubscribes applies each `resubscribe` row not yet applied, once
-// (contracts section 7): it clears the lead's opt-out only where its origin
+// (the status rules): it clears the lead's opt-out only where its origin
 // is `manual`; an automated opt-out (an event or a lookup) stays. A
 // `resubscribe` row while a manual `unsubscribed` row still names the lead
 // does nothing (the opt-out keeps its date) and is used up; the log says what
@@ -237,7 +237,7 @@ func foldStatuses(r *Run, v *view) []api.LeadID {
 	return changed
 }
 
-// fold is one live lead's status: the first rule of contracts section 7 that
+// fold is one live lead's status: the first rule of the status precedence that
 // applies, read across the lead and every lead merged into it. It also
 // returns when a completed cold push contacted the lead, so the fold keeps
 // that fact in Outcomes.

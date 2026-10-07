@@ -12,16 +12,15 @@ import (
 
 func init() { Register(receiverSilence{}) }
 
-// State keys the check reads (contracts section 4); Intake and the run write
-// them.
+// State keys the check reads; Intake and the run write them.
 const (
 	lastReceivedPrefix = "last_received:"
 	firstRunAtKey      = "first_run_at"
 )
 
-// receiverSilence is the receiver-silence check (contracts sections 5.3 and
-// 10, RFC 6.12): reachable is not delivering, so when the receiver is
-// configured and set up (receiver.public_url), every event kind it expects must have arrived within
+// receiverSilence is the receiver-silence check: reachable is not
+// delivering, so when the receiver is configured and set up
+// (receiver.public_url), every event kind it expects must have arrived within
 // silence_threshold. Silence is measured from the later of the kind's newest
 // received event (State last_received:<kind>) and the first run (State
 // first_run_at), so a new install is not flagged before it could hear
@@ -72,7 +71,7 @@ func (receiverSilence) Run(_ context.Context, env Env) []Problem {
 	return out
 }
 
-// ExpectedKinds are the event kinds the receiver expects (contracts 5.3):
+// ExpectedKinds are the event kinds the receiver expects:
 // the receiver.visit_events kinds, and `sent` when replies come from the
 // receiver. Lowercased and sorted, each once.
 func ExpectedKinds(c *config.Config) []string {

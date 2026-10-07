@@ -22,8 +22,8 @@ func (w *world) settle() { w.m.Committed(w.m.Writes()) }
 func TestDuplicateRowIDsSettle(t *testing.T) {
 	w := newWorld(t)
 	rows := []api.InputRow{
-		in("list", "email", "ada@acme.io", "linkedin", "linkedin.com/in/ada"),
-		in("list", "email", "ada@acme.io", "linkedin", "linkedin.com/in/ada-2"),
+		in("list", "email", "ada@acme.example", "linkedin", "linkedin.com/in/ada"),
+		in("list", "email", "ada@acme.example", "linkedin", "linkedin.com/in/ada-2"),
 		in("list", "email", "{{email}}", "name", "X"),
 		in("list", "email", "{{email}}", "name", "Y"),
 	}
@@ -62,20 +62,20 @@ func TestLongSameAsChain(t *testing.T) {
 	const n = 70
 	var rows []api.InputRow
 	for i := 0; i < n; i++ {
-		rows = append(rows, in("a", "email", fmt.Sprintf("p%d@acme.io", i)))
+		rows = append(rows, in("a", "email", fmt.Sprintf("p%d@acme.example", i)))
 	}
 	w.apply(rows...)
 	// Newest first, so without re-pointing each merge would lengthen the chain.
 	for i := n - 2; i >= 0; i-- {
-		w.override(fmt.Sprintf("p%d@acme.io", i), "same_as", fmt.Sprintf("p%d@acme.io", i+1))
+		w.override(fmt.Sprintf("p%d@acme.example", i), "same_as", fmt.Sprintf("p%d@acme.example", i+1))
 	}
 	w.apply()
 	if got := w.liveLeads(); got != 1 {
 		t.Fatalf("live leads = %d, want 1", got)
 	}
-	last := w.lead("p69@acme.io")
-	w.m.Put(model.TableOutcomes, model.Outcome{LeadID: w.idOf("p69@acme.io"), UnsubscribedAt: t0})
-	survivor := w.lead("p0@acme.io")
+	last := w.lead("p69@acme.example")
+	w.m.Put(model.TableOutcomes, model.Outcome{LeadID: w.idOf("p69@acme.example"), UnsubscribedAt: t0})
+	survivor := w.lead("p0@acme.example")
 	if last != survivor {
 		t.Fatal("the chain's ends are different leads")
 	}
@@ -100,8 +100,8 @@ func (w *world) idOf(key string) api.LeadID { return w.m.Identities[model.Key(ke
 // every lead in it.
 func TestMergeCycle(t *testing.T) {
 	w := newWorld(t)
-	w.apply(in("a", "email", "ada@acme.io"), in("a", "email", "bo@acme.io"), in("a", "email", "cy@acme.io"))
-	a, b, c := w.lead("ada@acme.io"), w.lead("bo@acme.io"), w.lead("cy@acme.io")
+	w.apply(in("a", "email", "ada@acme.example"), in("a", "email", "bo@acme.example"), in("a", "email", "cy@acme.example"))
+	a, b, c := w.lead("ada@acme.example"), w.lead("bo@acme.example"), w.lead("cy@acme.example")
 	for from, to := range map[api.LeadID]api.LeadID{a: b, b: a, c: b} {
 		p := w.person(from)
 		p.MergedInto = to
@@ -116,7 +116,7 @@ func TestMergeCycle(t *testing.T) {
 			t.Errorf("%s: in cycle %v, blocked %v; want both", id, cyc[id], dups[id])
 		}
 	}
-	w.override("ada@acme.io", "same_as", "bo@acme.io")
+	w.override("ada@acme.example", "same_as", "bo@acme.example")
 	w.apply() // must not hang or merge further
 }
 
@@ -149,7 +149,7 @@ func TestCanonicalLinkedIn(t *testing.T) {
 		t.Errorf("pub URL = %q", got)
 	}
 	for _, v := range []string{"N/A", "-", "none", "n/a", "linkedin", "https://linkedin.com/", "https://linkedin.com/in/",
-		"https://www.linkedin.com/company/acme", "https://notlinkedin.com/in/ada", "https://linkedin.com.evil.io/in/ada", "ada"} {
+		"https://www.linkedin.com/company/acme", "https://notlinkedin.com/in/ada", "https://linkedin.com.evil.example/in/ada", "ada"} {
 		if got := CanonicalLinkedIn(v); got != "" {
 			t.Errorf("CanonicalLinkedIn(%q) = %q, want no key", v, got)
 		}
@@ -164,12 +164,12 @@ func TestCanonicalLinkedIn(t *testing.T) {
 func TestPlaceholderLinkedInIsNoKey(t *testing.T) {
 	w := newWorld(t)
 	w.apply(
-		in("a", "email", "ada@acme.io", "linkedin", "N/A"),
-		in("a", "email", "bo@acme.io", "linkedin", "N/A"),
+		in("a", "email", "ada@acme.example", "linkedin", "N/A"),
+		in("a", "email", "bo@acme.example", "linkedin", "N/A"),
 		in("a", "linkedin", "-", "name", "Cy"),
 		in("a", "linkedin", "-", "name", "Di"),
 	)
-	if w.liveLeads() != 2 || w.lead("ada@acme.io") == w.lead("bo@acme.io") {
+	if w.liveLeads() != 2 || w.lead("ada@acme.example") == w.lead("bo@acme.example") {
 		t.Errorf("leads = %d: a placeholder joined two people", w.liveLeads())
 	}
 	if len(w.m.Identities) != 2 || w.m.StateValue("key_conflicts") != "" {
@@ -187,15 +187,15 @@ func TestDomainNameRungNeedsOneMatch(t *testing.T) {
 	w := newWorld(t)
 	w.sources = append(w.sources, sourceWithDomainName("conf"))
 	w.apply(
-		in("crm", "email", "priya.r@acme.io", "name", "Priya R"),
-		in("crm", "email", "priya.raj@acme.io", "name", "Priya R"),
+		in("crm", "email", "priya.r@acme.example", "name", "Priya R"),
+		in("crm", "email", "priya.raj@acme.example", "name", "Priya R"),
 	)
-	w.override("priya.r@acme.io", "distinct", "priya.raj@acme.io")
-	w.apply(in("conf", "domain", "acme.io", "name", "Priya R", "title", "CTO"))
+	w.override("priya.r@acme.example", "distinct", "priya.raj@acme.example")
+	w.apply(in("conf", "domain", "acme.example", "name", "Priya R", "title", "CTO"))
 	if w.liveLeads() != 3 {
 		t.Fatalf("leads = %d: the row must not pick one namesake", w.liveLeads())
 	}
-	for _, e := range []string{"priya.r@acme.io", "priya.raj@acme.io"} {
+	for _, e := range []string{"priya.r@acme.example", "priya.raj@acme.example"} {
 		if w.person(w.lead(e)).Fields["title"].Value != "" {
 			t.Errorf("%s gained the row's title", e)
 		}
@@ -210,8 +210,8 @@ func TestDomainNameRungNeedsOneMatch(t *testing.T) {
 // the first one created.
 func TestMalformedEventEmail(t *testing.T) {
 	w := newWorld(t)
-	w.apply(in("a", "email", "bo@acme.io", "linkedin", "linkedin.com/in/bo"))
-	bo := w.lead("bo@acme.io")
+	w.apply(in("a", "email", "bo@acme.example", "linkedin", "linkedin.com/in/bo"))
+	bo := w.lead("bo@acme.example")
 	e := NormalizeEventKeys(api.Event{Kind: "unsubscribed", Email: "bo@acme", LinkedInURL: "https://www.linkedin.com/in/bo/", ReceivedAt: t0})
 	if got, ok := FindPerson(w.m, e); !ok || got != bo {
 		t.Errorf("FindPerson = %q %v, want bo", got, ok)
@@ -237,7 +237,7 @@ func TestMalformedEventEmail(t *testing.T) {
 // receiver-only with one source.
 func TestEventOnlyLeadIsReceiverOnly(t *testing.T) {
 	w := newWorld(t)
-	id := ApplyEventPerson(w.m, NormalizeEventKeys(api.Event{Kind: "visit_pricing", Email: "ada@acme.io", ReceivedAt: t0}))
+	id := ApplyEventPerson(w.m, NormalizeEventKeys(api.Event{Kind: "visit_pricing", Email: "ada@acme.example", ReceivedAt: t0}))
 	x := NewIndex(w.m, w.sources)
 	if !x.ReceiverOnly(id) || x.SourcesSeen(id) != 1 {
 		t.Errorf("receiver_only %v, sources_seen %d; want true and 1", x.ReceiverOnly(id), x.SourcesSeen(id))
@@ -249,13 +249,13 @@ func TestEventOnlyLeadIsReceiverOnly(t *testing.T) {
 func TestCompaniesTabRemovals(t *testing.T) {
 	w := newWorld(t)
 	w.m.Load(model.TableCompanies, []api.Row{
-		{"domain": "acme.io", "employees": "70", "region": "India"},
-		{"domain": "beta.io", "employees": "9"},
+		{"domain": "acme.example", "employees": "70", "region": "India"},
+		{"domain": "beta.example", "employees": "9"},
 	})
 	w.apply()
-	w.m.Load(model.TableCompanies, []api.Row{{"domain": "acme.io", "employees": "", "region": "India"}})
+	w.m.Load(model.TableCompanies, []api.Row{{"domain": "acme.example", "employees": "", "region": "India"}})
 	w.apply()
-	acme, beta := w.m.CompanyFacts[model.Key("acme.io")], w.m.CompanyFacts[model.Key("beta.io")]
+	acme, beta := w.m.CompanyFacts[model.Key("acme.example")], w.m.CompanyFacts[model.Key("beta.example")]
 	if _, ok := acme.Facts["employees"]; ok || acme.Previous["employees"].Value != "70" {
 		t.Errorf("acme: facts %v previous %v", acme.Facts, acme.Previous)
 	}
@@ -265,8 +265,8 @@ func TestCompaniesTabRemovals(t *testing.T) {
 	if _, ok := beta.Facts["employees"]; ok || beta.Previous["employees"].Value != "9" {
 		t.Errorf("beta: facts %v previous %v", beta.Facts, beta.Previous)
 	}
-	w.apply(in("a", "email", "ada@acme.io", "employees", "80"))
-	if got := w.m.CompanyFacts[model.Key("acme.io")].Facts["employees"]; got.Value != "80" || got.Origin != OriginInput {
+	w.apply(in("a", "email", "ada@acme.example", "employees", "80"))
+	if got := w.m.CompanyFacts[model.Key("acme.example")].Facts["employees"]; got.Value != "80" || got.Origin != OriginInput {
 		t.Errorf("employees = %+v: a lower origin fills it again", got)
 	}
 }
@@ -275,12 +275,12 @@ func TestCompaniesTabRemovals(t *testing.T) {
 // alias change re-applies the row without counting it again.
 func TestKeyConflictCountedOnce(t *testing.T) {
 	w := newWorld(t)
-	w.apply(in("a", "email", "ravi@acme.io", "linkedin", "linkedin.com/in/shared"))
-	r := in("a", "email", "priya@acme.io", "linkedin", "linkedin.com/in/shared", "Current tool", "Looker")
+	w.apply(in("a", "email", "ravi@acme.example", "linkedin", "linkedin.com/in/shared"))
+	r := in("a", "email", "priya@acme.example", "linkedin", "linkedin.com/in/shared", "Current tool", "Looker")
 	w.apply(r)
 	w.aliases = map[string]string{"currenttool": "uses_competitor"}
 	w.apply(r)
-	if w.person(w.lead("priya@acme.io")).Fields["uses_competitor"].Value != "Looker" {
+	if w.person(w.lead("priya@acme.example")).Fields["uses_competitor"].Value != "Looker" {
 		t.Fatal("setup: the alias change must re-apply the row")
 	}
 	if got := w.m.StateValue("key_conflicts"); got != "1" || w.logKinds("key_conflict") != 1 {
@@ -324,10 +324,10 @@ func TestLinkedInSlugDecoding(t *testing.T) {
 // first receiver row for the same contact id.
 func TestEventConflictCountedOnceForTheContact(t *testing.T) {
 	w := newWorld(t)
-	w.apply(in("a", "email", "bo@acme.io", "linkedin", "linkedin.com/in/bo"))
-	ApplyEventPerson(w.m, NormalizeEventKeys(api.Event{Kind: "visit_pricing", Email: "cy@acme.io",
+	w.apply(in("a", "email", "bo@acme.example", "linkedin", "linkedin.com/in/bo"))
+	ApplyEventPerson(w.m, NormalizeEventKeys(api.Event{Kind: "visit_pricing", Email: "cy@acme.example",
 		LinkedInURL: "linkedin.com/in/bo", ReceivedAt: t0, Attrs: map[string]string{"contact_id": "c-9"}}))
-	w.apply(in("receiver", "contact_id", "c-9", "email", "cy@acme.io", "linkedin", "linkedin.com/in/bo"))
+	w.apply(in("receiver", "contact_id", "c-9", "email", "cy@acme.example", "linkedin", "linkedin.com/in/bo"))
 	if got := w.m.StateValue("key_conflicts"); got != "1" || w.logKinds("key_conflict") != 1 {
 		t.Errorf("key_conflicts %q, logged %d; want 1 and 1", got, w.logKinds("key_conflict"))
 	}

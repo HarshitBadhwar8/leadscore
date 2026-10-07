@@ -1,8 +1,7 @@
-// Package detect evaluates the rubric's detectors (RFC 6.7, contracts section
-// 2): the built-in kinds count_in_window, first_seen and change, and kinds a
-// build registers, over each lead's and each company's Window events. Windows
-// are (now - window, now] in UTC. Event kinds, and the kind names themselves,
-// are compared lowercased.
+// Package detect evaluates the rubric's detectors: the built-in kinds
+// count_in_window, first_seen and change, and kinds a build registers, over
+// each lead's and each company's Window events. Windows are (now - window, now]
+// in UTC. Event kinds, and the kind names themselves, are compared lowercased.
 package detect
 
 import (
@@ -212,7 +211,7 @@ func changed(cf model.CompanyFact, field string, within time.Duration, from, to 
 	return true
 }
 
-// sameText compares text as the rubric does (contracts section 2): trimmed,
+// sameText compares text as the rubric does: trimmed,
 // Unicode NFC, ignoring case.
 func sameText(a, b string) bool {
 	return rules.NormText(a) == rules.NormText(b)

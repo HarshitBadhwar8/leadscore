@@ -14,7 +14,7 @@ import (
 
 func init() { Register(apolloSequences{getenv: os.Getenv}) }
 
-// apolloSequences is the `apollo-sequences` check (contracts section 10): for
+// apolloSequences is the `apollo-sequences` check: for
 // an install with lanes pushing to Apollo, sinks.apollo.mailbox_id must be
 // one of the team's sending mailboxes (apollo-sequences:mailbox), and every
 // such lane must name one sequence that exists, by its exact name

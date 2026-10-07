@@ -1,5 +1,5 @@
 // Package gcs is an in-memory fake of the Cloud Storage JSON API calls the
-// Sheets store makes for its lease file (contracts section 4): bucket get,
+// Sheets store makes for its lease file: bucket get,
 // object get (metadata or media), multipart and media upload, delete, and
 // testIamPermissions on a bucket (the doctor's lease check). It enforces the
 // generation preconditions (ifGenerationMatch, 0 meaning "does not exist yet")

@@ -13,7 +13,7 @@ import (
 
 // A lane is removed from the rubric; its lead later unsubscribes. The old
 // export table must still load (from State's export_lane record) so its row
-// can be updated to do_not_contact (contracts section 4, "Export rows").
+// can be updated to do_not_contact (the export-row rules).
 func TestExportTableOfRemovedLaneStillLoads(t *testing.T) {
 	ctx := context.Background()
 	s, err := sqlite.Open(filepath.Join(t.TempDir(), "leadscore.db"))

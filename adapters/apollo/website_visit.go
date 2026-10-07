@@ -10,7 +10,7 @@ import (
 
 // visitEventPrefix starts every visit workflow's event literal: one workflow
 // per watched site, `website_visited_<name>`, read as event kind
-// `visit_<name>` (contracts section 5.1).
+// `visit_<name>`.
 const visitEventPrefix = "website_visited_"
 
 // websiteVisit is one body from a visitor-identification workflow.
@@ -85,7 +85,7 @@ func (v websiteVisit) employerDomain() string {
 
 // hostOf reduces a bare host or a full URL to its lowercase host with no
 // `www.`. The scheme test is anchored on "://": a bare host with a doubled
-// path separator ("acme.io/careers//apply") must not be read as a URL with a
+// path separator ("acme.example/careers//apply") must not be read as a URL with a
 // scheme, or its host comes back empty.
 func hostOf(raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
@@ -124,7 +124,7 @@ func (v websiteVisit) identifiable() bool {
 // visitedAt is the vendor's visit time, and whether it was usable (that the
 // workflow can send a per-visit time: S0 confirms). With no usable time the
 // visit is recorded at its received time and keyed by person, page and
-// received day (RFC 6.7).
+// received day, like any event with no vendor time.
 func (v websiteVisit) visitedAt() (time.Time, bool) {
 	t, err := time.Parse(time.RFC3339, strings.TrimSpace(v.VisitedAt))
 	if err != nil {

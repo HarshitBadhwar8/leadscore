@@ -455,8 +455,8 @@ every run.
   from its rubric (`doctor` warns `cold_lane_no_sink:<lane>`).
 - A cell that a spreadsheet would read as a formula (starting with `=`, `+`,
   `-` or `@`) is quoted with a leading `'` in the CSV files and in
-  `ranked --csv` and `facts --csv`, so opening them in Excel or Sheets never runs a formula a
-  lead's data carried.
+  `ranked --csv` and `facts --csv`, so opening them in Excel or Sheets
+  never runs a formula a lead's data carried.
 - CSV files are written only for a SQLite store, mode 0600 (they hold
   personal data). A plug-in store (for example Postgres,
   `docs/postgres-store.md`) keeps its lists as tables in that store.

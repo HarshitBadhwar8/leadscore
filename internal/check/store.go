@@ -22,9 +22,8 @@ func init() {
 	})
 }
 
-// storeCheck is the `store` check (contracts section 10). S4 owns the schema
-// version and SQLite cases; S10a the Cloud Run case; S5 adds the Sheets cases
-// and S10b the ledger case (ledger_shrank).
+// storeCheck is the `store` check. Its cases: the schema version, SQLite,
+// Cloud Run, Sheets and the ledger (ledger_shrank).
 type storeCheck struct {
 	getenv      func(string) string
 	inContainer func() bool
@@ -67,7 +66,7 @@ func (c storeCheck) Run(ctx context.Context, env Env) []Problem {
 				Fix:     "restore the State row from a backup, or set it to the version that wrote the store"})
 		}
 	}
-	// The ledger case (S10b): a ledger with fewer rows than the highest
+	// The ledger case: a ledger with fewer rows than the highest
 	// count ever committed lost rows, so it cannot say who was already
 	// contacted; the run pushes nothing until they are restored.
 	if env.Model != nil {
@@ -161,7 +160,7 @@ func unescapeMount(s string) string {
 
 // CloudRunRefusal is the store check's Cloud Run case: Cloud Run keeps no
 // files, so a SQLite store or a CSV source path is refused while
-// CLOUD_RUN_JOB or K_SERVICE is set (RFC 6.6, "Store and setup pairs"). Every
+// CLOUD_RUN_JOB or K_SERVICE is set (stores and setups pair up). Every
 // run refuses to start on it, as doctor reports it.
 func CloudRunRefusal(c *config.Config, getenv func(string) string) []Problem {
 	if getenv == nil || (getenv("CLOUD_RUN_JOB") == "" && getenv("K_SERVICE") == "") {

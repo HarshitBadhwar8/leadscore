@@ -37,8 +37,8 @@ const csvLeaseMargin = 5 * time.Second
 const exportDirProblem = "export_dir_readable"
 
 var (
-	// csvStores are the store types whose export tables are also written as
-	// CSV files in export.dir (RFC 6.11: on SQLite; a Sheets store shows them
+	// csvStores are the store types whose export tables are also written as CSV
+	// files in export.dir (the sink rules: on SQLite; a Sheets store shows them
 	// as tabs). A variable so a test can add its wrapped SQLite store.
 	csvStores = map[string]bool{"sqlite": true}
 	// renameFile is os.Rename, a variable so a test can make it fail.
@@ -53,10 +53,10 @@ var (
 // refreshed nor written as a file.
 const invalidLaneProblem = "export_lane_invalid"
 
-// exportHook is the Export hook (RFC 6.11, contracts section 4 "Export
-// rows"). It runs every run, after Push and before phase 2, pushes on or off
-// and with or without a backlog; export lanes write no Pushes rows, so the
-// table is their once-only record.
+// exportHook is the Export hook (export lanes and their Export rows). It runs
+// every run, after Push and before phase 2, pushes on or off and with or
+// without a backlog; export lanes write no Pushes rows, so the table is their
+// once-only record.
 //
 // It first adds each live lead that newly matches an export lane (its `when`
 // held and it is not blocked on every lane) to that lane's table, once: a
@@ -201,10 +201,10 @@ func betterKeeper(a, b model.ExportRow, live api.LeadID) bool {
 	return a.LeadID < b.LeadID
 }
 
-// doNotContact is the contracts section 4 rule for a listed lead, judged on
-// the live lead it leads to (merged_into followed), with the reason it holds,
-// or "" when the lead may be contacted. The merged-into-a-listed-lead part of
-// the rule is refreshListed's, since it reads the whole table.
+// doNotContact is the export table's do_not_contact rule for a listed lead,
+// judged on the live lead it leads to (merged_into followed), with the reason
+// it holds, or "" when the lead may be contacted. The merged-into-a-listed-lead
+// part of the rule is refreshListed's, since it reads the whole table.
 func doNotContact(r *Run, v *view, id api.LeadID) string {
 	live := v.live(id)
 	if b, why := v.blocked(live); b {
@@ -284,7 +284,7 @@ func invalidExportLanes(m *model.Model) []string {
 }
 
 // writeExports writes the export tables' changed rows after phase 2, in
-// their own commits of at most exportChunkRows rows (contracts section 12.6),
+// their own commits of at most exportChunkRows rows (the run's commit rules),
 // so a mass change (a new cold lane turning most of a list to yes) can never
 // make phase 2 too large and block every later opt-out. Rows turning
 // do_not_contact to yes go first, across all lanes, then every other change.
@@ -384,13 +384,13 @@ func checkExportDir(r *Run) {
 		"run chmod 700 on the folder", true)
 }
 
-// writeExportCSVs is S13's part of AfterSave (contracts section 4): on a
+// writeExportCSVs is the export part of AfterSave (the export tables): on a
 // SQLite store it rewrites `<export.dir>/<lane id>.csv` for every lane
 // csvLanes names. It runs only after phase 2 committed (and after a failed
 // Ranked write too), never on a dry run, and reads each table back from the
 // store, so a file only ever shows committed rows. Each file is written to a
 // temporary file in export.dir and renamed over the old one, UTF-8, the
-// header row in the section 4 column order, every cell made safe with
+// header row in the store table's column order, every cell made safe with
 // csvsafe, mode 0600; the folder is synced after each rename. Temporary
 // files a crash left behind are removed first. The rewrite stops
 // csvLeaseMargin before the lease runs out and checks the lease before each
@@ -470,7 +470,7 @@ func removeStaleTemps(dir string, lanes []string) {
 	}
 }
 
-// exportColumns is the export table's column order (contracts section 4).
+// exportColumns is the export table's column order (the store tables).
 func exportColumns() []string {
 	for _, d := range model.Tables {
 		if d.Name == model.ExportPrefix {

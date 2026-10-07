@@ -14,7 +14,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/store/sheets"
 )
 
-// The checks only doctor runs (contracts section 10, S16): rubric-version,
+// The checks only doctor runs: rubric-version,
 // receivers, lease and pushes-enabled. None of them runs inside a run, so
 // their problem keys never reach Health.
 func init() {
@@ -28,7 +28,7 @@ func init() {
 }
 
 // RubricFor is the rubric a check judges: the run's (Env.Rubric), else, in
-// doctor, the local file compiled (contracts section 12.4); nil when it does
+// doctor, the local file compiled; nil when it does
 // not compile (the rubric check says why).
 func RubricFor(env Env) *rules.Rubric {
 	if env.Rubric != nil {
@@ -179,8 +179,7 @@ func (leaseCheck) Run(ctx context.Context, env Env) []Problem {
 // pushesEnabled is the `pushes-enabled` check (a warning while pushes are
 // off). It also names every cold lane whose sink has no sinks.<type> block: a
 // cold lane claims the leads it matches even before its sink is set up, so
-// they are do_not_contact on every export list (contracts section 4, "Export
-// rows").
+// they are do_not_contact on every export list.
 type pushesEnabled struct{}
 
 func (pushesEnabled) Name() string { return "pushes-enabled" }

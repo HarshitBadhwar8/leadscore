@@ -1,7 +1,7 @@
-// Package codec maps the in-memory model to store tables (contracts section
-// 12.2): Encode turns recorded changes into table writes, Load reads a store
-// into a model and checks its schema version. Backends only move rows; which
-// op each change becomes is decided by model.Model.Writes, behind Encode.
+// Package codec maps the in-memory model to store tables: Encode turns recorded
+// changes into table writes, Load reads a store into a model and checks its
+// schema version. Backends only move rows; which op each change becomes is
+// decided by model.Model.Writes, behind Encode.
 package codec
 
 import (
@@ -17,7 +17,7 @@ import (
 )
 
 // ErrNewerSchema means the store was written by a newer major version; this
-// binary refuses it (RFC 6.6, "Schema version").
+// binary refuses it.
 var ErrNewerSchema = errors.New("store is from a newer major schema version")
 
 // Encode turns the model's recorded changes for the named tables (all when none
@@ -47,7 +47,7 @@ func Chunk(w api.TableWrite, size int) []api.TableWrite {
 	return out
 }
 
-// loaded is every table a run loads besides State: every section 4 table
+// loaded is every table a run loads besides State: every store table
 // except Log (only appended and trimmed) and Events (read through the
 // EventLog), plus the people-owned Companies tab.
 func loaded() []string {

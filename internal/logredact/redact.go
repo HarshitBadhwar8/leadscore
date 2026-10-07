@@ -98,7 +98,7 @@ func ContainsSecret(s string) bool {
 }
 
 // SecretVariables are the environment variables whose exact values Redact
-// masks once MaskEnvSecrets has run (RFC 6.13's key variables).
+// masks once MaskEnvSecrets has run (the documented key variables).
 var SecretVariables = []string{
 	"APOLLO_API_KEY",
 	"HUBSPOT_TOKEN",

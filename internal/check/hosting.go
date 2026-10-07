@@ -11,7 +11,7 @@ import (
 
 func init() { Register(hostingCheck{}) }
 
-// hostingCheck is the `hosting` check (section 10): with a `hosting` block, it
+// hostingCheck is the `hosting` check: with a `hosting` block, it
 // reads, as the run account, that setup/gcp.sh made every Google Cloud piece
 // and made it right. It runs only from doctor, never inside a run.
 type hostingCheck struct {
@@ -82,7 +82,7 @@ func (h hostingCheck) Run(ctx context.Context, env Env) []Problem {
 			add("service_instances", fmt.Sprintf("the receiver service may run %s instances; it must run at most 1", limit), redeployFix)
 		}
 		wrongAccount("service_account", "receiver service", svc.Account, accountOf(hc.ReceiverAccount))
-		// The receiver refuses every webhook without its secret (section 5.1).
+		// The receiver refuses every webhook without its secret.
 		if ref, ok := svc.SecretEnv["LEADSCORE_RECEIVER_SECRET"]; !ok || ref.Secret != hosting.ReceiverSecret {
 			add("receiver_secret", "the receiver service has no LEADSCORE_RECEIVER_SECRET from "+hosting.ReceiverSecret+", so it refuses every webhook",
 				"run `setup/gcp.sh secrets`, then `setup/gcp.sh redeploy`")

@@ -93,7 +93,7 @@ func TestOverridesReReadMidRun(t *testing.T) {
 	}
 }
 
-// No pushing while the import has a backlog (contracts section 12.6).
+// No pushing while the import has a backlog (the run's pushing rules).
 func TestNoPushWithBacklog(t *testing.T) {
 	w := newWorld(t, clerks(3)...)
 	w.config("pushes_enabled: true", "pushes_enabled: true\ningest_chunk_rows: 1")

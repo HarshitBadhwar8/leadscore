@@ -25,7 +25,7 @@ func mustParse(t *testing.T, yml string) *Config {
 
 const minimal = "version: 1\nstore: { type: sqlite }\n"
 
-// Every section 3 default, from a file that sets only the required keys.
+// Every leadscore.yml default, from a file that sets only the required keys.
 func TestDefaults(t *testing.T) {
 	c := mustParse(t, minimal)
 	checks := []struct {
@@ -319,7 +319,7 @@ hosting: { project: proj-1 }
 	}
 }
 
-// withDefaultPaths points the section 3 default locations into a temp folder.
+// withDefaultPaths points the default locations into a temp folder.
 func withDefaultPaths(t *testing.T) (configDir, cwd string) {
 	t.Helper()
 	root := t.TempDir()

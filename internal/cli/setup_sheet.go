@@ -17,7 +17,7 @@ import (
 
 // personClient signs in as the person running `setup sheet`, with their own
 // gcloud login rather than the run account, so the person owns the
-// spreadsheet (contracts section 9). Their login needs Drive access:
+// spreadsheet. Their login needs Drive access:
 // `gcloud auth login --enable-gdrive-access`. A variable so tests replace it.
 var personClient = func(ctx context.Context) (*http.Client, error) {
 	out, err := exec.CommandContext(ctx, "gcloud", "auth", "print-access-token").Output()
@@ -56,8 +56,8 @@ var setupNow = time.Now
 // `base_url` in a real file is refused (sheets.Connect).
 var testGoogleClient *http.Client
 
-// runSetupSheet is `leadscore setup sheet [--view] [--repair]` (contracts
-// section 9.1 step 6, and 9.2 for the view).
+// runSetupSheet is `leadscore setup sheet [--view] [--repair]`: the Google
+// Cloud runbook's spreadsheet step, and the Docker runbook's view.
 func runSetupSheet(inv *invocation) int {
 	ctx := context.Background()
 	c, err := config.Load(inv.configOptions())
@@ -158,8 +158,7 @@ func shareError(err error) error {
 		"to allow sharing this file with the service accounts (gserviceaccount.com)", err)
 }
 
-// exportLanes reads the rubric's export lane ids, for the view's export tabs
-// (contracts section 9.2).
+// exportLanes reads the rubric's export lane ids, for the view's export tabs.
 func exportLanes(c *config.Config) ([]string, error) {
 	src, err := c.Rubric()
 	if err != nil {

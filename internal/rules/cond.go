@@ -77,7 +77,7 @@ type scope struct {
 	derivedBefore int
 }
 
-// resolve finds what a field name refers to (contracts section 2: a built-in
+// resolve finds what a field name refers to (a built-in
 // field, a declared or input column, company.<name> for a company field or
 // rollup, or a derived name).
 func (c *compiler) resolve(name string, sc scope, a at) (fieldRef, bool) {

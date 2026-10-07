@@ -15,7 +15,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/adapters/apollo"
 )
 
-// Body limits (contracts sections 5.4 and 11).
+// Body limits (the oversized-body rule and the defaults).
 const (
 	// maxStringBytes caps every string in a stored body. Long strings are
 	// prose (a conversation summary, past transcripts) that nothing automated
@@ -49,7 +49,7 @@ const (
 )
 
 // secretField is the top-level body field that carries the secret when the
-// sender cannot set headers (contracts section 5.1).
+// sender cannot set headers.
 const secretField = "leadscore_secret"
 
 // rawSecretField finds a leadscore_secret string field in body text that is
@@ -188,8 +188,8 @@ func (in *incoming) scrub(v any) any {
 	return v
 }
 
-// storedBody is what the receiver stores for one authenticated request
-// (contracts section 5.4): the body as sent when it fits and carried no
+// storedBody is what the receiver stores for one authenticated request: the
+// body as sent when it fits and carried no
 // secret; otherwise re-encoded with every string over 16KB shortened; and
 // when that is still over a Sheets cell, only the fields the parsers read, at
 // their original paths. A body that is not a JSON object is kept as

@@ -19,7 +19,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
 )
 
-// LeaseObject is the lease file in the lease bucket (contracts section 4).
+// LeaseObject is the lease file in the lease bucket.
 // Sheets has no compare-and-swap, so the lease lives in Cloud Storage: every
 // write and delete is conditioned on the generation read just before
 // (ifGenerationMatch, 0 when the file is absent), which Cloud Storage refuses

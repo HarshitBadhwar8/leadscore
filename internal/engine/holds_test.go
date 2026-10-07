@@ -12,7 +12,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/rules"
 )
 
-// The one-cold-push rule row by row (contracts section 8).
+// The one-cold-push rule row by row (the ledger rules).
 func TestHoldsCold(t *testing.T) {
 	now := time.Now()
 	cases := []struct {

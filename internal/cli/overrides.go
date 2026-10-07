@@ -18,8 +18,7 @@ var now = func() time.Time { return time.Now().UTC() }
 
 // editOverrides loads the store, lets edit change the model's Overrides, and
 // commits only that table. It takes no lease: Overrides is people-owned, the
-// run never writes it, and the CLI writes it the same way on every store
-// (contracts section 7).
+// run never writes it, and the CLI writes it the same way on every store.
 func editOverrides(inv *invocation, edit func(m *model.Model) (string, error)) int {
 	ctx := context.Background()
 	c, err := config.Load(inv.configOptions())
