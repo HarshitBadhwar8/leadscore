@@ -2,6 +2,8 @@ package receiver
 
 import (
 	"encoding/json"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -14,7 +16,7 @@ import (
 // stored runs a body through what the receiver does before storing it.
 func stored(t *testing.T, body []byte) []byte {
 	t.Helper()
-	return storedBody(readBody(body))
+	return storedBody(readBody(body, []string{testSecret}))
 }
 
 func decode(t *testing.T, b []byte) map[string]any {
@@ -223,21 +225,103 @@ func TestABodyThatIsNotJSONIsKeptMarked(t *testing.T) {
 	}
 }
 
-// The secret field is removed, in any spelling, and the rest kept as sent.
+// The secret field is removed, in any spelling and at any depth, and a
+// configured secret is masked wherever it appears; the rest is kept as sent.
 func TestTheSecretFieldIsNeverStored(t *testing.T) {
-	in := readBody([]byte(`{"event":"email_sent","contact_email":"a@example.com","leadscore_secret":"s3cret","LeadScore_Secret":"other","n":12345678901234567890}`))
-	if in.secret != "s3cret" {
-		t.Errorf("presented secret = %q", in.secret)
+	raw := []byte(`{"event":"email_sent","contact_email":"a@example.com","leadscore_secret":"s3cret","LeadScore_Secret":"other",` +
+		`"contact":{"leadscore_secret":"nested"},"list":[{"LEADSCORE_SECRET":"deep"}],"note":"pasted ` + testSecret + ` here","n":12345678901234567890}`)
+	if got := scanSecret(raw); got != "s3cret" {
+		t.Errorf("presented secret = %q", got)
 	}
-	out := string(storedBody(in))
-	if strings.Contains(strings.ToLower(out), "leadscore_secret") || strings.Contains(out, "s3cret") || strings.Contains(out, "other") {
-		t.Errorf("the secret reached the stored body: %s", out)
+	out := string(storedBody(readBody(raw, []string{testSecret, ""})))
+	for _, leak := range []string{"leadscore_secret", "s3cret", "other", "nested", "deep", testSecret} {
+		if strings.Contains(strings.ToLower(out), strings.ToLower(leak)) {
+			t.Errorf("%q reached the stored body: %s", leak, out)
+		}
 	}
-	if !strings.Contains(out, "12345678901234567890") {
-		t.Errorf("a number was changed: %s", out)
+	if !strings.Contains(out, "12345678901234567890") || !strings.Contains(out, "pasted [REDACTED] here") {
+		t.Errorf("the rest was changed: %s", out)
 	}
 	// A spelling other than the exact field is removed but never accepted.
-	if in := readBody([]byte(`{"LEADSCORE_SECRET":"s3cret"}`)); in.secret != "" || !in.strip {
-		t.Errorf("readBody = %+v, want the variant removed and not presented", in)
+	if got := scanSecret([]byte(`{"LEADSCORE_SECRET":"s3cret"}`)); got != "" {
+		t.Errorf("a variant spelling was presented: %q", got)
+	}
+	// A nested field is never accepted either.
+	if got := scanSecret([]byte(`{"contact":{"leadscore_secret":"s3cret"}}`)); got != "" {
+		t.Errorf("a nested field was presented: %q", got)
+	}
+}
+
+// A body that is not a JSON object is stored as text: every configured secret
+// and any leadscore_secret value in it is masked first.
+func TestTheSecretIsMaskedInABodyThatIsNotJSON(t *testing.T) {
+	for _, raw := range []string{
+		`{"event":"email_sent","leadscore_secret":"` + testSecret + `","contact_name":"Dana "DJ" Example"}`,
+		`["leadscore_secret","` + testSecret + `"]`,
+		`{"Leadscore_Secret" : "some-other-value", "x": }`,
+		`not json, but it mentions ` + testSecret,
+		`{"event":"x","leadscore_secret":"` + previousSecret + `"`,
+	} {
+		out := string(stored(t, []byte(raw)))
+		for _, leak := range []string{testSecret, "some-other-value", previousSecret} {
+			if strings.Contains(out, leak) {
+				t.Errorf("%.30q: the secret reached the stored body: %s", raw, out)
+			}
+		}
+		if !strings.Contains(out, notJSONKey) {
+			t.Errorf("%.30q: not marked as not JSON: %s", raw, out)
+		}
+	}
+}
+
+// When the body is not valid JSON (Apollo left a quote unescaped), the body
+// secret is still found in its text.
+func TestABodySecretIsFoundInBrokenJSON(t *testing.T) {
+	raw := []byte(`{"event":"email_unsubscribed","contact_name":"Dana "DJ" Example","leadscore_secret":"` + testSecret + `"}`)
+	if got := scanSecret(raw); got != testSecret {
+		t.Errorf("scanSecret = %q, want the secret", got)
+	}
+	if got := scanSecret([]byte(`{"a":"b"c","LEADSCORE_SECRET":"` + testSecret + `"}`)); got != "" {
+		t.Errorf("a variant spelling in broken JSON was presented: %q", got)
+	}
+}
+
+// Kept parser fields that are not strings (a huge number, a long array) are
+// shortened too, so the body always fits a cell.
+func TestNonStringParserFieldsStillFit(t *testing.T) {
+	arr := make([]any, 20000)
+	for i := range arr {
+		arr[i] = "x"
+	}
+	for name, body := range map[string]map[string]any{
+		"huge number": {"event": "email_replied", "contact_email": "a@example.com", "contact_id": json.Number(strings.Repeat("9", 60000))},
+		"long array":  {"event": "email_replied", "contact_email": "a@example.com", "contact_stage": arr},
+		"array of long strings": {"event": "email_replied", "contact_email": "a@example.com",
+			"contact_title": []any{strings.Repeat("t", 15<<10), strings.Repeat("u", 15<<10), strings.Repeat("v", 15<<10), strings.Repeat("w", 15<<10)}},
+	} {
+		out := stored(t, marshal(t, body))
+		if n := utf8.RuneCount(out); n > maxBodyChars {
+			t.Errorf("%s: stored body = %d characters", name, n)
+		}
+		m := decode(t, out)
+		if m[droppedReasonKey] == nil {
+			t.Errorf("%s: no reason given", name)
+		}
+	}
+}
+
+// A cut-down body keeps the list of the strings it shortened.
+func TestACutDownBodyListsWhatItShortened(t *testing.T) {
+	body := map[string]any{"event": "email_replied", "contact_email": "a@example.com", "contact_title": strings.Repeat("t", 20<<10)}
+	for i := range 10 {
+		body["extra"+strconv.Itoa(i)] = strings.Repeat("e", 15<<10)
+	}
+	m := decode(t, stored(t, marshal(t, body)))
+	if m[droppedReasonKey] == nil {
+		t.Fatal("not cut down")
+	}
+	cut, _ := m[truncatedFieldsKey].([]any)
+	if !slices.Contains(cut, any("contact_title")) {
+		t.Errorf("%s = %v, want contact_title listed", truncatedFieldsKey, m[truncatedFieldsKey])
 	}
 }

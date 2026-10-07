@@ -148,17 +148,30 @@ in between, so no webhook is lost. On Docker, edit `.env` and run
 For technical users, on your own machine or a server. Put `compose.yaml`, an
 example `leadscore.yml` (`examples/leadscore.laptop.yml` or
 `examples/leadscore.server.yml`, renamed), your rubric and your CSV files in
-one folder, add a `.env` with your keys and the receiver secret, and run
-`docker compose up -d`. The folder is mounted read-only at `/config`, the
+one folder, add a `.env` with your keys and the receiver secret (see "Keep
+the receiver secret private" above), and run `docker compose up -d`. Until the
+first release, `.env` also sets `LEADSCORE_IMAGE` to the private registry's
+image; remove that line after release. Upgrading is changing the image tag in
+`compose.yaml` (or `LEADSCORE_IMAGE`, which overrides it) and running
+`docker compose up -d`, then `doctor`. The compose file assumes the receiver's
+port 8080 inside the container; leave `receiver.port` unset. The folder is mounted read-only at `/config`, the
 SQLite store lives on a named volume, and the export lists land in `./out`
 (on Linux, first `mkdir -p out && sudo chown 10001:10001 out`, since the
-container runs as its own user, uid 10001, which must also be able to read
-the folder and the files the container reads). Every command runs inside the container:
+container runs as its own user, uid 10001).
+
+On Linux the container's user must be able to read the folder and the files
+it reads: `chmod o+rx . && chmod o+r leadscore.yml rubric.yml *.csv` (`.env`
+is read by Docker, not the container, so leave it private). The export lists
+are written owner-only (mode 0600, they hold personal data) and owned by uid
+10001, so read them with `sudo cat out/<lane>.csv`, or copy one out with
+`docker compose cp leadscore:/out/<lane>.csv .`. Every command runs inside the container:
 `docker compose exec leadscore leadscore status`. `docker ps` shows the
 container unhealthy when `/healthz` does.
 
 On a laptop there is no public address, so the laptop example polls Apollo for
-replies (`replies: polling`). A Cloudflare Tunnel can give it a public URL for
+replies (`replies: polling`). Polling needs a `sinks.apollo` block, which the
+examples do not have yet: until it is added, every run reports `poll_failed`
+and the container shows unhealthy. A Cloudflare Tunnel can give it a public URL for
 live webhooks, but only while the laptop is awake. On a server, the compose
 file's optional Caddy service (`docker compose --profile caddy up -d`) gets an
 HTTPS certificate for your domain.

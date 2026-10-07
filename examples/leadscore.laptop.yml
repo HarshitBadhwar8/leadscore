@@ -19,6 +19,9 @@ sources:
 # set replies: receiver and point the Apollo workflows at the tunnel's URL.
 # A tunnel works only while the laptop is awake; webhooks sent while it
 # sleeps are lost unless Apollo retries them.
+# Polling reads replies through the Apollo sink: until a sinks.apollo block
+# is added (with the sinks setup), every run reports poll_failed and the
+# container shows unhealthy.
 replies: polling
 
 # The export lists, in ./out on your machine.

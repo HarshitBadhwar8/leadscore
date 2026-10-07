@@ -134,6 +134,7 @@ func serve(ctx context.Context, o ServeOptions, d deps) error {
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    32 << 10,
 	}
 	srvErr := make(chan error, 1)
 	go func() { srvErr <- srv.Serve(ln) }()
@@ -219,15 +220,7 @@ func (t *timer) once(ctx context.Context) {
 		return
 	}
 	stop := make(chan struct{})
-	finished := make(chan struct{})
-	go func() {
-		select {
-		case <-ctx.Done():
-			close(stop)
-		case <-finished:
-		}
-	}()
-	defer close(finished)
+	defer context.AfterFunc(ctx, func() { close(stop) })()
 	startAt := t.now().UTC()
 	res, err := t.safeRun(stop)
 	var p *panicked

@@ -43,8 +43,12 @@ var routes = map[string]string{
 	"/apollo/reply": apollo.KindReply,
 }
 
-// healthCache is how long /healthz reuses a verdict read from the store.
-var healthCache = 60 * time.Second
+// How long /healthz reuses a verdict read from the store, and a failure to
+// read it.
+var (
+	healthCache    = 60 * time.Second
+	healthErrCache = 10 * time.Second
+)
 
 // Options configure a Handler.
 type Options struct {
@@ -71,11 +75,17 @@ type Handler struct {
 	secrets []string
 	q       *queue
 	logMu   sync.Mutex
+	unauth  chan struct{} // a slot per unauthenticated body being read
+
+	refusalMu sync.Mutex
+	refusals  int       // refusals not logged yet
+	refusalAt time.Time // when a refusal was last logged (real clock)
 
 	healthMu  sync.Mutex
 	healthAt  time.Time // when the cached verdict was read (Options.Now)
 	healthOK  bool
 	healthMsg string
+	healthTTL time.Duration
 	// runFailed is set by the timer when the last run returned an error or
 	// panicked, which it may not have written to Health.
 	runFailed atomic.Bool
@@ -99,7 +109,7 @@ func NewHandler(o Options) *Handler {
 	h := &Handler{o: o, secrets: []string{
 		strings.TrimSpace(o.Getenv(SecretVar)),
 		strings.TrimSpace(o.Getenv(PreviousSecretVar)),
-	}}
+	}, unauth: make(chan struct{}, unauthReads)}
 	h.q = newQueue(o.Events, func(err error) {
 		h.logf("storing a batch of webhook events failed; each request in it got 503 so Apollo can retry: %v", err)
 	})
@@ -140,45 +150,83 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.receive(w, r, kind)
 }
 
+// Limits on requests not yet authenticated (a body-field secret is only
+// known once the body is read). Variables so tests can shrink them.
+var (
+	// unauthReads is how many such bodies may be read at once.
+	unauthReads = 4
+	// unauthWait is how long a request waits for a free read before 503.
+	unauthWait = 5 * time.Second
+	// refusalLogEvery is the most often a refusal is logged; the refusals in
+	// between are counted into the next line.
+	refusalLogEvery = time.Minute
+)
+
 // receive authenticates one Apollo request, stores it, and answers only once
-// it is stored.
+// it is stored. Nothing is decoded before the secret is checked: a header
+// secret is checked before the body is read at all, and a body secret is
+// found by scanning only the body's first level.
 func (h *Handler) receive(w http.ResponseWriter, r *http.Request, kind string) {
 	received := h.o.Now().UTC()
-	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBytes))
-	if err != nil {
-		var tooBig *http.MaxBytesError
-		if errors.As(err, &tooBig) {
-			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+	// With no current secret every request is refused, even one carrying a
+	// previous secret (contracts section 5.1).
+	if h.secrets[0] == "" {
+		h.refuse(w, r)
+		return
+	}
+	var raw []byte
+	if presented := strings.TrimSpace(r.Header.Get(SecretHeader)); presented != "" {
+		if auth.VerifyAny(h.secrets, presented) != nil {
+			h.refuse(w, r)
 			return
 		}
-		http.Error(w, "could not read the request body", http.StatusBadRequest)
-		return
+		var ok bool
+		if raw, ok = h.read(w, r); !ok {
+			return
+		}
+	} else {
+		t := time.NewTimer(unauthWait)
+		select {
+		case h.unauth <- struct{}{}:
+			t.Stop()
+		case <-t.C:
+			http.Error(w, "too many requests at once; retry", http.StatusServiceUnavailable)
+			return
+		case <-r.Context().Done():
+			t.Stop()
+			return
+		}
+		var ok bool
+		raw, ok = h.read(w, r)
+		var presented string
+		if ok {
+			presented = strings.TrimSpace(scanSecret(raw))
+		}
+		<-h.unauth
+		if !ok {
+			return
+		}
+		if auth.VerifyAny(h.secrets, presented) != nil {
+			h.refuse(w, r)
+			return
+		}
 	}
-	in := readBody(raw)
-	presented := strings.TrimSpace(r.Header.Get(SecretHeader))
-	if presented == "" {
-		presented = strings.TrimSpace(in.secret)
-	}
-	if err := auth.VerifyAny(h.secrets, presented); err != nil {
-		// One reason for every refusal, so a caller cannot probe which part
-		// was wrong; the log says only which route refused.
-		h.logf("refused a request to %s: wrong or missing secret", r.URL.Path)
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	b, err := h.q.submit(api.RawEvent{Kind: kind, ReceivedAt: received, Body: storedBody(in)})
+	b, i, err := h.q.submit(api.RawEvent{Kind: kind, ReceivedAt: received, Body: storedBody(readBody(raw, h.secrets))})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	// The batch's append ends at the hold cap; the extra second only covers
 	// a store slow to return after its context ended. Either way the answer
-	// below is 2xx only when the append succeeded.
+	// below is 2xx only when this event was stored.
 	t := time.NewTimer(time.Until(b.oldest.Add(holdCap + time.Second)))
 	defer t.Stop()
 	select {
 	case <-b.done:
-		if b.err != nil {
+		if err := b.errs[i]; err != nil {
+			if errors.Is(err, errTooLarge) {
+				h.logf("could not store a request to %s: %v", r.URL.Path, err)
+			}
 			http.Error(w, "the event could not be stored; retry", http.StatusServiceUnavailable)
 			return
 		}
@@ -188,6 +236,41 @@ func (h *Handler) receive(w http.ResponseWriter, r *http.Request, kind string) {
 	case <-t.C:
 		http.Error(w, "the event could not be stored in time; retry", http.StatusServiceUnavailable)
 	}
+}
+
+// read reads the request body, at most maxRequestBytes; a bigger one is
+// answered 413 and logged.
+func (h *Handler) read(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBytes))
+	if err != nil {
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			h.logf("refused a request to %s: its body is over %d bytes (Content-Length %d)", r.URL.Path, maxRequestBytes, r.ContentLength)
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return nil, false
+		}
+		http.Error(w, "could not read the request body", http.StatusBadRequest)
+		return nil, false
+	}
+	return raw, true
+}
+
+// refuse answers 401 with one reason for every refusal, so a caller cannot
+// probe which part was wrong. Refusals are logged at most once a minute,
+// with how many there were, so a flood cannot flood the log.
+func (h *Handler) refuse(w http.ResponseWriter, r *http.Request) {
+	h.refusalMu.Lock()
+	h.refusals++
+	now := time.Now()
+	if h.refusalAt.IsZero() || now.Sub(h.refusalAt) >= refusalLogEvery {
+		n := h.refusals
+		h.refusals, h.refusalAt = 0, now
+		h.refusalMu.Unlock()
+		h.logf("refused %d request(s) with a wrong or missing secret (the last to %s)", n, r.URL.Path)
+	} else {
+		h.refusalMu.Unlock()
+	}
+	http.Error(w, "unauthorized", http.StatusUnauthorized)
 }
 
 // RunFinished is the timer's report of a run: failed when the run returned
@@ -227,15 +310,18 @@ func (h *Handler) health(r *http.Request) (bool, string) {
 	now := h.o.Now()
 	h.healthMu.Lock()
 	defer h.healthMu.Unlock()
-	if !h.healthAt.IsZero() && now.Sub(h.healthAt) < healthCache && now.Sub(h.healthAt) >= 0 {
+	if !h.healthAt.IsZero() && now.Sub(h.healthAt) < h.healthTTL && now.Sub(h.healthAt) >= 0 {
 		return h.healthOK, h.healthMsg
 	}
 	ok, msg, err := h.readHealth(r, now)
+	ttl := healthCache
 	if err != nil {
-		// Not cached: the next probe tries the store again.
-		return false, "unhealthy: " + logredact.Redact(err.Error())
+		// The detail goes to the log only; a failure is kept for a shorter
+		// time, so the store is not asked on every probe while it is down.
+		h.logf("/healthz: %v", err)
+		ok, msg, ttl = false, "unhealthy: cannot read the store", healthErrCache
 	}
-	h.healthAt, h.healthOK, h.healthMsg = now, ok, msg
+	h.healthAt, h.healthOK, h.healthMsg, h.healthTTL = now, ok, msg, ttl
 	return ok, msg
 }
 

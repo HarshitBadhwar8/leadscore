@@ -6,10 +6,8 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/config"
@@ -31,17 +29,7 @@ func runServe(inv *invocation) int {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGTERM, os.Interrupt)
-	defer signal.Stop(sig)
-	go func() {
-		select {
-		case <-sig:
-			signal.Stop(sig)
-			cancel()
-		case <-ctx.Done():
-		}
-	}()
+	defer onSignal(cancel)()
 	err := receiver.Serve(ctx, receiver.ServeOptions{
 		ConfigPath: inv.flags["config"], RubricPath: inv.flags["rubric"],
 		Timer: timer, Every: interval, Out: inv.stdout, Log: inv.stderr,

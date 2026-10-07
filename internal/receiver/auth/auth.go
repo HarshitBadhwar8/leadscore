@@ -69,7 +69,10 @@ func Verify(mode Mode, secret string, body []byte, presented string) error {
 	case ModeSharedSecret:
 		// Constant-time even here: a byte-by-byte comparison leaks the secret's
 		// prefix through timing, and the secret is the whole of the protection.
-		if subtle.ConstantTimeCompare([]byte(presented), []byte(secret)) != 1 {
+		// The hashes are compared, not the values, so the time does not
+		// depend on the secret's length either.
+		p, s := sha256.Sum256([]byte(presented)), sha256.Sum256([]byte(secret))
+		if subtle.ConstantTimeCompare(p[:], s[:]) != 1 {
 			return fmt.Errorf("%w: shared secret does not match", ErrUnauthorized)
 		}
 		return nil

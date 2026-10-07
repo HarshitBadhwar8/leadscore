@@ -7,6 +7,8 @@
 #   APOLLO_API_KEY=...
 #   HUBSPOT_TOKEN=...
 #   LEADSCORE_RECEIVER_SECRET=...   # a long random value, e.g. `openssl rand -hex 32`
+#   LEADSCORE_IMAGE=asia-south1-docker.pkg.dev/leadscore-dev/leadscore/leadscore:<commit>
+#                                   # before the first release only; remove after release
 #
 # The receiver secret works like a password: anyone who has it can send fake
 # events, including a fake positive reply that a deal lane would act on. Never
@@ -34,7 +36,8 @@ services:
       # user first: `mkdir -p out && sudo chown 10001:10001 out`.
       - ./out:/out
     ports:
-      # Loopback only. A tunnel on this machine points at it; on a server
+      # The receiver listens on 8080 inside the container (leave
+      # receiver.port unset). Loopback only. A tunnel on this machine points at it; on a server
       # the Caddy service below reaches the receiver over Docker's network.
       - "127.0.0.1:${LEADSCORE_PORT:-8080}:8080"
     restart: unless-stopped

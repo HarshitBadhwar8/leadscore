@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -27,7 +28,10 @@ const (
 	// maxRequestBytes is the most the receiver reads of one request. A bigger
 	// request gets 413 and is not stored: no Apollo workflow body comes near
 	// it, and reading without a bound would let anyone exhaust memory.
-	maxRequestBytes = 4 << 20
+	maxRequestBytes = 1 << 20
+	// maxListedCuts bounds __truncated_fields, which a body with a long array
+	// of long strings could otherwise make as big as the body.
+	maxListedCuts = 50
 )
 
 // Marker fields the receiver adds to a body it had to change.
@@ -37,26 +41,94 @@ const (
 	notJSONKey         = "__not_json"
 	rawKey             = "raw"
 	truncatedMarker    = "… [truncated]"
+	redacted           = "[REDACTED]"
 )
 
 // secretField is the top-level body field that carries the secret when the
 // sender cannot set headers (contracts section 5.1).
 const secretField = "leadscore_secret"
 
-// incoming is one request body, read as JSON when it is a JSON object.
-type incoming struct {
-	raw    []byte
-	obj    map[string]any // nil when the body is not a JSON object
-	secret string         // the body's leadscore_secret, if any
-	strip  bool           // the body carried a secret field that must not be stored
+// rawSecretField finds a leadscore_secret string field in body text that is
+// not valid JSON, any spelling: group 1 is everything up to the value, group
+// 2 the value.
+var rawSecretField = regexp.MustCompile(`(?i)("leadscore_secret"\s*:\s*")((?:[^"\\]|\\.)*)`)
+
+// scanSecret returns the top-level leadscore_secret of a body without
+// decoding anything else: it walks only the first level of the object,
+// skipping each other value as raw bytes. This runs before the request is
+// authenticated, so it must cost no more than the body itself.
+//
+// When the body is not valid JSON, the field is looked for in the text, so a
+// body Apollo built with an unescaped quote in some value still
+// authenticates (and is stored marked as not JSON, the secret masked).
+//
+// S0 confirms: whether Apollo escapes quotes in the variable values it puts
+// into a workflow body. If it does not, such bodies are not JSON, and a body
+// secret is found by the text match here.
+func scanSecret(raw []byte) string {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
+		return textSecret(raw)
+	}
+	var skip json.RawMessage // reused: no value is decoded into Go values
+	found := ""
+	for dec.More() {
+		t, err := dec.Token()
+		if err != nil {
+			return textSecret(raw)
+		}
+		key, _ := t.(string)
+		if key == secretField {
+			var s any
+			if err := dec.Decode(&skip); err != nil {
+				return textSecret(raw)
+			}
+			if json.Unmarshal(skip, &s) == nil {
+				if str, ok := s.(string); ok {
+					found = str
+				}
+			}
+			continue
+		}
+		if err := dec.Decode(&skip); err != nil {
+			return textSecret(raw)
+		}
+	}
+	return found
 }
 
-// readBody decodes a request body and takes the secret field out of it. Every
-// top-level key equal to leadscore_secret ignoring case is removed, so no
-// spelling of the field reaches the store; only the exact name counts as a
-// presented secret.
-func readBody(raw []byte) incoming {
+// textSecret is the exact-name leadscore_secret value found in body text.
+func textSecret(raw []byte) string {
+	for _, m := range rawSecretField.FindAllSubmatch(raw, -1) {
+		if bytes.Contains(m[1], []byte(`"`+secretField+`"`)) {
+			var s string
+			if json.Unmarshal(append(append([]byte{'"'}, m[2]...), '"'), &s) == nil {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
+// incoming is one authenticated request body, read as JSON when it is a JSON
+// object.
+type incoming struct {
+	raw     []byte
+	obj     map[string]any // nil when the body is not a JSON object
+	secrets []string       // the configured secrets, masked wherever they appear
+	changed bool           // the body carried a secret that must not be stored
+}
+
+// readBody decodes an authenticated request body and takes every secret out
+// of it: each key equal to leadscore_secret ignoring case, at any depth, and
+// any configured secret's value inside another string.
+func readBody(raw []byte, secrets []string) incoming {
 	in := incoming{raw: raw}
+	for _, s := range secrets {
+		if s != "" {
+			in.secrets = append(in.secrets, s)
+		}
+	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber() // numbers stay as sent
 	var v any
@@ -71,69 +143,136 @@ func readBody(raw []byte) incoming {
 		return in
 	}
 	in.obj = obj
-	for k, val := range obj {
-		if !strings.EqualFold(k, secretField) {
-			continue
-		}
-		if k == secretField {
-			in.secret, _ = val.(string)
-		}
-		delete(obj, k)
-		in.strip = true
-	}
+	in.scrub(obj)
 	return in
+}
+
+// scrub removes secret fields and masks secret values, recording a change.
+func (in *incoming) scrub(v any) any {
+	switch x := v.(type) {
+	case string:
+		for _, s := range in.secrets {
+			if strings.Contains(x, s) {
+				x = strings.ReplaceAll(x, s, redacted)
+				in.changed = true
+			}
+		}
+		return x
+	case map[string]any:
+		for k, e := range x {
+			if strings.EqualFold(k, secretField) {
+				delete(x, k)
+				in.changed = true
+				continue
+			}
+			x[k] = in.scrub(e)
+		}
+		return x
+	case []any:
+		for i, e := range x {
+			x[i] = in.scrub(e)
+		}
+		return x
+	}
+	return v
 }
 
 // storedBody is what the receiver stores for one authenticated request
 // (contracts section 5.4): the body as sent when it fits and carried no
-// secret field; otherwise re-encoded with every string over 16KB shortened;
-// and when that is still over a Sheets cell, only the fields the parsers read,
-// at their original paths. A body that is not a JSON object is kept as
-// {"__not_json": true, "raw": "<first 16KB>"}.
+// secret; otherwise re-encoded with every string over 16KB shortened; and
+// when that is still over a Sheets cell, only the fields the parsers read, at
+// their original paths. A body that is not a JSON object is kept as
+// {"__not_json": true, "raw": "<first 16KB>"}, its secrets masked. The result
+// always fits one cell.
 func storedBody(in incoming) []byte {
 	if in.obj == nil {
-		return notJSONBody(in.raw)
+		return notJSONBody(in.raw, in.secrets)
 	}
-	if !in.strip && utf8.RuneCount(in.raw) <= maxBodyChars && !hasLongString(in.obj) {
+	if !in.changed && utf8.RuneCount(in.raw) <= maxBodyChars && !hasLongString(in.obj) {
 		// Retained byte for byte: nothing needed changing.
 		return in.raw
 	}
 	var cut []string
 	obj := capStrings(in.obj, "", maxStringBytes, &cut).(map[string]any)
 	if len(cut) > 0 {
-		sort.Strings(cut)
-		obj[truncatedFieldsKey] = cut
+		obj[truncatedFieldsKey] = listCuts(cut)
 	}
 	out := encode(obj)
-	if utf8.RuneCount(out) <= maxBodyChars {
+	if fits(out) {
 		return out
 	}
 	// Still too big for one cell: keep only what the parsers read, so the
 	// event and its receiver row survive, and say why the rest went.
-	kept := keepPaths(obj, apollo.RequiredPaths())
-	kept[droppedReasonKey] = fmt.Sprintf("the body was %d characters after shortening long strings, over the %d a Sheets cell holds; only the fields leadscore reads were kept",
+	reason := fmt.Sprintf("the body was %d characters after shortening long strings, over the %d a Sheets cell holds; only the fields leadscore reads were kept",
 		utf8.RuneCount(out), maxBodyChars)
-	out = encode(kept)
-	if utf8.RuneCount(out) <= maxBodyChars {
+	kept := keepPaths(obj, apollo.RequiredPaths())
+	kept[droppedReasonKey] = reason
+	if len(cut) > 0 {
+		kept[truncatedFieldsKey] = listCuts(cut)
+	}
+	if out = encode(kept); fits(out) {
 		return out
 	}
-	// The kept fields alone are too long (each can be 16KB): shorten them
-	// further. Keys, emails and ids are far shorter than this.
-	var again []string
-	kept = capRunes(kept, keptStringRunes, "", &again).(map[string]any)
-	return encode(kept)
+	// The kept fields alone are too long (each can be 16KB, an array can hold
+	// many): shorten them further. Keys, emails and ids are far shorter.
+	kept = keepPaths(obj, apollo.RequiredPaths())
+	kept = capRunes(kept, keptStringRunes, "", &cut).(map[string]any)
+	kept[droppedReasonKey] = reason
+	kept[truncatedFieldsKey] = listCuts(cut)
+	if out = encode(kept); fits(out) {
+		return out
+	}
+	// A kept value that is not a string (a huge number, a long array) is
+	// still too long: make every such value a short string.
+	kept = shortenNonStrings(kept, "", &cut).(map[string]any)
+	kept[droppedReasonKey] = reason
+	kept[truncatedFieldsKey] = listCuts(cut)
+	if out = encode(kept); fits(out) {
+		return out
+	}
+	return encode(map[string]any{droppedReasonKey: reason + "; even those did not fit, so none were kept"})
 }
 
-// notJSONBody keeps the first 16KB of a body that is not a JSON object, cut on
-// a character boundary and shortened further if escaping makes it too long.
-func notJSONBody(raw []byte) []byte {
+func fits(b []byte) bool { return utf8.RuneCount(b) <= maxBodyChars }
+
+// listCuts is the sorted, de-duplicated list of cut paths, at most
+// maxListedCuts of them and then a count of the rest.
+func listCuts(cut []string) []string {
+	sort.Strings(cut)
+	out := make([]string, 0, min(len(cut), maxListedCuts+1))
+	for i, c := range cut {
+		if i > 0 && c == cut[i-1] {
+			continue
+		}
+		out = append(out, c)
+	}
+	if len(out) > maxListedCuts {
+		out = append(out[:maxListedCuts], fmt.Sprintf("and %d more", len(out)-maxListedCuts))
+	}
+	return out
+}
+
+// maskText replaces every configured secret, and the value of any
+// leadscore_secret field, in text that is not JSON.
+func maskText(raw []byte, secrets []string) []byte {
+	for _, s := range secrets {
+		raw = bytes.ReplaceAll(raw, []byte(s), []byte(redacted))
+	}
+	return rawSecretField.ReplaceAll(raw, []byte("${1}"+redacted))
+}
+
+// notJSONBody keeps the first 16KB of a body that is not a JSON object, its
+// secrets masked first (so a cut cannot leave part of one), cut on a
+// character boundary and shortened further if escaping makes it too long.
+func notJSONBody(raw []byte, secrets []string) []byte {
+	raw = maskText(raw, secrets)
 	n := min(len(raw), maxStringBytes)
 	for {
 		for n > 0 && n < len(raw) && !utf8.RuneStart(raw[n]) {
 			n--
 		}
 		out := encode(map[string]any{notJSONKey: true, rawKey: string(raw[:n])})
-		if utf8.RuneCount(out) <= maxBodyChars || n == 0 {
+		if fits(out) || n == 0 {
 			return out
 		}
 		n /= 2
@@ -197,7 +336,8 @@ func capStrings(v any, path string, limit int, cut *[]string) any {
 	return v
 }
 
-// capRunes shortens every string over limit characters.
+// capRunes shortens every string over limit characters, in objects and
+// arrays alike.
 func capRunes(v any, limit int, path string, cut *[]string) any {
 	switch x := v.(type) {
 	case string:
@@ -205,21 +345,51 @@ func capRunes(v any, limit int, path string, cut *[]string) any {
 			return x
 		}
 		*cut = append(*cut, path)
-		n := 0
-		for i := range x {
-			if n == limit-utf8.RuneCountInString(truncatedMarker) {
-				return x[:i] + truncatedMarker
-			}
-			n++
-		}
-		return x
+		return runePrefix(x, limit-utf8.RuneCountInString(truncatedMarker)) + truncatedMarker
 	case map[string]any:
 		for k, e := range x {
 			x[k] = capRunes(e, limit, join(path, k), cut)
 		}
 		return x
+	case []any:
+		for i, e := range x {
+			x[i] = capRunes(e, limit, join(path, strconv.Itoa(i)), cut)
+		}
+		return x
 	}
 	return v
+}
+
+// shortenNonStrings turns every value that is not a string or an object
+// into a short string of its JSON text, when that text is long.
+func shortenNonStrings(v any, path string, cut *[]string) any {
+	switch x := v.(type) {
+	case string:
+		return x
+	case map[string]any:
+		for k, e := range x {
+			x[k] = shortenNonStrings(e, join(path, k), cut)
+		}
+		return x
+	}
+	text := string(encode(v))
+	if utf8.RuneCountInString(text) <= keptStringRunes {
+		return v
+	}
+	*cut = append(*cut, path)
+	return runePrefix(text, keptStringRunes-utf8.RuneCountInString(truncatedMarker)) + truncatedMarker
+}
+
+// runePrefix is the first n characters of s.
+func runePrefix(s string, n int) string {
+	i := 0
+	for j := range s {
+		if i == n {
+			return s[:j]
+		}
+		i++
+	}
+	return s
 }
 
 func join(path, key string) string {

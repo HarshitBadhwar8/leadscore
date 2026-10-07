@@ -31,21 +31,7 @@ import (
 func runRun(inv *invocation) int {
 	_, dry := inv.flags["dry-run"]
 	stop := make(chan struct{})
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGTERM, os.Interrupt)
-	defer signal.Stop(sig)
-	done := make(chan struct{})
-	defer close(done)
-	go func() {
-		select {
-		case <-sig:
-			// A second SIGTERM or Ctrl-C quits at once: Go's default handling
-			// returns once the first is taken.
-			signal.Stop(sig)
-			close(stop)
-		case <-done:
-		}
-	}()
+	defer onSignal(func() { close(stop) })()
 	res, err := engine.RunTo(context.Background(), api.RunOptions{
 		ConfigPath: inv.flags["config"], RubricPath: inv.flags["rubric"], DryRun: dry, Stop: stop,
 	}, inv.stdout)
@@ -310,4 +296,25 @@ func printable(s string) string {
 		}
 		return r
 	}, s)
+}
+
+// onSignal calls f once on the first SIGTERM or Ctrl-C. A second one quits at
+// once: Go's default handling returns once the first is taken. The returned
+// function stops listening.
+func onSignal(f func()) (release func()) {
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGTERM, os.Interrupt)
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-sig:
+			signal.Stop(sig)
+			f()
+		case <-done:
+		}
+	}()
+	return func() {
+		signal.Stop(sig)
+		close(done)
+	}
 }

@@ -28,11 +28,20 @@ dc() { docker compose "$@"; }
 ls_() { dc exec -T leadscore leadscore "$@"; }
 fail() {
   echo "FAIL: $*"
-  dc ps || true
-  dc logs --no-color leadscore || true
-  dc down -v || true
   exit 1
 }
+# On any exit, dump what happened and tear everything down; a failing
+# command (set -e) is reported with its line.
+passed=false
+cleanup() {
+  if [ "$passed" != true ]; then
+    dc ps || true
+    dc logs --no-color leadscore || true
+  fi
+  dc down -v >/dev/null 2>&1 || true
+}
+trap 'echo "FAIL: line $LINENO: $BASH_COMMAND"' ERR
+trap cleanup EXIT
 # wait_for <seconds> <description> <command...>
 wait_for() {
   local secs=$1 what=$2
@@ -82,5 +91,5 @@ logs=$(dc logs --no-color leadscore)
 grep -q 'leadscore serve: stopped' <<<"$logs" || fail "no clean shutdown line in the log"
 
 echo "$logs"
-dc down -v
+passed=true
 echo "PASS: docker compose up and a timer run end to end"
