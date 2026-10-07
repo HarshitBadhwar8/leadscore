@@ -1,0 +1,31 @@
+README.md
+  s_9dab9ff7f2c580::t_d455475473e1a1 150-151
+docs/design/oss-outbound-engine-contracts.md
+  s_9dab9ff7f2c580::t_c746343f1c116d 541,583
+internal/receiver/body.go
+  s_9dab9ff7f2c580::t_930680daa8f417 7,12,37-38,60-70,72-75,80,83,86,90,94-98,101-106,110-113,117,121,149-150,156,172,178-179,181,199-214,216,220,224-235,237-239,247-248,252,254-255,261-262,264,280-284,295-297,302-317
+internal/receiver/body_test.go
+  s_9dab9ff7f2c580::t_12efb6b50c614b 5,234,247,251,282,285,329-459
+internal/receiver/handler.go
+  s_9dab9ff7f2c580::t_ad7f8837edeafd 157-159,201-204,207,209,215-221
+internal/receiver/handler_test.go
+  s_9dab9ff7f2c580::t_741eedfa64eab3 9,781-813
+setup/apollo/README.md
+  s_9dab9ff7f2c580::t_31d54b76b18896 23-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "79fe0934180b216a4d1edb6cbe7052a486d108ed",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
