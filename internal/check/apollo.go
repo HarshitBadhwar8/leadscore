@@ -15,11 +15,12 @@ func init() { Register(apolloKey{getenv: os.Getenv}) }
 // apolloKey is the `apollo-key` check (contracts section 10). It signs in
 // with Apollo's free auth-health call, never an enrichment call, so running
 // it every run spends no credits. A missing key is the secrets check's to
-// report; a key Apollo refuses (401, 403, or is_logged_in false) is
-// apollo-key:auth, and a call that got no answer is the warning
-// apollo-key:unreachable. It also warns a team that sends only through Apollo,
-// with no receiver for Apollo's unsubscribe workflow, when Apollo's contacts
-// have no opt-out flag to look up (apollo.ContactOptOutFlag).
+// report; a block the client refuses is apollo-key:config, a key Apollo
+// refuses (401, 403, or is_logged_in false) is apollo-key:auth, and a call
+// that got no answer is the warning apollo-key:unreachable. It also warns a
+// team that sends only through Apollo, until an unsubscribe webhook has been
+// received, when Apollo's contacts have no opt-out flag to look up
+// (apollo.ContactOptOutFlag).
 type apolloKey struct{ getenv func(string) string }
 
 func (apolloKey) Name() string { return "apollo-key" }
@@ -33,10 +34,15 @@ func (a apolloKey) Run(ctx context.Context, env Env) []Problem {
 	var out []Problem
 	if key := a.getenv(apollo.KeyVariable); strings.TrimSpace(key) != "" {
 		c, err := apollo.NewClientWithKey(block, key)
-		if err == nil {
+		if err != nil {
+			out = append(out, Problem{Key: "apollo-key:config",
+				Message: "the Apollo block in leadscore.yml cannot be used: " + err.Error(),
+				Fix:     "fix the enrich or sinks.apollo block"})
+		} else {
 			err = c.AuthHealth(ctx)
 		}
 		switch {
+		case c == nil:
 		case apollo.KeyRefused(err):
 			out = append(out, Problem{Key: "apollo-key:auth",
 				Message: "Apollo refuses the key: " + err.Error(),
@@ -50,20 +56,22 @@ func (a apolloKey) Run(ctx context.Context, env Env) []Problem {
 		}
 	}
 	_, hubspot := env.Config.Sinks["hubspot"]
-	if _, sends := env.Config.Sinks["apollo"]; sends && !hubspot && !apollo.ContactOptOutFlag && !receivesUnsubscribes(env.Config) {
+	if _, sends := env.Config.Sinks["apollo"]; sends && !hubspot && !apollo.ContactOptOutFlag && !unsubscribeReceived(env) {
 		out = append(out, Problem{Key: "apollo-key:no_optout_flag", Warning: true,
 			Message: "Apollo's contacts carry no opt-out flag leadscore can look up, and no HubSpot sink is set, " +
-				"so a person who clicked an unsubscribe link without replying is not seen before a push",
+				"so until an unsubscribe webhook has been received, a person who clicked an unsubscribe link " +
+				"without replying may not be seen before a push",
 			Fix: "add an Apollo workflow that sends unsubscribes to the receiver, or mark such people unsubscribed in Overrides"})
 	}
 	return out
 }
 
-// receivesUnsubscribes reports whether the install takes Apollo's reply
-// workflow through the receiver (replies: receiver with a public URL), whose
-// `unsubscribed` event reports a link unsubscribe on its own.
-func receivesUnsubscribes(c *config.Config) bool {
-	return c.Replies == "receiver" && c.Receiver.PublicURL != ""
+// unsubscribeReceived reports real evidence that Apollo's unsubscribe
+// workflow reaches the receiver: an `unsubscribed` webhook has arrived
+// (State.last_received:unsubscribed). Configuration alone proves nothing, and
+// doctor without a loaded store has no evidence.
+func unsubscribeReceived(env Env) bool {
+	return env.Model != nil && env.Model.StateValue("last_received:unsubscribed") != ""
 }
 
 // apolloBlock is the leadscore.yml block an Apollo client is built from: the

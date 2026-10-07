@@ -107,7 +107,8 @@ func NewEnricher(cfg api.Config) (api.Enricher, error) {
 //
 // Three more stop it, since every later domain would likely fail the same
 // way: the key refused (401 or 403), ctx done, and MaxFailuresInARow
-// failures in a row. The engine calls it one domain at a time.
+// failures in a row. ErrWaitStopped (the run stopped new calls during a
+// retry wait) also ends it, returned as is. The engine calls it one domain at a time.
 func (e *Enricher) Enrich(ctx context.Context, domains []string, budget int) ([]api.CompanyFacts, error) {
 	var out []api.CompanyFacts
 	failures := 0
@@ -122,10 +123,12 @@ func (e *Enricher) Enrich(ctx context.Context, domains []string, budget int) ([]
 		switch {
 		case errors.Is(err, ErrNotFound):
 			out = append(out, api.CompanyFacts{Domain: d, FetchedAt: e.now().UTC(), NotFound: true})
-		case errors.Is(err, api.ErrRateLimited), KeyRefused(err):
+		case errors.Is(err, api.ErrRateLimited), errors.Is(err, ErrWaitStopped), KeyRefused(err):
 			return out, err
+		case ctx.Err() != nil:
+			return out, fmt.Errorf("apollo: enrichment stopped: %w", err)
 		case err != nil:
-			if failures++; ctx.Err() != nil || failures >= MaxFailuresInARow {
+			if failures++; failures >= MaxFailuresInARow {
 				return out, fmt.Errorf("apollo: enrichment stopped after %d failures in a row: %w", failures, err)
 			}
 			continue

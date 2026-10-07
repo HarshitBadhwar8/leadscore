@@ -140,6 +140,9 @@ func enrichHook(r *Run) error {
 			}
 		}
 		switch {
+		case errors.Is(err, apollo.ErrWaitStopped):
+			memo.stopped = true // Stop or the deadline during a retry wait: not a rate limit, not a failure
+			return nil
 		case errors.Is(err, api.ErrRateLimited):
 			memo.stopped = true
 			memo.log(r, "warn", logEnrichRateLimited, "enrichment was rate limited; the rest waits for the next run")
@@ -325,8 +328,8 @@ func writeFailed(m *model.Model, domain string, at time.Time) {
 //   - a changed value moves the old entry to previous and sets at to the
 //     fetch time.
 //
-// Extra keys are applied after the typed fields, and company.<name> keys
-// after plain ones, so an exact company.<name> key wins. enriched_at moves on
+// Extra keys are applied after the typed fields; an exact company.<name> key
+// replaces <name> before anything is written, so it wins. enriched_at moves on
 // every found answer, and an answer clears enrich_failed_at.
 func writeFacts(m *model.Model, domain string, f api.CompanyFacts, now time.Time) {
 	at := f.FetchedAt.UTC()
@@ -373,18 +376,27 @@ func writeFacts(m *model.Model, domain string, f api.CompanyFacts, now time.Time
 	for _, name := range []string{"name", "region", "funding_stage", "employees"} {
 		set(name, typed[name])
 	}
-	var plain, prefixed []string
-	for k := range f.Extra {
-		if strings.HasPrefix(k, "company.") {
-			prefixed = append(prefixed, k)
-		} else {
-			plain = append(plain, k)
+	// One value per name, an exact company.<name> key over <name>, then one
+	// write per name, so `previous` holds the stored value and a plain key can
+	// never undo its prefixed twin.
+	extra := map[string]string{}
+	for k, v := range f.Extra {
+		if !strings.HasPrefix(k, "company.") {
+			extra[k] = strings.TrimSpace(v)
 		}
 	}
-	sort.Strings(plain)
-	sort.Strings(prefixed)
-	for _, k := range append(plain, prefixed...) {
-		name, v := strings.TrimPrefix(k, "company."), strings.TrimSpace(f.Extra[k])
+	for k, v := range f.Extra {
+		if name, ok := strings.CutPrefix(k, "company."); ok {
+			extra[name] = strings.TrimSpace(v)
+		}
+	}
+	names := make([]string, 0, len(extra))
+	for name := range extra {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		v := extra[name]
 		if name == "" || name == "domain" {
 			continue
 		}

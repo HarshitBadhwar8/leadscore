@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
+	"github.com/HarshitBadhwar8/leadscore/internal/config"
 	fakeapollo "github.com/HarshitBadhwar8/leadscore/internal/fakes/apollo"
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
+	"github.com/HarshitBadhwar8/leadscore/internal/rules"
 )
 
 const testAPIKey = "test-key-123"
@@ -547,5 +549,65 @@ func TestWriteFactsExtraOrder(t *testing.T) {
 	}
 	if _, has := cf.Facts["old"]; has || cf.Previous["old"].Value != "x" {
 		t.Errorf("an empty Extra value did not clear: %v / %v", cf.Facts, cf.Previous)
+	}
+}
+
+// The reviewer's probes: company.<name> wins over <name> with one write, so
+// previous holds the stored value, and an empty plain key cannot clear the
+// prefixed value.
+func TestWriteFactsPrefixedKeyWinsOnce(t *testing.T) {
+	m := model.New()
+	m.Put(model.TableCompanyFacts, model.CompanyFact{Domain: "a.example",
+		Facts: map[string]model.Fact{"size": {Value: "stored", Origin: "input"}}})
+	writeFacts(m, "a.example", api.CompanyFacts{Extra: map[string]string{"size": "small", "company.size": "big"}}, time.Unix(10, 0).UTC())
+	cf := m.CompanyFacts[model.Key("a.example")]
+	if cf.Facts["size"].Value != "big" || cf.Previous["size"].Value != "stored" {
+		t.Errorf("facts %v previous %v, want big over stored", cf.Facts["size"], cf.Previous["size"])
+	}
+
+	m = model.New()
+	writeFacts(m, "b.example", api.CompanyFacts{Extra: map[string]string{"size": "", "company.size": "big"}}, time.Unix(10, 0).UTC())
+	if got := m.CompanyFacts[model.Key("b.example")].Facts["size"].Value; got != "big" {
+		t.Errorf("an empty plain key cleared the prefixed value: %q", got)
+	}
+}
+
+// Stop or the deadline during a retry wait ends enrichment quietly: no
+// rate-limit line, no failed step, no failure stamp.
+func TestEnrichWaitStopIsNotARateLimit(t *testing.T) {
+	t.Setenv("APOLLO_API_KEY", testAPIKey)
+	fake := fakeapollo.New(testAPIKey)
+	fake.SetRetryAfter("30")
+	fake.RateLimitNext(100)
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	rubric, err := rules.Compile([]byte(testRubric))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := model.New()
+	m.Put(model.TableCompanyFacts, model.CompanyFact{Domain: "a.example"})
+	push, stop := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, stop)
+	var problems []string
+	r := &Run{ID: "run-1", Ctx: context.Background(), PushCtx: push, Model: m, Rubric: rubric,
+		Now:     func() time.Time { return time.Now().UTC() },
+		Problem: func(k, _, _ string, _ bool) { problems = append(problems, k) },
+		Config: &config.Config{Enrich: &config.Enrich{Type: "apollo", MaxAge: time.Hour, MaxLookupsPerRun: 5, MaxLookupsPerDay: 5,
+			Block: api.Config{"base_url": srv.URL, "_http_client": srv.Client()}}}}
+	start := time.Now()
+	if err := enrichHook(r); err != nil {
+		t.Fatalf("a wait stop failed the step: %v", err)
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Errorf("the wait did not end at the stop: %v", time.Since(start))
+	}
+	for _, e := range m.Log {
+		if e.Kind == logEnrichRateLimited {
+			t.Errorf("a wait stop was logged as a rate limit: %v", e)
+		}
+	}
+	if len(problems) != 0 || !m.CompanyFacts[model.Key("a.example")].EnrichFailedAt.IsZero() {
+		t.Errorf("problems %v, failure stamp %v", problems, m.CompanyFacts[model.Key("a.example")].EnrichFailedAt)
 	}
 }

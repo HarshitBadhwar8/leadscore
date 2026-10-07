@@ -104,10 +104,10 @@ in `Health` without spending a credit.
 
 **If you send only through Apollo:** leadscore does not yet know whether
 Apollo's contacts carry an opt-out flag it can read. Until that is confirmed, a
-person who clicked an unsubscribe link without replying is not seen before a
-push, unless the receiver takes Apollo's reply workflow (whose `unsubscribed`
-event reports it) or HubSpot is also a sink. The `apollo-key` check warns
-(`apollo-key:no_optout_flag`) in that case.
+person who clicked an unsubscribe link without replying may not be seen before
+a push, unless HubSpot is also a sink or the receiver gets Apollo's
+`unsubscribed` webhook. The `apollo-key` check warns
+(`apollo-key:no_optout_flag`) until an unsubscribe webhook has been received.
 
 ## Export lists
 

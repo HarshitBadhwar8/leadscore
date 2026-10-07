@@ -4,11 +4,13 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/config"
 	fakeapollo "github.com/HarshitBadhwar8/leadscore/internal/fakes/apollo"
+	"github.com/HarshitBadhwar8/leadscore/internal/model"
 )
 
 func TestApolloKey(t *testing.T) {
@@ -52,7 +54,9 @@ func TestApolloKey(t *testing.T) {
 		// safe default warns teams that send only through Apollo.
 		{"Apollo-only team", apolloSink(false), "good-key", map[string]bool{"apollo-key:no_optout_flag": true}},
 		{"Apollo with HubSpot", apolloSink(true), "good-key", map[string]bool{}},
-		{"Apollo-only team with the receiver's unsubscribe workflow", receiving(apolloSink(false)), "good-key", map[string]bool{}},
+		// Configuration alone is no evidence the unsubscribe workflow is wired.
+		{"Apollo-only team with a receiver configured", receiving(apolloSink(false)), "good-key", map[string]bool{"apollo-key:no_optout_flag": true}},
+		{"Apollo-only team whose receiver got an unsubscribe", apolloSink(false), "good-key", map[string]bool{}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -63,7 +67,12 @@ func TestApolloKey(t *testing.T) {
 				}
 				return ""
 			}}
-			got := keys(c.Run(context.Background(), Env{Config: tc.cfg}))
+			env := Env{Config: tc.cfg}
+			if strings.HasSuffix(tc.name, "got an unsubscribe") {
+				env.Model = model.New()
+				env.Model.SetState("last_received:unsubscribed", "2026-10-01T09:00:00.000Z")
+			}
+			got := keys(c.Run(context.Background(), env))
 			if len(got) != len(tc.want) {
 				t.Fatalf("problems %v, want %v", got, tc.want)
 			}
@@ -113,5 +122,16 @@ func TestApolloKeyTellsRefusalFromOutage(t *testing.T) {
 	cfg.Enrich.Block = api.Config{"base_url": five.URL, "_http_client": five.Client()}
 	if ps := c.Run(context.Background(), Env{Config: cfg}); len(ps) != 1 || ps[0].Key != "apollo-key:unreachable" {
 		t.Errorf("a 502: %+v", ps)
+	}
+}
+
+// A block the client refuses (base_url without a test client) is a config
+// error under its own key, not an outage.
+func TestApolloKeyConfigError(t *testing.T) {
+	cfg := &config.Config{Enrich: &config.Enrich{Type: "apollo", Block: api.Config{"base_url": "https://collector.example"}},
+		Sinks: map[string]api.Config{}}
+	ps := apolloKey{getenv: func(string) string { return "k" }}.Run(context.Background(), Env{Config: cfg})
+	if len(ps) != 1 || ps[0].Key != "apollo-key:config" || ps[0].Warning {
+		t.Errorf("problems %+v", ps)
 	}
 }

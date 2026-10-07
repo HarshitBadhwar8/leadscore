@@ -69,6 +69,15 @@ func TestNewClient(t *testing.T) {
 	if _, err := NewClient(api.Config{"base_url": 5, "_http_client": http.DefaultClient}); err == nil {
 		t.Error("a base_url that is not text was accepted")
 	}
+	// A typed-nil client is no client: the default is kept, and base_url
+	// still needs a real one.
+	var nilClient *http.Client
+	if c, err := NewClient(api.Config{"_http_client": nilClient}); err != nil || c.http == nil {
+		t.Errorf("a typed-nil _http_client: %v", err)
+	}
+	if _, err := NewClient(api.Config{"_http_client": nilClient, "base_url": "https://collector.example"}); err == nil {
+		t.Error("base_url with a typed-nil client was accepted")
+	}
 	// base_url is for tests only: from leadscore.yml alone it would send the
 	// key to any address.
 	if _, err := NewClient(api.Config{"base_url": "https://collector.example"}); err == nil || !strings.Contains(err.Error(), "for tests only") {
@@ -268,8 +277,8 @@ func TestRetryWaitEndsOnWaitStop(t *testing.T) {
 	time.AfterFunc(50*time.Millisecond, cancel)
 	start := time.Now()
 	_, err := c.EnrichOrganization(WithWaitStop(context.Background(), stop), "slow.example")
-	if !errors.Is(err, api.ErrRateLimited) || time.Since(start) > 5*time.Second {
-		t.Errorf("err %v after %v, want ErrRateLimited at once", err, time.Since(start))
+	if !errors.Is(err, ErrWaitStopped) || errors.Is(err, api.ErrRateLimited) || time.Since(start) > 5*time.Second {
+		t.Errorf("err %v after %v, want ErrWaitStopped (not a rate limit) at once", err, time.Since(start))
 	}
 }
 
@@ -485,3 +494,15 @@ func TestFixturesAreInS0Shape(t *testing.T) {
 }
 
 func ptr(n int) *int { return &n }
+
+// A context that ended stops the enricher with its own wording, not as
+// failures in a row.
+func TestEnricherStopsWhenCtxEnds(t *testing.T) {
+	c := handlerClient(t, func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() })
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	_, err := (&Enricher{c: c, now: time.Now}).Enrich(ctx, []string{"a.example", "b.example"}, 10)
+	if err == nil || strings.Contains(err.Error(), "in a row") || !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("err = %v", err)
+	}
+}

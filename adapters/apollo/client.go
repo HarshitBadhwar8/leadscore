@@ -82,13 +82,16 @@ func NewClientWithKey(cfg api.Config, key string) (*Client, error) {
 		return nil, fmt.Errorf("apollo: %s is not set", KeyVariable)
 	}
 	hc := &http.Client{Timeout: CallTimeout}
+	testClient := false
 	if v, ok := cfg["_http_client"]; ok && v != nil {
 		given, isClient := v.(*http.Client)
 		if !isClient {
 			return nil, errors.New("apollo: `_http_client` must be an *http.Client")
 		}
-		copied := *given // a copy, so the redirect rule below leaves the caller's client alone
-		hc = &copied
+		if given != nil { // a typed nil is no client: the default is kept
+			copied := *given // a copy, so the redirect rule below leaves the caller's client alone
+			hc, testClient = &copied, true
+		}
 	}
 	// The key header must never follow a redirect to another host: a 3xx is
 	// returned as the reply, which is then a StatusError.
@@ -99,7 +102,7 @@ func NewClientWithKey(cfg api.Config, key string) (*Client, error) {
 		if !isStr || s == "" {
 			return nil, errors.New("apollo: `base_url` must be a URL")
 		}
-		if _, test := cfg["_http_client"].(*http.Client); !test {
+		if !testClient {
 			return nil, errors.New("apollo: `base_url` is for tests only and needs a test HTTP client; remove it from leadscore.yml")
 		}
 		c.baseURL = strings.TrimRight(s, "/")
@@ -186,7 +189,7 @@ func (c *Client) DoRetrying(ctx context.Context, req Request, out any) error {
 			return fmt.Errorf("apollo: waiting to retry a rate-limited call: %w", ctx.Err())
 		case <-waitStop(ctx):
 			t.Stop()
-			return fmt.Errorf("apollo: %w (429; the run stopped new calls while waiting to retry)", api.ErrRateLimited)
+			return ErrWaitStopped
 		case <-t.C:
 		}
 	}
@@ -312,10 +315,15 @@ func (c *Client) AuthHealth(ctx context.Context) error {
 // person who clicked an unsubscribe link without replying is not seen.
 const ContactOptOutFlag = false
 
+// ErrWaitStopped is DoRetrying's answer when the WithWaitStop context ended
+// during a retry wait: the run stopped new calls (Stop or the deadline). It is
+// not a rate limit and not a failure of the call.
+var ErrWaitStopped = errors.New("apollo: the run stopped new calls while a rate-limited call waited to retry")
+
 type waitStopKey struct{}
 
 // WithWaitStop returns ctx carrying stop: DoRetrying gives up waiting for a
-// retry when stop is done, returning ErrRateLimited, while a call already in
+// retry when stop is done, returning ErrWaitStopped, while a call already in
 // flight still runs under ctx. The engine passes the run's push context
 // (done at Stop or the deadline), which ends new calls but not open ones.
 func WithWaitStop(ctx, stop context.Context) context.Context {
