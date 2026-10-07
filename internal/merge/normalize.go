@@ -62,11 +62,11 @@ type Normalized struct {
 // comes back with Reject set, and goes to Apply like any other row, so no
 // caller can drop a reject before it is recorded.
 func Normalize(row api.InputRow, aliases map[string]string) Normalized {
-	table := aliasTable(aliases)
+	table := AliasTable(aliases)
 	n := Normalized{SourceID: row.SourceID, Fields: map[string]string{}, RowHash: rowHash(row, table)}
 	owned := map[string]bool{}
 	for _, h := range headersOf(row) {
-		name := resolveHeader(table, h)
+		name := ResolveHeader(table, h)
 		if name == "" || owned[name] {
 			continue
 		}
@@ -184,8 +184,9 @@ func headersOf(row api.InputRow) []string {
 	return append(out, extra...)
 }
 
-// aliasTable is the built-in table with the rubric's aliases laid over it.
-func aliasTable(rubric map[string]string) map[string]string {
+// AliasTable is the built-in alias table with the rubric's aliases laid
+// over it: squashed header to field name (contracts section 2).
+func AliasTable(rubric map[string]string) map[string]string {
 	t := api.BuiltinAliases()
 	for k, v := range rubric {
 		t[k] = v
@@ -193,9 +194,9 @@ func aliasTable(rubric map[string]string) map[string]string {
 	return t
 }
 
-// resolveHeader names the field a header carries: its alias, else its squashed
-// form. A header that squashes to nothing names no field.
-func resolveHeader(table map[string]string, h string) string {
+// ResolveHeader names the field a header carries through an AliasTable: its
+// alias, else its squashed form. A header that squashes to nothing names no field.
+func ResolveHeader(table map[string]string, h string) string {
 	sq := api.SquashHeader(h)
 	if sq == "" {
 		return ""

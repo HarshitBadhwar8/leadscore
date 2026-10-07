@@ -15,16 +15,16 @@ import (
 func (x *exec) report() {
 	w := x.s.out
 	r := x.run
-	fmt.Fprintln(w, "dry run: no lease taken, nothing written, no enrichment and no pre-push lookups")
+	fmt.Fprintln(w, "dry run: no lease taken, nothing written, no enrichment, no lookups and no pushes")
 	if !x.scored {
-		fmt.Fprintln(w, "dry run: nothing was scored (the deadline passed first)")
+		fmt.Fprintln(w, "dry run: nothing was scored (the deadline passed or the run was stopped first)")
 		return
 	}
 	derived := r.Rubric.DerivedNames()
 	var added, changed, same int
 	lanes := map[string]int{}
 	// Highest score first, so the leads that matter most lead the report.
-	refs := append([]api.LeadRef(nil), x.refs...)
+	refs := append([]api.LeadRef(nil), r.Input.Leads...)
 	sort.SliceStable(refs, func(i, j int) bool {
 		return r.Model.Ranked[model.Key(refs[i].ID)].Score > r.Model.Ranked[model.Key(refs[j].ID)].Score
 	})
@@ -60,7 +60,7 @@ func (x *exec) report() {
 		parts[i] = fmt.Sprintf("%s %d", l, lanes[l])
 	}
 	fmt.Fprintf(w, "totals: %d lead(s) scored: %d new, %d changed, %d unchanged; planned lanes: %s\n",
-		len(x.refs), added, changed, same, strings.Join(parts, ", "))
+		len(r.Input.Leads), added, changed, same, strings.Join(parts, ", "))
 	if r.NoPush != "" {
 		fmt.Fprintf(w, "pushing would wait this run: %s\n", r.NoPush)
 	}

@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -22,6 +24,10 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/store/codec"
 )
 
+// configVersionVar carries the hosted bundle's secret version number; S14b's
+// deploy sets it (contracts section 3).
+const configVersionVar = "LEADSCORE_CONFIG_VERSION"
+
 // exec is one run in progress.
 type exec struct {
 	s     settings
@@ -31,7 +37,7 @@ type exec struct {
 	run   *Run
 
 	startAt  time.Time       // the run's clock at start: last_run_at
-	dlCtx    context.Context // done at the deadline (not on Stop); scoring stops on it
+	dlCtx    context.Context // done at the deadline only
 	takeover string          // the owner of an expired lease this run took over
 
 	mu       sync.Mutex
@@ -41,12 +47,12 @@ type exec struct {
 	columns      []string // raw input headers fetched this run
 	merged       int      // input rows merged this run
 	backlog      int      // input rows left for later runs
+	cursors      []cursorSet
 	scored       bool
 	phase1Failed bool
-	deadlineHit  bool
-	result       rules.Result
-	refs         []api.LeadRef
+	cutShort     bool // the deadline or Stop came before the run finished its steps
 	oldRanked    map[model.Key]model.RankedRow
+	tierLogs     []model.LogEntry // written with Ranked, so a failed Ranked write never logs a change twice
 
 	failed bool // the run stopped with an error
 	lost   bool // the lease was lost: write nothing more
@@ -57,6 +63,14 @@ type problem struct {
 	warning           bool
 }
 
+// cursorSet is a source cursor to save in phase 1: at once for a source with
+// no events, after Intake took its events otherwise.
+type cursorSet struct {
+	source    string
+	next      api.Cursor
+	hasEvents bool
+}
+
 // execute runs once. The error is non-nil when the run failed; a run that
 // finished unhealthy returns a nil error with Healthy false.
 func execute(ctx context.Context, opts api.RunOptions, s settings) (api.RunResult, error) {
@@ -65,6 +79,9 @@ func execute(ctx context.Context, opts api.RunOptions, s settings) (api.RunResul
 	}
 	if s.out == nil {
 		s.out = io.Discard
+	}
+	if s.getenv == nil {
+		s.getenv = func(string) string { return "" }
 	}
 	// Step 1: leadscore.yml and the rubric are read fresh every run.
 	cfg, err := config.Load(config.Options{ConfigPath: opts.ConfigPath, RubricPath: opts.RubricPath})
@@ -84,16 +101,25 @@ func execute(ctx context.Context, opts api.RunOptions, s settings) (api.RunResul
 		return api.RunResult{}, fmt.Errorf("the rubric does not compile (leadscore rules check lists every error): %w", err)
 	}
 
-	open, ok := api.BackendFactory(cfg.Store.Type)
-	if !ok {
-		return api.RunResult{}, fmt.Errorf("store type %q is not registered in this build", cfg.Store.Type)
-	}
-	store, events, err := open(cfg.Store.Block)
-	if err != nil {
-		return api.RunResult{}, fmt.Errorf("opening the store: %w", err)
-	}
-	if c, ok := store.(io.Closer); ok {
-		defer c.Close()
+	var store api.Backend
+	var events api.EventLog
+	if opts.DryRun && cfg.Store.Type == "sqlite" && missing(cfg.Store.Path) {
+		// A dry run on a fresh install scores against an empty store rather
+		// than creating the file.
+		fmt.Fprintf(s.out, "dry run: no store yet at %s; scoring as on a first run\n", cfg.Store.Path)
+		store, events = emptyStore{}, emptyStore{}
+	} else {
+		open, ok := api.BackendFactory(cfg.Store.Type)
+		if !ok {
+			return api.RunResult{}, fmt.Errorf("store type %q is not registered in this build", cfg.Store.Type)
+		}
+		store, events, err = open(cfg.Store.Block)
+		if err != nil {
+			return api.RunResult{}, fmt.Errorf("opening the store: %w", err)
+		}
+		if c, ok := store.(io.Closer); ok {
+			defer c.Close()
+		}
 	}
 
 	id, err := uuid.NewV7()
@@ -103,9 +129,11 @@ func execute(ctx context.Context, opts api.RunOptions, s settings) (api.RunResul
 	runID := id.String()
 
 	// The deadline, the save budget after it, and the hard stop 30 seconds
-	// before the lease expires. Timers use the real clock.
+	// before the lease expires. Closing Stop starts the save budget early.
+	// Timers use the real clock.
 	deadlineAt := time.Now().Add(cfg.Deadline)
-	runCtx, cancelRun := context.WithDeadline(ctx, deadlineAt.Add(saveBudget))
+	hardAt := deadlineAt.Add(saveBudget)
+	runCtx, cancelRun := context.WithDeadline(ctx, hardAt)
 	defer cancelRun()
 	dlCtx, cancelDL := context.WithDeadline(runCtx, deadlineAt)
 	defer cancelDL()
@@ -116,6 +144,9 @@ func execute(ctx context.Context, opts api.RunOptions, s settings) (api.RunResul
 			select {
 			case <-opts.Stop:
 				cancelPush()
+				t := time.AfterFunc(min(saveBudget, time.Until(hardAt)), cancelRun)
+				<-runCtx.Done()
+				t.Stop()
 			case <-pushCtx.Done():
 			}
 		}()
@@ -136,6 +167,7 @@ func execute(ctx context.Context, opts api.RunOptions, s settings) (api.RunResul
 		DryRun: opts.DryRun, Now: func() time.Time { return s.now().UTC() }, HTTPClient: client,
 		Problem: x.problem,
 	}
+	x.run.ReRead = x.reRead
 
 	if !opts.DryRun {
 		if li, ok := store.(api.LeaseInspector); ok {
@@ -163,7 +195,23 @@ func execute(ctx context.Context, opts api.RunOptions, s settings) (api.RunResul
 		return x.finish(fmt.Errorf("loading the store: %w", err))
 	}
 	x.run.Model = m
-	return x.finish(x.main())
+	return x.finish(x.safeMain())
+}
+
+func missing(path string) bool {
+	_, err := os.Stat(path)
+	return errors.Is(err, fs.ErrNotExist)
+}
+
+// safeMain is main with a panic turned into the run's error, so a panicking
+// hook still writes run_failed under the lease (RFC 6.9).
+func (x *exec) safeMain() (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("panic: %v", p)
+		}
+	}()
+	return x.main()
 }
 
 // release gives the lease up, only if this run still holds it. It runs after
@@ -198,26 +246,27 @@ func (x *exec) main() error {
 			return err
 		}
 		if attempt == 1 {
-			// Discard, reload, and redo steps 3 to 6 with half the rows.
+			// Discard, reload, and redo steps 3 to 6 with half the rows taken.
 			m, err := codec.Load(r.Ctx, x.store)
 			if err != nil {
 				return fmt.Errorf("reloading the store after a commit too large: %w", err)
 			}
 			r.Model = m
-			chunk = max(1, chunk/2)
+			chunk = max(1, x.merged/2)
 			continue
 		}
 		// A second ErrTooLarge: nothing of steps 3 to 6 is saved this run.
 		r.Model.Discard()
-		x.scored, x.refs, x.merged = false, nil, 0
-		x.phase1Failed = true
+		x.scored, x.merged = false, 0
+		r.Input, r.Result = rules.Input{}, rules.Result{}
+		x.phase1Failed, x.cutShort = true, true
 		x.noPush("phase 1 was too large to save, even at half the rows")
 		x.problem("commit_too_large", fmt.Sprintf("the first save of this run was too large for the store even at %d input rows; nothing it merged was saved", chunk),
 			"lower ingest_chunk_rows in leadscore.yml", false)
 		break
 	}
 
-	if !r.DryRun && !x.phase1Failed {
+	if !x.phase1Failed {
 		x.push()
 	}
 	if x.s.hooks.Export != nil {
@@ -233,16 +282,13 @@ func (x *exec) main() error {
 	// Phase 2: everything else but Ranked, with the Log trim and Health. The
 	// Window events and Seen events trims are Intake's (S9).
 	r.Model.Trim(model.TableLog, "at", r.Now().Add(-x.cfg.LogRetention))
-	x.putHealth(true)
+	x.putHealth(!x.cutShort)
 	if err := x.commit("phase 2", codec.Encode(r.Model, phase2Tables(r.Model)...), false); err != nil {
 		return err
 	}
 	if x.scored {
 		if err := x.writeRanked(); err != nil {
-			x.lateProblem("ranked_write_failed", "writing Ranked failed: "+err.Error(), "the next run rewrites it")
-			if x.lost {
-				return err
-			}
+			return fmt.Errorf("writing Ranked: %w", err)
 		}
 	}
 	if x.s.hooks.AfterSave != nil {
@@ -253,12 +299,15 @@ func (x *exec) main() error {
 	return nil
 }
 
-// Phase 1 tables (contracts section 12.6). State carries only its cursors,
-// last_poll_at and first_run_at here; the rest of State goes in phase 2.
+// Phase 1 tables (contracts section 12.6): with the keys and cursors, every
+// change merge makes because a row was applied (Company facts, its Log lines
+// and the key_conflicts count), so no crash leaves a row applied without them.
 var phase1Tables = []string{
-	model.TablePeople, model.TableIdentities, model.TableAppliedRows, model.TableSeenEvents,
-	model.TableWindowEvents, model.TableOutcomes, model.TablePushes, model.TableAppliedOverrides,
+	model.TablePeople, model.TableIdentities, model.TableAppliedRows, model.TableCompanyFacts,
+	model.TableSeenEvents, model.TableWindowEvents, model.TableOutcomes, model.TablePushes,
+	model.TableAppliedOverrides, model.TableLog,
 	model.TableState + ":cursor:", model.TableState + ":last_poll_at", model.TableState + ":first_run_at",
+	model.TableState + ":key_conflicts", model.TableState + ":config_version",
 }
 
 // phase2Tables is every table the run writes but Ranked (written after) and
@@ -288,14 +337,15 @@ func phase2Tables(m *model.Model) []string {
 	return append(out, names...)
 }
 
-// beforePhase1 is steps 3 to 6. A deadline passing skips the remaining
-// steps: phase 1 then saves what was merged, and nothing is pushed.
+// beforePhase1 is steps 3 to 6. The deadline or Stop arriving skips the
+// remaining steps: phase 1 then saves what was merged, and nothing is pushed.
 func (x *exec) beforePhase1(chunk int) error {
 	r := x.run
 	x.resetAttempt()
 	x.prepare()
 	x.ingest(chunk)
-	if x.past("while reading sources") {
+	x.saveCursors(false)
+	if x.cut("while reading sources") {
 		return nil
 	}
 
@@ -307,10 +357,13 @@ func (x *exec) beforePhase1(chunk int) error {
 			x.problem("events_shrank", "the event log holds fewer events than a saved cursor says were read: "+err.Error(),
 				"restore the deleted events (or rows) from a backup; pushing waits until then", false)
 		case err != nil:
+			x.hookFailed("intake", err)
 			return fmt.Errorf("intake: %w", err)
+		default:
+			x.saveCursors(true) // the sources' events reached Intake
 		}
 	}
-	if x.past("during intake") {
+	if x.cut("during intake") {
 		return nil
 	}
 	if h := x.s.hooks.Enrich; h != nil && !r.DryRun {
@@ -318,33 +371,34 @@ func (x *exec) beforePhase1(chunk int) error {
 			x.hookFailed("enrich", err)
 		}
 	}
-	if x.past("during enrichment") {
+	if x.cut("during enrichment") {
 		return nil
 	}
 	if h := x.s.hooks.Fold; h != nil {
 		if err := h(r); err != nil {
+			x.hookFailed("fold", err)
 			return fmt.Errorf("status fold: %w", err)
 		}
 	}
-	if x.past("during the status fold") {
+	if x.cut("during the status fold") {
 		return nil
 	}
 
-	// Run-level checks: the rubric's fields first (they fail the run), then
-	// every registered in-run check.
-	if ps := check.UnknownFields(r.Rubric, r.Model, x.columns); len(ps) > 0 {
-		names := make([]string, len(ps))
-		for i, p := range ps {
-			x.problem(p.Key, p.Message, p.Fix, p.Warning)
-			names[i] = strings.TrimPrefix(p.Key, check.UnknownFieldKind+":")
-		}
-		return fmt.Errorf("the rubric reads %s, which is not built in, declared under fields, or a loaded column", strings.Join(names, ", "))
-	}
+	// The in-run checks (contracts section 10) run here, after the merge and
+	// fold, so the rubric check sees this run's columns. A rubric field no
+	// input carries fails the run before scoring.
 	env := check.Env{Config: x.cfg, Model: r.Model, Store: x.store, Events: r.Events, Columns: x.columns}
+	var unknown []string
 	for _, c := range check.InRun() {
 		for _, p := range c.Run(r.Ctx, env) {
 			x.problem(p.Key, p.Message, p.Fix, p.Warning)
+			if f, ok := strings.CutPrefix(p.Key, check.UnknownFieldKind+":"); ok {
+				unknown = append(unknown, f)
+			}
 		}
+	}
+	if len(unknown) > 0 {
+		return fmt.Errorf("the rubric reads %s, which is not built in, declared under fields, or a loaded column", strings.Join(unknown, ", "))
 	}
 
 	var det rules.DetectorResults
@@ -356,7 +410,7 @@ func (x *exec) beforePhase1(chunk int) error {
 			det = d
 		}
 	}
-	if x.past("during detection") {
+	if x.cut("during detection") {
 		return nil
 	}
 	return x.score(det)
@@ -368,17 +422,22 @@ func (x *exec) resetAttempt() {
 	x.mu.Lock()
 	x.problems = map[string]problem{}
 	x.mu.Unlock()
-	x.run.NoPush = ""
-	x.run.SourceEvents = nil
-	x.columns, x.merged, x.backlog = nil, 0, 0
-	x.scored, x.deadlineHit = false, false
-	x.result, x.refs, x.oldRanked = rules.Result{}, nil, nil
+	r := x.run
+	r.NoPush, r.SourceEvents = "", nil
+	r.Input, r.Result = rules.Input{}, rules.Result{}
+	x.columns, x.merged, x.backlog, x.cursors = nil, 0, 0, nil
+	x.scored, x.cutShort = false, false
+	x.oldRanked, x.tierLogs = nil, nil
 }
 
-// prepare is the run-start work recorded in the model: skipped runs, the
-// first run's time, a lease takeover, and each lane's sink.
+// prepare is the run-start work recorded in the model: the hosted config
+// version, skipped runs, the first run's time, a lease takeover, and each
+// lane's sink.
 func (x *exec) prepare() {
 	r, m := x.run, x.run.Model
+	if v := x.s.getenv(configVersionVar); v != "" && m.StateValue("config_version") != v {
+		m.SetState("config_version", v)
+	}
 	if last := m.Health[model.K("result", "last_run_at")].Value; last != "" {
 		if t, err := model.ParseTime(last); err == nil && x.startAt.Sub(t) > 2*x.cfg.Schedule {
 			x.problem("skipped_runs", fmt.Sprintf("the last run before this one started at %s, more than two schedule intervals ago", last),
@@ -403,61 +462,78 @@ func (x *exec) prepare() {
 	}
 }
 
-// past reports whether the deadline has passed, recording it once.
-func (x *exec) past(where string) bool {
-	if x.dlCtx.Err() == nil {
+// cut reports whether the deadline has passed or Stop was closed, recording
+// it once.
+func (x *exec) cut(where string) bool {
+	if x.run.PushCtx.Err() == nil {
 		return false
 	}
-	x.markDeadline(where)
+	if !x.cutShort {
+		x.cutShort = true
+		if x.dlCtx.Err() != nil {
+			x.problem("deadline_passed", fmt.Sprintf("the run reached its deadline (%s) %s; it saved what it had and pushed nothing more", x.cfg.Deadline, where),
+				"if this repeats, raise deadline or lower ingest_chunk_rows in leadscore.yml", false)
+		} else {
+			x.problem("run_stopped", "the run was asked to stop "+where+"; it saved what it had and pushed nothing more",
+				"nothing to do: the next run carries on", true)
+		}
+	}
 	return true
 }
 
-func (x *exec) markDeadline(where string) {
-	if x.deadlineHit {
-		return
-	}
-	x.deadlineHit = true
-	x.problem("deadline_passed", fmt.Sprintf("the run reached its deadline (%s) %s; it saved what it had and pushed nothing more", x.cfg.Deadline, where),
-		"if this repeats, raise deadline or lower ingest_chunk_rows in leadscore.yml", false)
-}
-
-// push is steps 8 and 9.
+// push is steps 8 and 9. A dry run calls PrePush (whose lookups S10b skips
+// on a dry run) but never Push.
 func (x *exec) push() {
 	r := x.run
-	if !x.scored {
-		return
-	}
-	if r.PushCtx.Err() != nil {
-		x.past("before pushing")
+	if !x.scored || x.cut("before pushing") {
 		return
 	}
 	if h := x.s.hooks.PrePush; h != nil {
-		if err := h(r, x.candidates()); err != nil {
+		err := h(r, x.candidates())
+		x.buildRanked() // PrePush may have re-scored: Ranked follows Run.Result
+		if err != nil {
 			x.hookFailed("prepush", err)
 			return
 		}
+	}
+	if r.DryRun {
+		return
 	}
 	if h := x.s.hooks.Push; h != nil {
 		if err := h(r); err != nil {
 			x.hookFailed("push", err)
 		}
 	}
-	x.past("while pushing")
+	x.cut("while pushing")
+}
+
+// reRead is Run.ReRead.
+func (x *exec) reRead() ([]api.LeadID, error) {
+	h := x.s.hooks.ReRead
+	if h == nil {
+		return nil, nil
+	}
+	changed, err := h(x.run)
+	if err != nil {
+		x.hookFailed("reread", err)
+	}
+	return changed, err
 }
 
 // candidates are the leads a cold or non-cold lane matched this run, not
 // blocked by a rubric conflict: who the pre-push checks look at.
 func (x *exec) candidates() []api.LeadID {
+	r := x.run
 	kind := map[string]string{}
-	for _, l := range x.run.Rubric.Lanes() {
+	for _, l := range r.Rubric.Lanes() {
 		kind[l.ID] = l.Kind
 	}
 	var out []api.LeadID
-	for _, ref := range x.refs {
-		if _, blocked := x.result.Blocked[ref.ID]; blocked {
+	for _, ref := range r.Input.Leads {
+		if _, blocked := r.Result.Blocked[ref.ID]; blocked {
 			continue
 		}
-		for _, lane := range x.result.Lanes[ref.ID] {
+		for _, lane := range r.Result.Lanes[ref.ID] {
 			if kind[lane] != "export" {
 				out = append(out, ref.ID)
 				break
@@ -501,20 +577,35 @@ func (x *exec) commit(name string, writes []api.TableWrite, phase1 bool) error {
 	return nil
 }
 
-// writeRanked writes Ranked after phase 2, in chunks.
+// writeRanked writes Ranked after phase 2, in chunks. The tier and priority
+// change lines go in the first chunk's commit, so a Ranked write that fails
+// never logs a change twice.
 func (x *exec) writeRanked() error {
-	for _, w := range codec.Encode(x.run.Model, model.TableRanked) {
+	m := x.run.Model
+	for _, e := range x.tierLogs {
+		m.Put(model.TableLog, e)
+	}
+	logs := codec.Encode(m, model.TableLog)
+	first := true
+	for _, w := range codec.Encode(m, model.TableRanked) {
 		for _, c := range codec.Chunk(w, rankedChunkRows) {
-			if err := x.commit("Ranked", []api.TableWrite{c}, false); err != nil {
+			writes := []api.TableWrite{c}
+			if first {
+				writes, first = append(writes, logs...), false
+			}
+			if err := x.commit("Ranked", writes, false); err != nil {
 				return err
 			}
 		}
+	}
+	if first {
+		return x.commit("Log", logs, false)
 	}
 	return nil
 }
 
 func (x *exec) hookFailed(name string, err error) {
-	x.problem("step_failed:"+name, name+" failed: "+err.Error(), "see the message; the run carried on without this step", false)
+	x.problem("step_failed:"+name, name+" failed: "+err.Error(), "see the message; the run carried on without this step where it could", false)
 }
 
 // noPush blocks pushing for the run, keeping every reason.
@@ -575,7 +666,7 @@ func (x *exec) finish(err error) (api.RunResult, error) {
 		x.problem("run_failed", "the run stopped: "+err.Error(), "fix the cause in the message; the next run tries again", false)
 		x.saveFailure()
 	}
-	res := api.RunResult{Healthy: x.healthy(), Problems: x.problemKeys()}
+	res := api.RunResult{Healthy: x.healthy(), Problems: x.problemKeys(), Pushed: x.run.Pushed}
 	state := "healthy"
 	switch {
 	case err != nil:
@@ -583,11 +674,30 @@ func (x *exec) finish(err error) (api.RunResult, error) {
 	case !res.Healthy:
 		state = "unhealthy"
 	}
-	line := fmt.Sprintf("run %s: %s; %d lead(s) scored, %d input row(s) merged, %d left for later runs",
-		x.run.ID, state, len(x.refs), x.merged, x.backlog)
+	line := fmt.Sprintf("run %s: %s; %d lead(s) scored, %d input row(s) merged, %d left for later runs, %d pushed",
+		x.run.ID, state, len(x.run.Input.Leads), x.merged, x.backlog, x.run.Pushed)
 	if len(res.Problems) > 0 {
 		line += "; open problems: " + strings.Join(res.Problems, ", ")
 	}
 	fmt.Fprintln(x.s.out, logredact.Redact(line))
 	return res, err
+}
+
+// emptyStore stands in for a store that does not exist yet, on a dry run: it
+// reads as empty and refuses every write.
+type emptyStore struct{}
+
+var errNoStore = errors.New("no store yet")
+
+func (emptyStore) ReadTable(context.Context, string) ([]api.Row, error) { return nil, nil }
+func (emptyStore) Lease(context.Context, string, time.Duration) (api.RunLease, error) {
+	return nil, errNoStore
+}
+func (emptyStore) Commit(context.Context, []api.TableWrite) error     { return errNoStore }
+func (emptyStore) AppendEvents(context.Context, []api.RawEvent) error { return errNoStore }
+func (emptyStore) DeleteProcessed(_ context.Context, c api.Cursor, _ time.Time) (api.Cursor, error) {
+	return c, nil
+}
+func (emptyStore) ReadEvents(_ context.Context, c api.Cursor) ([]api.RawEvent, api.Cursor, error) {
+	return nil, c, nil
 }

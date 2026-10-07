@@ -18,6 +18,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/cli"
 	"github.com/HarshitBadhwar8/leadscore/internal/engine"
+	"github.com/HarshitBadhwar8/leadscore/internal/logredact"
 
 	// The built-in stores register here: their packages are internal, so a
 	// custom build cannot import them, and every build gets them this way.
@@ -258,6 +259,8 @@ func RegisterBackend(typ string, f func(Config) (Backend, EventLog, error)) {
 // The error is non-nil when the run failed; a run that finished unhealthy
 // returns a nil error with Healthy false.
 func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
+	// As the CLI does: mask the exact key values before anything can log.
+	logredact.MaskEnvSecrets(os.Getenv)
 	return engine.RunTo(ctx, opts, os.Stdout)
 }
 

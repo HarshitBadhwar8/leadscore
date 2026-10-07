@@ -100,3 +100,35 @@ func TestRunExitsOneWhenUnhealthy(t *testing.T) {
 		t.Errorf("got %d %q", code, out)
 	}
 }
+
+// Stored text that a spreadsheet would read as a formula is quoted in
+// `ranked --csv`; numbers are left alone. Control characters never reach the
+// terminal from status, ranked or explain.
+func TestPrintedStoredTextIsSafe(t *testing.T) {
+	cfg := runInstall(t)
+	leads := filepath.Join(filepath.Dir(cfg), "leads.csv")
+	text := "Email,Name,Title\nana@acme.example,\"=HYPERLINK(\"\"http://x\"\",\"\"y\"\")\",Head of Ops\nbo@acme.example,Bo \x1b[31mB,Clerk\n"
+	if err := os.WriteFile(leads, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, errOut := cli("run", "--config", cfg); code != 0 {
+		t.Fatalf("run: %q %q", out, errOut)
+	}
+	_, out, _ := cli("ranked", "--csv", "--config", cfg)
+	recs, err := csv.NewReader(strings.NewReader(out)).ReadAll()
+	if err != nil || len(recs) != 3 {
+		t.Fatalf("%v %q", err, out)
+	}
+	if name := recs[1][3]; name != `'=HYPERLINK("http://x","y")` {
+		t.Errorf("full_name cell %q must be quoted", name)
+	}
+	if score := recs[1][8]; score != "5" {
+		t.Errorf("score cell %q must stay a number", score)
+	}
+	for _, args := range [][]string{{"ranked"}, {"explain", "bo@acme.example"}, {"status"}} {
+		_, out, _ := cli(append(args, "--config", cfg)...)
+		if strings.ContainsRune(out, '\x1b') {
+			t.Errorf("%v printed a control character: %q", args, out)
+		}
+	}
+}

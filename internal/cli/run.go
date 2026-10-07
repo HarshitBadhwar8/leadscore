@@ -13,9 +13,11 @@ import (
 	"strings"
 	"syscall"
 	"text/tabwriter"
+	"unicode"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/config"
+	"github.com/HarshitBadhwar8/leadscore/internal/csvsafe"
 	"github.com/HarshitBadhwar8/leadscore/internal/engine"
 	"github.com/HarshitBadhwar8/leadscore/internal/merge"
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
@@ -37,6 +39,9 @@ func runRun(inv *invocation) int {
 	go func() {
 		select {
 		case <-sig:
+			// A second SIGTERM or Ctrl-C quits at once: Go's default handling
+			// returns once the first is taken.
+			signal.Stop(sig)
 			close(stop)
 		case <-done:
 		}
@@ -107,7 +112,7 @@ func runStatus(inv *invocation) int {
 	tw := tabwriter.NewWriter(inv.stdout, 0, 2, 2, ' ', 0)
 	for _, k := range healthResults {
 		if v, ok := results[k]; ok {
-			fmt.Fprintf(tw, "%s\t%s\n", k, v)
+			fmt.Fprintf(tw, "%s\t%s\n", k, printable(v))
 		}
 	}
 	tw.Flush()
@@ -118,7 +123,7 @@ func runStatus(inv *invocation) int {
 	}
 	fmt.Fprintf(inv.stdout, "%d open problem(s):\n", len(probs))
 	for _, p := range probs {
-		fmt.Fprintf(inv.stdout, "  %s (since %s)\n    %s\n", p.key, p.since, p.value)
+		fmt.Fprintf(inv.stdout, "  %s (since %s)\n    %s\n", printable(p.key), printable(p.since), printable(p.value))
 	}
 	return exitOK
 }
@@ -191,7 +196,7 @@ func runRanked(inv *invocation) int {
 			for i, col := range cols {
 				rec[i] = r[col]
 			}
-			w.Write(rec)
+			w.Write(csvsafe.Row(rec))
 		}
 		w.Flush()
 		if err := w.Error(); err != nil {
@@ -215,7 +220,7 @@ func runRanked(inv *invocation) int {
 	for _, r := range rows {
 		vals := make([]string, len(shown))
 		for i, col := range shown {
-			vals[i] = r[col]
+			vals[i] = printable(r[col])
 		}
 		fmt.Fprintln(tw, strings.Join(vals, "\t"))
 	}
@@ -224,8 +229,8 @@ func runRanked(inv *invocation) int {
 	return exitOK
 }
 
-// runExplain prints a lead's verdict and reasons from the last run's Ranked
-// row, rendered with the current rubric.
+// runExplain prints a lead's verdict as the last run stored it in Ranked:
+// its row, every derived value, the score and its halves, and the reasons.
 func runExplain(inv *invocation) int {
 	c, b, closeStore, err := openStore(inv)
 	if err != nil {
@@ -244,39 +249,59 @@ func runExplain(inv *invocation) int {
 	if !ok {
 		return inv.fail(fmt.Errorf("lead %s has no verdict yet; it gets one at the next run", id))
 	}
-	text, err := c.Rubric()
-	if err != nil {
-		return inv.fail(err)
-	}
-	r, err := rules.Compile(text)
-	if err != nil {
-		return inv.fail(fmt.Errorf("the rubric does not compile: %w", err))
-	}
-	v := api.Verdict{RubricVersion: row.RubricVersion, Values: map[string]any{},
-		AccountScore: row.AccountScore, ContactScore: row.ContactScore}
-	for k, s := range row.Derived {
-		switch f, err := strconv.ParseFloat(s, 64); {
-		case s == "":
-			v.Values[k] = nil
-		case err == nil:
-			v.Values[k] = f
-		default:
-			v.Values[k] = s
-		}
-	}
-	if row.Reasons != "" {
-		v.Reasons = strings.Split(row.Reasons, "; ")
-	}
-	fmt.Fprintf(inv.stdout, "lead %s\n", id)
+	w := inv.stdout
+	fmt.Fprintf(w, "lead %s\n", id)
 	for _, kv := range [][2]string{{"email", row.Email}, {"linkedin", row.LinkedInURL}, {"name", row.FullName},
 		{"company", row.CompanyDomain}, {"status", row.Status}, {"lane", row.Lane}} {
 		if kv[1] != "" {
-			fmt.Fprintf(inv.stdout, "%s: %s\n", kv[0], kv[1])
+			fmt.Fprintf(w, "%s: %s\n", kv[0], printable(kv[1]))
 		}
 	}
-	if row.RubricVersion != r.Version() {
-		fmt.Fprintf(inv.stdout, "(scored with rubric %s; the local rubric is %s, so this changes at the next run)\n", row.RubricVersion, r.Version())
+	// Derived values in the rubric's order when it compiles, then any others.
+	var names []string
+	seen := map[string]bool{}
+	if text, err := c.Rubric(); err == nil {
+		if r, err := rules.Compile(text); err == nil {
+			for _, n := range r.DerivedNames() {
+				if _, ok := row.Derived[n]; ok {
+					names, seen[n] = append(names, n), true
+				}
+			}
+		}
 	}
-	fmt.Fprint(inv.stdout, r.Explain(v))
+	var rest []string
+	for n := range row.Derived {
+		if !seen[n] {
+			rest = append(rest, n)
+		}
+	}
+	sort.Strings(rest)
+	for _, n := range append(names, rest...) {
+		v := row.Derived[n]
+		if v == "" {
+			v = "no value"
+		}
+		fmt.Fprintf(w, "%s: %s\n", n, printable(v))
+	}
+	fmt.Fprintf(w, "score: %s (account %s, contact %s)\n", model.FormatFloat(row.Score),
+		model.FormatFloat(row.AccountScore), model.FormatFloat(row.ContactScore))
+	if row.Reasons != "" {
+		fmt.Fprintln(w, "reasons:")
+		for _, reason := range strings.Split(row.Reasons, "; ") {
+			fmt.Fprintf(w, "  - %s\n", printable(reason))
+		}
+	}
+	fmt.Fprintf(w, "rubric: %s\n", printable(row.RubricVersion))
 	return exitOK
+}
+
+// printable replaces control characters in stored text with U+FFFD before it
+// reaches a terminal, so a cell cannot move the cursor or recolour the screen.
+func printable(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return '\uFFFD'
+		}
+		return r
+	}, s)
 }

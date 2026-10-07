@@ -14,68 +14,68 @@ import (
 
 // score is step 6: it builds every live lead's LeadRef from the model (the
 // merge index is built here, after Intake and Fold, right before Evaluate),
-// evaluates under the deadline, logs tier and priority changes against the
-// loaded Ranked, and puts the new Ranked rows in the model (written after
-// phase 2).
+// evaluates under the deadline or Stop, and puts the new Ranked rows in the
+// model (written after phase 2).
 func (x *exec) score(det rules.DetectorResults) error {
 	r, m := x.run, x.run.Model
 	idx := merge.NewIndex(m, x.cfg.Sources)
-	refs := LeadRefs(m, idx)
-	in := rules.Input{Leads: refs, Companies: Companies(m), LeadsSeen: idx.LeadsSeen(), Detectors: det}
-	res, err := r.Rubric.EvaluateContext(x.dlCtx, in)
+	in := rules.Input{Leads: leadRefs(m, idx), Companies: companies(m), LeadsSeen: idx.LeadsSeen(), Detectors: det}
+	res, err := r.Rubric.EvaluateContext(r.PushCtx, in)
 	if err != nil {
-		if x.past("while scoring") {
+		if x.cut("while scoring") {
 			return nil
 		}
 		return fmt.Errorf("scoring: %w", err)
 	}
-	x.scored, x.result, x.refs = true, res, refs
+	r.Input, r.Result, x.scored = in, res, true
 	for _, w := range res.Warnings {
 		x.log("warn", "rubric_warning", "", w)
 	}
-
 	x.oldRanked = make(map[model.Key]model.RankedRow, len(m.Ranked))
 	for k, row := range m.Ranked {
 		x.oldRanked[k] = row
 	}
+	x.buildRanked()
+	return nil
+}
+
+// buildRanked puts a Ranked row in the model for every lead in Run.Input from
+// Run.Result, deletes the rows of leads no longer live, and works out the
+// tier and priority change lines against the loaded Ranked (a lead with no
+// row there is not logged). It runs after scoring and again after PrePush.
+func (x *exec) buildRanked() {
+	r, m := x.run, x.run.Model
 	derived := r.Rubric.DerivedNames()
-	logged := map[string]string{}
-	for _, n := range derived {
-		if n == "tier" || n == "priority" {
-			logged[n] = n + "_change"
-		}
-	}
+	x.tierLogs = nil
 	keep := map[model.Key]bool{}
-	for _, ref := range refs {
+	for _, ref := range r.Input.Leads {
 		row := x.rankedRow(ref, derived)
 		k := model.Key(ref.ID)
 		keep[k] = true
 		if old, ok := x.oldRanked[k]; ok {
-			for _, n := range derived {
-				kind, ok := logged[n]
-				if !ok || old.Derived[n] == row.Derived[n] {
+			for _, n := range []string{"tier", "priority"} {
+				if _, has := row.Derived[n]; !has || old.Derived[n] == row.Derived[n] {
 					continue
 				}
-				r.Model.Put(model.TableLog, model.LogEntry{At: r.Now(), RunID: r.ID, Level: "info", LeadID: ref.ID,
-					Email: row.Email, Kind: kind, Message: fmt.Sprintf("%s %s -> %s", n, shown(old.Derived[n]), shown(row.Derived[n])),
+				x.tierLogs = append(x.tierLogs, model.LogEntry{At: r.Now(), RunID: r.ID, Level: "info", LeadID: ref.ID,
+					Email: row.Email, Kind: n + "_change", Message: fmt.Sprintf("%s %s -> %s", n, shown(old.Derived[n]), shown(row.Derived[n])),
 					RubricVersion: r.Rubric.Version()})
 			}
 		}
 		m.Put(model.TableRanked, row)
 	}
-	for k := range x.oldRanked {
+	for k := range m.Ranked {
 		if !keep[k] {
 			m.Delete(model.TableRanked, k.Parts())
 		}
 	}
-	return nil
 }
 
 // rankedRow is one lead's Ranked row. The lane is the highest-priority lane
 // whose `when` holds, empty when none does or a rubric conflict blocks the
 // lead; S10b's lane checks refine it.
 func (x *exec) rankedRow(ref api.LeadRef, derived []string) model.RankedRow {
-	v := x.result.Verdicts[ref.ID]
+	v := x.run.Result.Verdicts[ref.ID]
 	row := model.RankedRow{
 		LeadID: ref.ID, FullName: ref.FullName, CompanyDomain: ref.Domain,
 		Derived:      map[string]string{},
@@ -91,9 +91,9 @@ func (x *exec) rankedRow(ref api.LeadRef, derived []string) model.RankedRow {
 	for _, n := range derived {
 		row.Derived[n] = formatValue(v.Values[n])
 	}
-	if why, blocked := x.result.Blocked[ref.ID]; blocked {
+	if why, blocked := x.run.Result.Blocked[ref.ID]; blocked {
 		row.Reasons = joinReason(row.Reasons, "blocked: "+why)
-	} else if lanes := x.result.Lanes[ref.ID]; len(lanes) > 0 {
+	} else if lanes := x.run.Result.Lanes[ref.ID]; len(lanes) > 0 {
 		row.Lane = lanes[0]
 	}
 	return row
@@ -135,10 +135,10 @@ func shown(s string) string {
 	return s
 }
 
-// LeadRefs builds a LeadRef for every live lead, sorted by id, from the model
+// leadRefs builds a LeadRef for every live lead, sorted by id, from the model
 // and a merge index built over it. Status is the stored (folded) status;
 // Verdict is nil.
-func LeadRefs(m *model.Model, idx *merge.Index) []api.LeadRef {
+func leadRefs(m *model.Model, idx *merge.Index) []api.LeadRef {
 	ids := idx.LiveLeads()
 	out := make([]api.LeadRef, 0, len(ids))
 	for _, id := range ids {
@@ -170,9 +170,9 @@ func LeadRefs(m *model.Model, idx *merge.Index) []api.LeadRef {
 	return out
 }
 
-// Companies turns every Company facts row into the evaluator's CompanyFacts:
+// companies turns every Company facts row into the evaluator's CompanyFacts:
 // the built-in facts typed, every other fact in Extra.
-func Companies(m *model.Model) map[string]api.CompanyFacts {
+func companies(m *model.Model) map[string]api.CompanyFacts {
 	out := make(map[string]api.CompanyFacts, len(m.CompanyFacts))
 	for _, cf := range m.CompanyFacts {
 		f := api.CompanyFacts{Domain: cf.Domain, FetchedAt: cf.EnrichedAt, NotFound: !cf.NotFoundAt.IsZero(), Extra: map[string]string{}}

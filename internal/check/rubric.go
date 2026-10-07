@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
+	"github.com/HarshitBadhwar8/leadscore/internal/merge"
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
 	"github.com/HarshitBadhwar8/leadscore/internal/rules"
 )
@@ -53,7 +54,7 @@ const UnknownFieldKind = "rubric_unknown_field"
 // that is not built in, declared in the rubric, or a loaded column. Loaded
 // columns are the fields of every People row, the facts of every Company facts
 // row, the Companies tab's headers, and the given raw input headers (the
-// run's fetched rows), each resolved through the alias tables as merge does.
+// run's fetched rows), each resolved as merge resolves headers.
 func UnknownFields(r *rules.Rubric, m *model.Model, headers []string) []Problem {
 	aliases := r.Aliases()
 	known := map[string]bool{
@@ -76,15 +77,12 @@ func UnknownFields(r *rules.Rubric, m *model.Model, headers []string) []Problem 
 			known["company."+f] = true
 		}
 	}
-	table := api.BuiltinAliases()
-	for k, v := range aliases {
-		table[k] = v
-	}
+	table := merge.AliasTable(aliases)
 	for _, row := range m.Companies {
 		for h := range row {
 			// A Companies header naming company.<f> is fact f; any other header
 			// is the fact named by its squashed form.
-			if f := resolveHeader(h, table); strings.HasPrefix(f, "company.") {
+			if f := merge.ResolveHeader(table, h); strings.HasPrefix(f, "company.") {
 				known[f] = true
 			} else if sq := api.SquashHeader(h); sq != "" {
 				known["company."+sq] = true
@@ -92,7 +90,7 @@ func UnknownFields(r *rules.Rubric, m *model.Model, headers []string) []Problem 
 		}
 	}
 	for _, h := range headers {
-		if f := resolveHeader(h, table); f != "" {
+		if f := merge.ResolveHeader(table, h); f != "" {
 			known[f] = true
 		}
 	}
@@ -108,18 +106,4 @@ func UnknownFields(r *rules.Rubric, m *model.Model, headers []string) []Problem 
 		})
 	}
 	return out
-}
-
-// resolveHeader names the field a header carries, as merge resolves it: its
-// entry in the alias table (the rubric's aliases over the built-in ones),
-// else the squashed header.
-func resolveHeader(h string, table map[string]string) string {
-	sq := api.SquashHeader(h)
-	if sq == "" {
-		return ""
-	}
-	if f, ok := table[sq]; ok {
-		return f
-	}
-	return sq
 }

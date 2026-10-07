@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -26,30 +28,40 @@ func TestDryRun(t *testing.T) {
 	in.write("leads.csv", csvText("Email,Name,Title",
 		"ana@acme.example,Ana A,Head of Ops", "bo@acme.example,Bo B,Clerk",
 		"cy@acme.example,Cy C,Clerk", "di@acme.example,Di D,Clerk", "ed@acme.example,Ed E,Clerk"))
-	enriched, pushed := false, false
+	enriched, prepushed, pushed := false, false, false
 	hooks := DefaultHooks()
 	hooks.Enrich = func(*Run) error { enriched = true; return nil }
 	hooks.Push = func(*Run) error { pushed = true; return nil }
-	hooks.PrePush = func(*Run, []api.LeadID) error { pushed = true; return nil }
+	// PrePush runs (S10b skips its lookups on a dry run) and its result is
+	// what the report plans: here it holds Ed back from every lane.
+	hooks.PrePush = func(r *Run, _ []api.LeadID) error {
+		prepushed = r.DryRun
+		for _, l := range r.Input.Leads {
+			if l.Emails[0] == "ed@acme.example" {
+				delete(r.Result.Lanes, l.ID)
+			}
+		}
+		return nil
+	}
 	res, out, err := in.run(hooks, dry)
 	if err != nil || res.Skipped {
 		t.Fatalf("%+v %v\n%s", res, err, out)
 	}
-	if enriched || pushed {
-		t.Error("a dry run calls no enrichment, lookup or push")
+	if enriched || pushed || !prepushed {
+		t.Errorf("a dry run calls PrePush but no enrichment or push: enriched %v prepushed %v pushed %v", enriched, prepushed, pushed)
 	}
 	for _, want := range []string{
 		"dry run: no lease taken, nothing written",
 		"tier 2 -> 1",
 		"tier 1 -> 2",
-		"totals: 5 lead(s) scored: 3 new, 2 changed, 0 unchanged; planned lanes: list 5",
+		"totals: 5 lead(s) scored: 3 new, 2 changed, 0 unchanged; planned lanes: list 4, none 1",
 		"3 input row(s) merged, 0 left",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
 	}
-	if strings.Count(out, "\nnew ") != 3 || strings.Contains(out, "@") {
+	if strings.Count(out, "lane=none") != 1 || strings.Count(out, "\nnew ") != 3 || strings.Contains(out, "@") {
 		t.Errorf("one line per new lead, by id only:\n%s", out)
 	}
 	if len(in.rows(model.TablePeople)) != people || len(in.rows(model.TableRanked)) != len(ranked) || in.health()["result:run_id"] != health["result:run_id"] {
@@ -59,4 +71,17 @@ func TestDryRun(t *testing.T) {
 		t.Error("a dry run must not touch the lease")
 	}
 	t.Logf("dry-run output:\n%s", out)
+}
+
+// A dry run on a fresh install scores against an empty store and does not
+// create the SQLite file.
+func TestDryRunOnAFreshInstallCreatesNoStore(t *testing.T) {
+	in := basicInstall(t)
+	res, out, err := in.run(DefaultHooks(), dry)
+	if err != nil || !strings.Contains(out, "no store yet") || !strings.Contains(out, "2 new") {
+		t.Fatalf("%+v %v\n%s", res, err, out)
+	}
+	if _, err := os.Stat(filepath.Join(in.dir, "leadscore.db")); !os.IsNotExist(err) {
+		t.Errorf("the dry run created the store: %v", err)
+	}
 }

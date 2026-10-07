@@ -245,7 +245,9 @@ func TestHardStop(t *testing.T) {
 	}
 }
 
-// Closing Stop stops new vendor calls only: the run saves and is healthy.
+// Closing Stop is the graceful stop: like the deadline it skips the steps
+// left before phase 1 and every push, the run saves what it merged, and the
+// run is healthy with a warning.
 func TestStopIsGraceful(t *testing.T) {
 	in := basicInstall(t)
 	stop := make(chan struct{})
@@ -254,11 +256,30 @@ func TestStopIsGraceful(t *testing.T) {
 	pushed := false
 	hooks.Push = func(*Run) error { pushed = true; return nil }
 	res, _, err := in.run(hooks, func(o *api.RunOptions, _ *settings) { o.Stop = stop })
-	if err != nil || !res.Healthy || pushed {
+	if err != nil || !res.Healthy || pushed || !hasKey(res.Problems, "run_stopped") || hasKey(res.Problems, "deadline_passed") {
 		t.Fatalf("got %+v %v pushed %v", res, err, pushed)
 	}
-	if len(in.rows(model.TableRanked)) != 2 {
-		t.Error("a stopped run still scores and saves")
+	if len(in.rows(model.TablePeople)) != 2 || len(in.rows(model.TableRanked)) != 0 {
+		t.Error("a stopped run saves what it merged and scores nothing more")
+	}
+}
+
+// Closing Stop starts the save budget: the hard stop comes that long after,
+// not at the deadline plus the budget.
+func TestStopStartsTheSaveBudget(t *testing.T) {
+	shrink(t, 300*time.Millisecond)
+	in := basicInstall(t) // deadline 12m
+	stop := make(chan struct{})
+	hooks := DefaultHooks()
+	hooks.Intake = func(*Run) error { close(stop); return nil }
+	hooks.Export = func(r *Run) error { <-r.Ctx.Done(); return nil }
+	start := time.Now()
+	res, _, err := in.run(hooks, func(o *api.RunOptions, _ *settings) { o.Stop = stop })
+	if d := time.Since(start); d > 5*time.Second {
+		t.Fatalf("the run outlived its save budget after Stop: %s", d)
+	}
+	if err == nil || res.Healthy {
+		t.Errorf("a run hard-stopped before phase 2 fails: %+v %v", res, err)
 	}
 }
 

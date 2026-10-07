@@ -7,6 +7,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -35,6 +36,12 @@ type Run struct {
 	SourceEvents []api.Event                                  // step 3 source events, keys already normalized, set by S10a before Intake
 	NoPush       string                                       // non-empty: score and save, but push nothing (the reason)
 	Problem      func(key, message, fix string, warning bool) // raise an open problem this run
+	// ReRead calls Hooks.ReRead (S15) for S10b's push loop before each batch;
+	// with no hook it returns nothing. Its error also raises step_failed:reread.
+	ReRead func() (changed []api.LeadID, err error)
+	Input  rules.Input  // step 6's evaluator input; a re-score (S10b) updates it
+	Result rules.Result // step 6's result; PrePush may update it, and Ranked and the dry-run report follow it
+	Pushed int          // pushes made this run (S10b); RunResult.Pushed
 }
 
 // Hooks are the run's plug-in steps. A nil hook is skipped. Their errors are
@@ -42,7 +49,7 @@ type Run struct {
 type Hooks struct {
 	Intake    func(*Run) error                             // step 3 after sources (S9)
 	Enrich    func(*Run) error                             // step 4 (S8); skipped on dry-run
-	Fold      func(*Run) error                             // step 5; default sets every lead to new (S10b)
+	Fold      func(*Run) error                             // step 5; default gives every live lead with no stored status new (S10b)
 	Detect    func(*Run) (rules.DetectorResults, error)    // step 6, before Evaluate (S9)
 	PrePush   func(*Run, []api.LeadID) error               // step 8 (S10b)
 	Push      func(*Run) error                             // step 9 (S10b)
@@ -52,10 +59,26 @@ type Hooks struct {
 }
 
 // DefaultHooks is the production set. Each hook slice sets its field here in
-// its own PR.
+// its own PR; slices sharing AfterSave (S13's CSV rewrite, S16's view) each
+// add one function to its Chain.
 func DefaultHooks() Hooks {
 	return Hooks{
-		Fold: defaultFold,
+		Fold:      defaultFold,
+		AfterSave: Chain(),
+	}
+}
+
+// Chain runs several hook functions in order, each even when an earlier one
+// failed, and returns their errors joined. With none it does nothing.
+func Chain(fs ...func(*Run) error) func(*Run) error {
+	return func(r *Run) error {
+		var errs []error
+		for _, f := range fs {
+			if err := f(r); err != nil {
+				errs = append(errs, err)
+			}
+		}
+		return errors.Join(errs...)
 	}
 }
 
@@ -117,7 +140,8 @@ func withTestClient(c *config.Config, client *http.Client) {
 }
 
 // defaultFold is the Fold until S10b's status fold lands: every live lead
-// with no stored status gets `new`. A stored status is left as it is.
+// with no stored status gets `new` (contracts section 12.6). A stored status
+// is left as it is.
 func defaultFold(r *Run) error {
 	for k, p := range r.Model.People {
 		if p.MergedInto != "" {

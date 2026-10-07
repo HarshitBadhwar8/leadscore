@@ -41,7 +41,8 @@ type stubOut struct {
 	events []api.Event
 	next   api.Cursor
 	err    error
-	seen   []api.Cursor // the cursors Fetch was called with
+	delay  time.Duration // Fetch sleeps this long first
+	seen   []api.Cursor  // the cursors Fetch was called with
 }
 
 var (
@@ -61,6 +62,13 @@ type stubSource struct{ id string }
 func (s stubSource) ID() string { return s.id }
 func (s stubSource) Fetch(_ context.Context, c api.Cursor) ([]api.InputRow, []api.Event, api.Cursor, error) {
 	stubMu.Lock()
+	d := time.Duration(0)
+	if o := stubData[s.id]; o != nil {
+		d = o.delay
+	}
+	stubMu.Unlock()
+	time.Sleep(d)
+	stubMu.Lock()
 	defer stubMu.Unlock()
 	out := stubData[s.id]
 	if out == nil {
@@ -70,10 +78,11 @@ func (s stubSource) Fetch(_ context.Context, c api.Cursor) ([]api.InputRow, []ap
 	return out.rows, out.events, out.next, out.err
 }
 
-// flakyStore returns ErrTooLarge for the next tooLarge commits that write People.
+// flakyStore returns ErrTooLarge for the next tooLarge commits that write
+// People, and fails the next failRanked commits that write Ranked.
 var flaky struct {
 	sync.Mutex
-	tooLarge int
+	tooLarge, failRanked int
 }
 
 type flakyStore struct{ *sqlite.Store }
@@ -91,9 +100,23 @@ func (f *flakyStore) Commit(ctx context.Context, writes []api.TableWrite) error 
 			flaky.tooLarge--
 		}
 	}
+	failRanked := false
+	if flaky.failRanked > 0 {
+		for _, w := range writes {
+			if w.Table == model.TableRanked {
+				failRanked = true
+			}
+		}
+		if failRanked {
+			flaky.failRanked--
+		}
+	}
 	flaky.Unlock()
 	if refuse {
 		return api.ErrTooLarge
+	}
+	if failRanked {
+		return errors.New("injected Ranked failure")
 	}
 	return f.Store.Commit(ctx, writes)
 }

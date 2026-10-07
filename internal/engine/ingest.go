@@ -14,16 +14,18 @@ func cursorKey(sourceID string) string { return "cursor:" + sourceID }
 
 // fetched is one source's output this run.
 type fetched struct {
-	src  config.Source
-	rows []merge.Normalized
-	next api.Cursor
+	src       config.Source
+	rows      []merge.Normalized
+	next      api.Cursor
+	hasEvents bool
 }
 
 // ingest is step 3's source part: every source is fetched, its rows
 // normalized, and up to chunk rows (whole row groups, across sources in
 // config order) merged. Source events are never chunked; their keys are
 // normalized once here and handed to Intake in Run.SourceEvents. A source
-// whose rows were all taken this run gets its cursor saved in phase 1; rows
+// whose rows were all taken this run, and whose events reached Intake, gets
+// its cursor saved in phase 1 (saveCursors); rows
 // left over are the backlog, which blocks pushing (an unread opt-out or an
 // unmerged duplicate may sit in it). A dry run merges every row.
 func (x *exec) ingest(chunk int) {
@@ -37,7 +39,7 @@ func (x *exec) ingest(chunk int) {
 			x.sourceFailed(src, err)
 			continue
 		}
-		f := fetched{src: src, next: next}
+		f := fetched{src: src, next: next, hasEvents: len(events) > 0}
 		for _, row := range rows {
 			row.SourceID = src.ID // a row always counts for the source that returned it
 			for _, h := range row.Headers {
@@ -76,8 +78,8 @@ func (x *exec) ingest(chunk int) {
 			taking, complete = false, false
 			x.backlog += len(g.Rows)
 		}
-		if complete && r.Model.StateValue(cursorKey(f.src.ID)) != string(f.next) {
-			r.Model.SetState(cursorKey(f.src.ID), string(f.next))
+		if complete {
+			x.cursors = append(x.cursors, cursorSet{source: f.src.ID, next: f.next, hasEvents: f.hasEvents})
 		}
 	}
 	merge.Apply(r.Model, take, merge.ApplyCtx{Now: r.Now(), RunID: r.ID, Sources: x.cfg.Sources, Aliases: aliases})
@@ -114,4 +116,17 @@ func (x *exec) sourceFailed(src config.Source, err error) {
 		"fix the source as the message says; the next run reads it again", false)
 	x.noPush("source " + src.ID + " could not be read")
 	x.log("error", "source_failed", "", fmt.Sprintf("source %s could not be read: %v", src.ID, err))
+}
+
+// saveCursors puts in the model the cursors of sources whose rows were all
+// taken: those with no events (withEvents false), or, once Intake took the
+// events without error, those with events (withEvents true). A source whose
+// events never reached Intake keeps its cursor, so the next run reads them.
+func (x *exec) saveCursors(withEvents bool) {
+	m := x.run.Model
+	for _, c := range x.cursors {
+		if c.hasEvents == withEvents && m.StateValue(cursorKey(c.source)) != string(c.next) {
+			m.SetState(cursorKey(c.source), string(c.next))
+		}
+	}
 }
