@@ -1,0 +1,26 @@
+{
+  "provisional": true,
+  "method": "GET",
+  "path": "/api/v1/organizations/enrich",
+  "query": {"domain": "acme-robotics.example"},
+  "request_headers": ["Accept", "Cache-Control", "X-Api-Key"],
+  "request_body": null,
+  "status": 200,
+  "response_headers": {"Content-Type": "application/json; charset=utf-8"},
+  "response_body": {
+    "organization": {
+      "id": "org-0001",
+      "name": "Acme Robotics",
+      "website_url": "http://www.acme-robotics.example",
+      "primary_domain": "acme-robotics.example",
+      "industry": "computer software",
+      "estimated_num_employees": 240,
+      "latest_funding_stage": "Series C",
+      "latest_funding_round_date": "2026-03-15",
+      "total_funding": 52000000,
+      "country": "United States",
+      "city": "Springfield",
+      "founded_year": 2015
+    }
+  }
+}

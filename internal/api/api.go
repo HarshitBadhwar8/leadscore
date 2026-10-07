@@ -109,9 +109,11 @@ type Source interface {
 }
 
 type Enricher interface {
-	// Enrich calls domains in the order given and stops only on a rate limit, when
+	// Enrich calls domains in the order given and stops on a rate limit, when
 	// it returns the facts so far and ErrRateLimited. A failure on one domain is
-	// skipped. The caller counts calls made as the index of the last domain tried, plus one.
+	// skipped; a failure every later domain would share (the key refused, ctx
+	// done) also stops it, returning the facts so far and that error. The
+	// caller counts calls made as the index of the last domain tried, plus one.
 	Enrich(ctx context.Context, domains []string, budget int) ([]CompanyFacts, error)
 }
 

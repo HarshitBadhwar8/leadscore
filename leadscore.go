@@ -101,9 +101,11 @@ type Subject = api.Subject
 type Source = api.Source
 
 // Enricher returns company facts. Enrich calls domains in the order given and
-// stops only on a rate limit, when it returns the facts so far and
-// ErrRateLimited. A failure on one domain is skipped. The caller counts calls
-// made as the index of the last domain tried, plus one.
+// stops on a rate limit, when it returns the facts so far and ErrRateLimited.
+// A failure on one domain is skipped; a failure every later domain would share
+// (the key refused, ctx done) also stops it, returning the facts so far and
+// that error. The caller counts calls made as the index of the last domain
+// tried, plus one.
 type Enricher = api.Enricher
 
 // Poller reads outcomes on a schedule (Apollo reply polling), at run step 3.

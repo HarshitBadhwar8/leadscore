@@ -1,0 +1,11 @@
+{
+  "provisional": true,
+  "method": "GET",
+  "path": "/api/v1/organizations/enrich",
+  "query": {"domain": "acme-robotics.example"},
+  "request_headers": ["Accept", "Cache-Control", "X-Api-Key"],
+  "request_body": null,
+  "status": 401,
+  "response_headers": {"Content-Type": "application/json; charset=utf-8"},
+  "response_body": {"error": "Invalid access credentials.", "error_code": "INVALID_API_KEY"}
+}

@@ -322,12 +322,14 @@ func (x *exec) main() error {
 // Phase 1 tables (contracts section 12.6): with the keys and cursors, every
 // change merge makes because a row was applied (Company facts, its Log lines
 // and the key_conflicts count), so no crash leaves a row applied without them.
+// The day's enrichment count goes with the facts its calls bought.
 var phase1Tables = []string{
 	model.TablePeople, model.TableIdentities, model.TableAppliedRows, model.TableCompanyFacts,
 	model.TableSeenEvents, model.TableWindowEvents, model.TableOutcomes, model.TablePushes,
 	model.TableAppliedOverrides, model.TableLog,
 	model.TableState + ":cursor:", model.TableState + ":last_poll_at", model.TableState + ":first_run_at",
 	model.TableState + ":key_conflicts", model.TableState + ":config_version",
+	model.TableState + ":" + enrichCountPrefix,
 }
 
 // phase2Tables is every table the run writes but the export tables and
