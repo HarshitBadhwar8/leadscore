@@ -1,0 +1,59 @@
+{
+  "method": "POST",
+  "path": "/crm/v3/objects/contacts/search",
+  "query": "",
+  "request_headers": [
+    "Authorization",
+    "Content-Type"
+  ],
+  "request_body": {
+    "filterGroups": [
+      {
+        "filters": [
+          {
+            "propertyName": "leadscore_lead_id",
+            "operator": "IN",
+            "values": [
+              "01900000-0000-7000-8000-000000000001",
+              "01900000-0000-7000-8000-000000000002"
+            ]
+          }
+        ]
+      }
+    ],
+    "limit": 1,
+    "properties": [
+      "leadscore_lead_id",
+      "email",
+      "hs_email_optout"
+    ]
+  },
+  "status": 200,
+  "response_headers": {
+    "Content-Type": "application/json;charset=utf-8"
+  },
+  "response_body": {
+    "total": 2,
+    "results": [
+      {
+        "id": "101",
+        "properties": {
+          "hs_object_id": "101",
+          "leadscore_lead_id": "01900000-0000-7000-8000-000000000001",
+          "email": "ana@example.com",
+          "hs_email_optout": "false"
+        },
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-01-01T00:00:00.000Z",
+        "archived": false
+      }
+    ],
+    "paging": {
+      "next": {
+        "after": "1",
+        "link": "?after=1"
+      }
+    }
+  },
+  "provisional": true
+}

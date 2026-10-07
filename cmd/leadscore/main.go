@@ -9,6 +9,7 @@ import (
 	// blank imports as their slices land. The built-in stores are internal, so
 	// they register through the root package instead.
 	_ "github.com/HarshitBadhwar8/leadscore/adapters/csv"
+	_ "github.com/HarshitBadhwar8/leadscore/adapters/hubspot"
 	_ "github.com/HarshitBadhwar8/leadscore/adapters/sheetsource"
 )
 

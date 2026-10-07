@@ -1,0 +1,50 @@
+{
+  "method": "POST",
+  "path": "/crm/v3/objects/deals",
+  "query": "",
+  "request_headers": [
+    "Authorization",
+    "Content-Type"
+  ],
+  "request_body": {
+    "properties": {
+      "dealname": "example.com",
+      "pipeline": "default",
+      "dealstage": "appointmentscheduled",
+      "leadscore_company_domain": "example.com",
+      "leadscore_lane": "warm"
+    },
+    "associations": [
+      {
+        "to": {
+          "id": "101"
+        },
+        "types": [
+          {
+            "associationCategory": "HUBSPOT_DEFINED",
+            "associationTypeId": 3
+          }
+        ]
+      }
+    ]
+  },
+  "status": 201,
+  "response_headers": {
+    "Content-Type": "application/json;charset=utf-8"
+  },
+  "response_body": {
+    "id": "201",
+    "properties": {
+      "hs_object_id": "201",
+      "dealname": "example.com",
+      "pipeline": "default",
+      "dealstage": "appointmentscheduled",
+      "leadscore_company_domain": "example.com",
+      "leadscore_lane": "warm"
+    },
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "updatedAt": "2026-01-01T00:00:00.000Z",
+    "archived": false
+  },
+  "provisional": true
+}

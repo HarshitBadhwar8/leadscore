@@ -74,7 +74,8 @@ type CompanyFacts = api.CompanyFacts
 // Fields holds merged fields by resolved name. SourcesSeen counts distinct
 // channels. ConflictFields are fields whose sources disagreed. CompanyDealID is
 // the stored open or won deal at the lead's company, if any. Verdict is nil
-// before scoring.
+// before scoring. Done is set for Lookup calls only: the lookup's sink's done
+// steps for the lead and every lead merged into it.
 type LeadRef = api.LeadRef
 
 // Verdict is a lead's score: every derived name in Values (numbers are

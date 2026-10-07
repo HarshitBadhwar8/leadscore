@@ -1,0 +1,20 @@
+{
+  "method": "GET",
+  "path": "/crm/v3/objects/deals/999",
+  "query": "",
+  "request_headers": [
+    "Authorization"
+  ],
+  "request_body": null,
+  "status": 404,
+  "response_headers": {
+    "Content-Type": "application/json;charset=utf-8"
+  },
+  "response_body": {
+    "status": "error",
+    "message": "Object not found.  objectId are usually numeric.",
+    "correlationId": "0b5f0c1e-3c2a-4b7e-9f00-000000000001",
+    "category": "OBJECT_NOT_FOUND"
+  },
+  "provisional": true
+}

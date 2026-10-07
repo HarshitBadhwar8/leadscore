@@ -83,6 +83,10 @@ type LeadRef struct {
 	ConflictFields []string // fields whose sources disagreed (People.conflicts)
 	CompanyDealID  string   // the stored open or won deal at the lead's company, if any
 	Verdict        *Verdict // nil before scoring
+	// Done is set for Lookup calls only: the lookup's sink's done steps for
+	// this lead and every lead merged into it (vendor ids already stored,
+	// such as the lead's HubSpot contact id).
+	Done []LedgerRef
 }
 
 type Verdict struct {

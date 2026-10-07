@@ -1,0 +1,25 @@
+{
+  "method": "POST",
+  "path": "/crm/v3/objects/contacts",
+  "query": "",
+  "request_headers": [
+    "Authorization",
+    "Content-Type"
+  ],
+  "request_body": {
+    "properties": {
+      "unknown_property": "x"
+    }
+  },
+  "status": 400,
+  "response_headers": {
+    "Content-Type": "application/json;charset=utf-8"
+  },
+  "response_body": {
+    "status": "error",
+    "message": "Property values were not valid: [{\"isValid\":false,\"message\":\"Property \\\"unknown_property\\\" does not exist\",\"error\":\"PROPERTY_DOESNT_EXIST\",\"name\":\"unknown_property\"}]",
+    "correlationId": "0b5f0c1e-3c2a-4b7e-9f00-000000000001",
+    "category": "VALIDATION_ERROR"
+  },
+  "provisional": true
+}

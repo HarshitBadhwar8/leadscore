@@ -28,6 +28,8 @@ the task breakdown); the contracts doc is the source of truth for every shape.
 | `internal/logredact` | log redaction: logs carry ids, never emails |
 | `adapters/csv` | the CSV file source (`type: csv`): lead rows, or event rows with `events: true` |
 | `adapters/sheetsource` | the Google Sheet tab source (`type: sheetsource`): tabs of the team's spreadsheet |
+| `adapters/hubspot` | the HubSpot sink (`hubspot:contacts`, `hubspot:deals`), the opt-out and deal lookup, `setup hubspot` and the `hubspot` check |
+| `internal/fakes/hubspot` | a fake HubSpot portal for tests, held to the provisional fixtures in `testdata/vendors/hubspot` |
 | `storetest/`, `sinktest/` | conformance suites for plug-in stores and sinks |
 | `examples/` | a made-up example rubric (`rubric.yml`), a sample lead sheet (`leads.csv`), and example `leadscore.yml` files for Docker on a laptop and on a server |
 | `compose.yaml`, `Dockerfile` | the Docker setup: the image and the compose file that runs it |
@@ -48,8 +50,8 @@ spreadsheet and loads them within a minute. Without it the check is skipped.
 ## Commands
 
 `leadscore help` lists every command. So far `run`, `serve`, `healthz`, `status`, `ranked`,
-`explain`, `config get`, `config set-hosting`, `rules check`, `setup sheet` and
-the Overrides writers work; every other command prints `not built yet (slice S<n>)` and
+`explain`, `config get`, `config set-hosting`, `rules check`, `setup sheet`,
+`setup hubspot` and the Overrides writers work; every other command prints `not built yet (slice S<n>)` and
 exits 2.
 
 - `leadscore run`: one run. It reads `leadscore.yml` and the rubric fresh,
@@ -92,6 +94,27 @@ imported waits until they appear.
 login (`gcloud auth login --enable-gdrive-access` first), shares it with the run and
 receiver accounts, and writes `store.spreadsheet`; `--view` makes a SQLite store's
 read-only view; `--repair` puts an existing spreadsheet's settings back.
+
+## HubSpot
+
+Add a `sinks.hubspot` block and set `HUBSPOT_TOKEN` to a private app's token:
+
+```yaml
+sinks:
+  hubspot: { pipeline: Sales Pipeline, stage: Appointment scheduled }
+```
+
+`leadscore setup hubspot` creates the custom properties (`leadscore_lead_id` and
+friends, in a `leadscore` group) and checks that the pipeline and stage exist;
+run it once, and again after changing `property_prefix`. It needs the schema write
+scopes; runs need contacts and deals read and write, companies read, and schema read.
+
+A lane pushing to `hubspot:contacts` finds or creates the person's contact; one
+pushing to `hubspot:deals` also opens one deal per company (named by its domain) or
+adds the contact to the company's open deal. Before every push, leadscore reads
+HubSpot for the leads it may push: a contact that opted out of email makes the
+lead `unsubscribed`, and a company with an open or won deal keeps its people out of
+cold lanes until the deal is closed lost.
 
 ## Enrichment
 
