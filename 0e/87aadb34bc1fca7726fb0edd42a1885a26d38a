@@ -1,0 +1,113 @@
+docs/design/oss-outbound-engine-s0-answers.md
+  s_9dab9ff7f2c580::t_550f262d301789 1-62
+adapters/apollo/client.go
+  s_9dab9ff7f2c580::t_9ee33b3a095e21 207
+adapters/apollo/enrich.go
+  s_9dab9ff7f2c580::t_4e085bb70692b2 53-54,202-204
+adapters/apollo/golden_test.go
+  s_9dab9ff7f2c580::t_b08e3f9b1d8df1 42-43,50-51,56-57,146-171
+adapters/apollo/notification.go
+  s_9dab9ff7f2c580::t_917a4aaef3646e 70-73
+adapters/apollo/parse.go
+  s_9dab9ff7f2c580::t_82161fa6d59c74 7-11
+adapters/apollo/poll.go
+  s_9dab9ff7f2c580::t_5c27e8958ca303 47-52,56-61,67
+adapters/apollo/sink.go
+  s_9dab9ff7f2c580::t_cd4a57c84b4d09 21-24,43-46,52,163-165
+adapters/apollo/sink_test.go
+  s_9dab9ff7f2c580::t_ffcb14bc3c4507 9,345,347-348,350-358,373-412
+docs/design/oss-outbound-engine-contracts.md
+  s_9dab9ff7f2c580::t_22c5a5abe9d426 548
+docs/design/oss-outbound-engine.md
+  s_9dab9ff7f2c580::t_ad2209bf4d6728 615-626
+internal/events/events.go
+  s_9dab9ff7f2c580::t_7dbcd4186934e4 234-235
+internal/events/events_test.go
+  s_9dab9ff7f2c580::t_3e3c3c1bf2732d 516-549
+internal/fakes/apollo/apollo.go
+  s_9dab9ff7f2c580::t_a26004b3b19556 38-39
+internal/fakes/apollo/outreach.go
+  s_9dab9ff7f2c580::t_cb09a65fe5abca 213,291,394-397,399-404,414
+internal/receiver/handler.go
+  s_9dab9ff7f2c580::t_2401f90d635b99 36-38
+setup/apollo/README.md
+  s_9dab9ff7f2c580::t_8369b474ba0a2a 25,63-72
+testdata/events/README.md
+  s_9dab9ff7f2c580::t_d3706cb51bc7ba 8-20
+testdata/events/apollo_reply_opened.json
+  s_9dab9ff7f2c580::t_f3c8ff7dc2ba26 1
+testdata/events/apollo_reply_replied.json
+  s_9dab9ff7f2c580::t_12e43aac295696 1
+testdata/events/apollo_reply_replied_positive.json
+  s_9dab9ff7f2c580::t_be66ce58cb8945 1
+testdata/events/apollo_reply_reserved_stage.json
+  s_9dab9ff7f2c580::t_e1693f76e063d2 1
+testdata/events/apollo_reply_sent.json
+  s_9dab9ff7f2c580::t_17f741cc0c9e0b 1
+testdata/events/apollo_reply_unsubscribed.json
+  s_9dab9ff7f2c580::t_325b3d1073a06d 1
+testdata/events/apollo_visit_company_only.json
+  s_9dab9ff7f2c580::t_aed6f98197a08a 1
+testdata/events/apollo_visit_identified.json
+  s_9dab9ff7f2c580::t_a4d782948c48fc 1
+testdata/events/apollo_visit_linkedin_only.json
+  s_9dab9ff7f2c580::t_79b0816d205702 1
+testdata/events/apollo_visit_no_identity.json
+  s_9dab9ff7f2c580::t_0baf6579ee4da2 1
+testdata/events/apollo_visit_no_visited_at.json
+  s_9dab9ff7f2c580::t_2dac43d4adb321 1
+testdata/vendors/apollo/README.md
+  s_9dab9ff7f2c580::t_404c3f9b7b6a49 27-47,50-51,57-58,62-63
+testdata/vendors/apollo/auth_health/ok.json
+  s_9dab9ff7f2c580::t_415d3a5c0c7bf3 3
+testdata/vendors/apollo/contacts_create/created.json
+  s_9dab9ff7f2c580::t_2fbf0a15fafb29 3-4
+testdata/vendors/apollo/contacts_search/found.json
+  s_9dab9ff7f2c580::t_26f3a04e0ab770 3
+testdata/vendors/apollo/contacts_search/opted_out.json
+  s_9dab9ff7f2c580::t_f94bc785e65fc6 3
+testdata/vendors/apollo/contacts_search/rate_limited.json
+  s_9dab9ff7f2c580::t_d9f34fab7d2bb5 3
+testdata/vendors/apollo/email_accounts/list.json
+  s_9dab9ff7f2c580::t_2a64753bd0ca8e 3
+testdata/vendors/apollo/emailer_campaigns_search/found.json
+  s_9dab9ff7f2c580::t_8b0bc32ef83ba4 3
+testdata/vendors/apollo/emailer_messages_search/rate_limited.json
+  s_9dab9ff7f2c580::t_6d15e21a1f9608 3,5,7,11,14-24
+testdata/vendors/apollo/emailer_messages_search/replies.json
+  s_9dab9ff7f2c580::t_e3d173682746fe 3-5,7,11,14-24,38,50
+testdata/vendors/apollo/organizations_enrich/found.json
+  s_9dab9ff7f2c580::t_31676c6a9943f8 3
+testdata/vendors/apollo/organizations_enrich/found_sparse.json
+  s_9dab9ff7f2c580::t_3599db0cdee837 3
+testdata/vendors/hubspot/README.md
+  s_9dab9ff7f2c580::t_2a0a734c0ddddd 17-24,37-38
+testdata/vendors/hubspot/associations_put/deal_contact.json
+  s_9dab9ff7f2c580::t_d4b9388f1df01d 25
+testdata/vendors/hubspot/contacts_create/created.json
+  s_9dab9ff7f2c580::t_c49e967a6eac0a 36
+testdata/vendors/hubspot/contacts_search/empty.json
+  s_9dab9ff7f2c580::t_826ed0e3b9912c 34
+testdata/vendors/hubspot/contacts_search/found_by_lead_id.json
+  s_9dab9ff7f2c580::t_1164a8fc2031bd 45
+testdata/vendors/hubspot/contacts_search/paged.json
+  s_9dab9ff7f2c580::t_fb47b247320bfb 58
+testdata/vendors/hubspot/pipelines_deals/list.json
+  s_9dab9ff7f2c580::t_eb1f34ddf9c263 65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0e87aadb34bc1fca7726fb0edd42a1885a26d38a",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
