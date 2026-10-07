@@ -1,0 +1,40 @@
+# leadscore.yml for a first try, or a team that only wants lists: CSV files
+# in, scored lists out, no Apollo or HubSpot account needed. It runs on
+# Docker (the paths below are the compose file's mounts) or as a plain
+# binary (see the README, "Try it with CSV only"). Copy it as leadscore.yml,
+# beside examples/rubric.csv-only.yml copied as rubric.yml.
+# Every key is in the contracts doc, section 3.
+version: 1
+
+# The rubric file, beside this one.
+rubric: rubric.yml
+
+# SQLite on the compose file's named volume. As a plain binary, use a path
+# in this folder instead, like leadscore.db.
+store: { type: sqlite, path: /data/leadscore.db }
+
+# Your lead files, in this folder (mounted at /config).
+sources:
+  - { id: leads, type: csv, path: leads.csv }
+
+# No enrich block: company facts come only from your CSV columns (and a
+# Companies tab). Add one later to look them up in Apollo (see
+# leadscore.laptop.yml).
+
+# No sinks block: nothing is pushed anywhere. The rubric's export lanes keep
+# the lists.
+
+# Replies would come from the receiver, which a CSV-only install does not
+# use. It still needs LEADSCORE_RECEIVER_SECRET set (any long random value),
+# or doctor fails its receiver-secret check.
+replies: receiver
+
+# The export lists: one CSV per export lane, in ./out on Docker. As a plain
+# binary, use a folder here instead, like out.
+export: { dir: /out }
+
+# Stays off: with no sinks there is nothing to push.
+pushes_enabled: false
+
+# How often the container runs the loop (read when it starts).
+schedule: 15m

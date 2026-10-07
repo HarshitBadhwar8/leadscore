@@ -14,6 +14,23 @@ store: { type: sqlite, path: /data/leadscore.db }
 sources:
   - { id: leads, type: csv, path: leads.csv }
 
+# Company facts from Apollo (name, headcount, funding stage, country), looked
+# up for your leads' companies with APOLLO_API_KEY. Each lookup spends an
+# Apollo credit; both budgets cap the spend, so a big first import spreads
+# over several days. Remove the block to use only your own columns.
+enrich: { type: apollo, max_age: 30d, max_lookups_per_run: 100, max_lookups_per_day: 400 }
+
+# The tools cold and non-cold lanes push to; each block is one tool. Remove a
+# block you do not use, and the rubric's lanes that push to it.
+sinks:
+  # Apollo sequences, with APOLLO_API_KEY (a master key). mailbox_id is the
+  # mailbox enrollments send from (quote it); doctor's apollo-sequences check
+  # says when it is wrong.
+  apollo: { mailbox_id: "your-mailbox-id" }
+  # HubSpot contacts and deals, with HUBSPOT_TOKEN. After adding it, run
+  # `docker compose exec leadscore leadscore setup hubspot` once.
+  # hubspot: { pipeline: Sales Pipeline, stage: Appointment scheduled }
+
 # Replies, sends and opt-outs arrive as Apollo workflow webhooks.
 replies: receiver
 
