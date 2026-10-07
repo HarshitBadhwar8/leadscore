@@ -21,7 +21,8 @@ Where commands run:
 
 Read before you act: `leadscore doctor` (one line per check, each problem
 with its fix), `leadscore status` (the last run and every open problem),
-`leadscore ranked` and `leadscore explain <person>`. None of them writes
+`leadscore ranked`, `leadscore explain <person>` and `leadscore facts` (each
+company's stored facts and where they came from). None of them writes
 anything.
 
 ## Rules you must keep

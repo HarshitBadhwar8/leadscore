@@ -455,7 +455,7 @@ every run.
   from its rubric (`doctor` warns `cold_lane_no_sink:<lane>`).
 - A cell that a spreadsheet would read as a formula (starting with `=`, `+`,
   `-` or `@`) is quoted with a leading `'` in the CSV files and in
-  `ranked --csv`, so opening them in Excel or Sheets never runs a formula a
+  `ranked --csv` and `facts --csv`, so opening them in Excel or Sheets never runs a formula a
   lead's data carried.
 - CSV files are written only for a SQLite store, mode 0600 (they hold
   personal data). A plug-in store (for example Postgres,
@@ -503,6 +503,9 @@ An export tab holds up to 20,000 rows in that budget.
   webhook it accepted, and exits.
 - `leadscore doctor`, `leadscore status`: see "Health, status and doctor".
 - `leadscore ranked [--csv]`: every lead's verdict, highest score first.
+- `leadscore facts [--csv]`: every company's stored facts (value, origin,
+  the value a change replaced) and when Apollo was last asked, by domain.
+  With `--csv`, the `Company facts` table's own columns. It only reads.
 - `leadscore explain <person>`: one lead's verdict and the reasons behind it.
 - `leadscore healthz`: calls the local `/healthz` (the compose health check).
 - `leadscore rules check <file>`: compile a rubric and list every error.

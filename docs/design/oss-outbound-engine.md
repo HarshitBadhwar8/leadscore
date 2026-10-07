@@ -488,6 +488,7 @@ The receiver in `leadscore serve` accepts Apollo workflow requests with the shar
 | `leadscore explain <person>` | A lead's verdict and reasons |
 | `leadscore doctor` | One pass/fail line per check (contracts section 10) |
 | `leadscore ranked [--csv]` | Print every lead's verdict, or write it as CSV |
+| `leadscore facts [--csv]` | Print every company's stored facts (`Company facts`: each fact's value and origin, the value a change replaced, the enrichment times), or write the table's own columns as CSV. Read-only, like `doctor`: no lease, no writes, SQLite opened read-only |
 | `leadscore serve [--every [interval]]` | The receiver and `/healthz`; with `--every`, also runs the loop on that interval, or on `schedule` when none is given (Docker) |
 | `leadscore status` | Print the `Health` table: last result, last success, open problems |
 | `leadscore set-status <person> <status\|none\|resubscribe>` | Replace, remove, or undo a manual status in Overrides |

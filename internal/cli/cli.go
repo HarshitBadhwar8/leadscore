@@ -76,6 +76,13 @@ var commands = []*command{
 		run:   runRanked,
 	},
 	{
+		path:  []string{"facts"},
+		flags: map[string]flagKind{"csv": boolFlag},
+		args:  "[--csv]",
+		help:  "print every company's stored facts, or write them as CSV",
+		run:   runFacts,
+	},
+	{
 		path:  []string{"serve"},
 		flags: map[string]flagKind{"every": optValueFlag},
 		args:  "[--every [interval]]",
