@@ -1,0 +1,137 @@
+README.md
+  s_9dab9ff7f2c580::t_bcd5433bbc67ef 31-32,53-54,98-118
+adapters/hubspot/check.go
+  s_9dab9ff7f2c580::t_db34bf7f02c72e 1-164
+adapters/hubspot/check_test.go
+  s_9dab9ff7f2c580::t_68854b3ba4636d 1-126
+adapters/hubspot/client.go
+  s_9dab9ff7f2c580::t_e7fd07f57d8ce6 1-404
+adapters/hubspot/client_internal_test.go
+  s_9dab9ff7f2c580::t_28aadf31d24650 1-93
+adapters/hubspot/domains.go
+  s_9dab9ff7f2c580::t_3b47688a9bde2e 1-71
+adapters/hubspot/hubspot.go
+  s_9dab9ff7f2c580::t_fac078203307e5 1-242
+adapters/hubspot/lookup.go
+  s_9dab9ff7f2c580::t_e6831344e04cb9 1-585
+adapters/hubspot/lookup_test.go
+  s_9dab9ff7f2c580::t_8cce0b846088bc 1-332
+adapters/hubspot/setup.go
+  s_9dab9ff7f2c580::t_2a2d9a869f0e8b 1-144
+adapters/hubspot/sink.go
+  s_9dab9ff7f2c580::t_0b9d875974fd80 1-438
+adapters/hubspot/sink_test.go
+  s_9dab9ff7f2c580::t_344446b84df421 1-426
+cmd/leadscore/main.go
+  s_9dab9ff7f2c580::t_d15ee64613bfed 12
+docs/design/oss-outbound-engine-contracts.md
+  s_9dab9ff7f2c580::t_60edc630fc74d6 82,575,621-624,675,749,781,823
+docs/design/oss-outbound-engine-tasks.md
+  s_9dab9ff7f2c580::t_d2468ba760cebe 77
+docs/design/oss-outbound-engine.md
+  s_9dab9ff7f2c580::t_cc7b49ac7b7012 620
+internal/api/api.go
+  s_9dab9ff7f2c580::t_682895d973eee3 86-89
+internal/cli/cli.go
+  s_9dab9ff7f2c580::t_4ba5f2daa8d375 128-130
+internal/cli/setup_hubspot.go
+  s_9dab9ff7f2c580::t_022d343c66382b 1-44
+internal/cli/setup_hubspot_test.go
+  s_9dab9ff7f2c580::t_7ecdbb3fdbf4b0 1-75
+internal/engine/hubspot_test.go
+  s_9dab9ff7f2c580::t_98a94505168f22 1-285
+internal/engine/lanes.go
+  s_9dab9ff7f2c580::t_8b25a5b1d332f3 45-51,481-503
+internal/engine/lanes_test.go
+  s_9dab9ff7f2c580::t_2a1a037e188136 81-84
+internal/engine/prepush.go
+  s_9dab9ff7f2c580::t_469a720b3a8261 90-92,112-114,221-225,227,234-235,256-268,272
+internal/engine/push.go
+  s_9dab9ff7f2c580::t_c25150774e9628 438-468
+internal/engine/review_s10b_test.go
+  s_9dab9ff7f2c580::t_1ee9219787f5ba 161
+internal/fakes/hubspot/fixtures_test.go
+  s_9dab9ff7f2c580::t_fe67ac528aff5c 1-187
+internal/fakes/hubspot/hubspot.go
+  s_9dab9ff7f2c580::t_7fbc329764f9ce 1-983
+leadscore.go
+  s_9dab9ff7f2c580::t_96e583495816ce 77-78
+testdata/vendors/hubspot/README.md
+  s_9dab9ff7f2c580::t_1a99c97b0e3612 1-36
+testdata/vendors/hubspot/associations_batch_read/companies_deals.json
+  s_9dab9ff7f2c580::t_e106f4d6995dfb 1-45
+testdata/vendors/hubspot/associations_batch_read/contacts_companies.json
+  s_9dab9ff7f2c580::t_f0f59d4e034446 1-45
+testdata/vendors/hubspot/associations_batch_read/contacts_deals.json
+  s_9dab9ff7f2c580::t_d1ee84e67ba1ec 1-62
+testdata/vendors/hubspot/associations_batch_read/deals_companies.json
+  s_9dab9ff7f2c580::t_c53d9d41b081f7 1-45
+testdata/vendors/hubspot/associations_put/deal_contact.json
+  s_9dab9ff7f2c580::t_73f39f8b859788 1-26
+testdata/vendors/hubspot/companies_batch_read/by_id.json
+  s_9dab9ff7f2c580::t_56ce6b2641ae48 1-41
+testdata/vendors/hubspot/companies_search/by_domain.json
+  s_9dab9ff7f2c580::t_4d90970a9afa0b 1-48
+testdata/vendors/hubspot/contacts_batch_read/by_email_one_missing.json
+  s_9dab9ff7f2c580::t_5f320ec5fdc168 1-60
+testdata/vendors/hubspot/contacts_create/conflict.json
+  s_9dab9ff7f2c580::t_8c822706247779 1-26
+testdata/vendors/hubspot/contacts_create/created.json
+  s_9dab9ff7f2c580::t_c9febd5c83b23a 1-37
+testdata/vendors/hubspot/contacts_create/invalid_email.json
+  s_9dab9ff7f2c580::t_1ad2af72567cf4 1-26
+testdata/vendors/hubspot/contacts_get/merged_id.json
+  s_9dab9ff7f2c580::t_82c57b8c4a4063 1-25
+testdata/vendors/hubspot/contacts_search/empty.json
+  s_9dab9ff7f2c580::t_88496ffeeedbc2 1-35
+testdata/vendors/hubspot/contacts_search/found_by_lead_id.json
+  s_9dab9ff7f2c580::t_59599acaefffc8 1-46
+testdata/vendors/hubspot/contacts_search/paged.json
+  s_9dab9ff7f2c580::t_ac845b4952dec8 1-59
+testdata/vendors/hubspot/deals_batch_read/one_deleted.json
+  s_9dab9ff7f2c580::t_79fcf99b0980df 1-59
+testdata/vendors/hubspot/deals_create/with_association.json
+  s_9dab9ff7f2c580::t_e6cc9bdd44e80f 1-50
+testdata/vendors/hubspot/deals_search/by_company_domain.json
+  s_9dab9ff7f2c580::t_d38d21a708c2ca 1-48
+testdata/vendors/hubspot/errors/not_found.json
+  s_9dab9ff7f2c580::t_8294e31862c2f2 1-20
+testdata/vendors/hubspot/errors/property_missing.json
+  s_9dab9ff7f2c580::t_009bf6b7c273c5 1-25
+testdata/vendors/hubspot/errors/rate_limited.json
+  s_9dab9ff7f2c580::t_2ce3cc09146acd 1-25
+testdata/vendors/hubspot/errors/server_error.json
+  s_9dab9ff7f2c580::t_220b8da6b24e87 1-23
+testdata/vendors/hubspot/errors/unauthorized.json
+  s_9dab9ff7f2c580::t_7114f4c77b9bf2 1-20
+testdata/vendors/hubspot/pipelines_deals/list.json
+  s_9dab9ff7f2c580::t_b55cf0110569c6 1-66
+testdata/vendors/hubspot/properties_create/created.json
+  s_9dab9ff7f2c580::t_49b4265961b265 1-30
+testdata/vendors/hubspot/properties_create/exists.json
+  s_9dab9ff7f2c580::t_2a27ea101d82b1 1-28
+testdata/vendors/hubspot/properties_list/contacts.json
+  s_9dab9ff7f2c580::t_5609f520b43963 1-26
+testdata/vendors/hubspot/property_groups_create/created.json
+  s_9dab9ff7f2c580::t_662581e169a33c 1-25
+testdata/vendors/hubspot/property_groups_create/exists.json
+  s_9dab9ff7f2c580::t_5b93f3c7232613 1-25
+testdata/vendors/hubspot/token_info/ok.json
+  s_9dab9ff7f2c580::t_b47e391066a39f 1-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0f808f026b18e26f63e8156d33d311b8f1206a92",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
