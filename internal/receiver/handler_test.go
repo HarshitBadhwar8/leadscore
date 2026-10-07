@@ -34,14 +34,6 @@ const (
 	goldenDir      = "../../testdata/events"
 )
 
-// fastQueue shrinks the batch window so tests do not wait two seconds.
-func fastQueue(t *testing.T, window time.Duration) {
-	t.Helper()
-	oldW, oldC := batchWindow, holdCap
-	batchWindow = window
-	t.Cleanup(func() { batchWindow, holdCap = oldW, oldC })
-}
-
 func env(vars map[string]string) func(string) string {
 	return func(k string) string { return vars[k] }
 }
@@ -83,12 +75,20 @@ func bothStores(t *testing.T) []testStore {
 
 var fixedNow = time.Date(2026, 9, 14, 8, 30, 0, 0, time.UTC)
 
+// testWindow is the batch window test handlers use, so tests do not wait
+// the two-second default.
+const testWindow = 5 * time.Millisecond
+
 func newTestHandler(t *testing.T, ts testStore, vars map[string]string) *Handler {
+	return newTestHandlerWindow(t, ts, vars, testWindow)
+}
+
+func newTestHandlerWindow(t *testing.T, ts testStore, vars map[string]string, window time.Duration) *Handler {
 	t.Helper()
 	if vars == nil {
 		vars = map[string]string{SecretVar: testSecret}
 	}
-	h := NewHandler(Options{Store: ts.store, Events: ts.events, Now: func() time.Time { return fixedNow }, Getenv: env(vars)})
+	h := NewHandler(Options{Store: ts.store, Events: ts.events, Now: func() time.Time { return fixedNow }, Getenv: env(vars), BatchWindow: window})
 	t.Cleanup(h.Close)
 	return h
 }
@@ -139,7 +139,6 @@ func parseResultOf(raw api.RawEvent) parseResult {
 // in the header or in the body, is stored with the secret stripped and parsed
 // exactly as the body itself parses, on both stores.
 func TestGoldenBodiesStoredAndParsedTheSameOnBothStores(t *testing.T) {
-	fastQueue(t, 10*time.Millisecond)
 	files, err := filepath.Glob(filepath.Join(goldenDir, "*.json"))
 	if err != nil || len(files) == 0 {
 		t.Fatalf("no golden bodies in %s: %v", goldenDir, err)
@@ -196,7 +195,6 @@ func TestGoldenBodiesStoredAndParsedTheSameOnBothStores(t *testing.T) {
 // A wrong, missing or unset secret is refused with 401 and nothing is stored.
 // While a rotation is under way, the previous secret is accepted too.
 func TestTheSecretIsCheckedWithRotation(t *testing.T) {
-	fastQueue(t, 5*time.Millisecond)
 	body := []byte(`{"event":"email_sent","contact_email":"a@example.com"}`)
 	cases := []struct {
 		name   string
@@ -243,7 +241,6 @@ func TestTheSecretIsCheckedWithRotation(t *testing.T) {
 }
 
 func TestRoutesAndMethods(t *testing.T) {
-	fastQueue(t, 5*time.Millisecond)
 	h := newTestHandler(t, sqliteStore(t), nil)
 	for _, c := range []struct {
 		method, path string
@@ -267,7 +264,6 @@ func TestRoutesAndMethods(t *testing.T) {
 // Oversized bodies are cut down through the handler too, and fit the Sheets
 // store's cell.
 func TestOversizedBodiesAreCutDownOnBothStores(t *testing.T) {
-	fastQueue(t, 5*time.Millisecond)
 	body, _ := json.Marshal(map[string]any{
 		"event": "email_unsubscribed", "contact_email": "sam@example.org",
 		"past_conversations": strings.Repeat("x", 300<<10), "other": strings.Repeat("y", 15<<10),
@@ -324,8 +320,8 @@ func (s *slowLog) DeleteProcessed(_ context.Context, c api.Cursor, _ time.Time) 
 	return c, nil
 }
 
-func handlerOn(t *testing.T, ev api.EventLog) *Handler {
-	h := NewHandler(Options{Events: ev, Getenv: env(map[string]string{SecretVar: testSecret})})
+func handlerOn(t *testing.T, ev api.EventLog, window time.Duration) *Handler {
+	h := NewHandler(Options{Events: ev, Getenv: env(map[string]string{SecretVar: testSecret}), BatchWindow: window})
 	t.Cleanup(h.Close)
 	return h
 }
@@ -333,9 +329,8 @@ func handlerOn(t *testing.T, ev api.EventLog) *Handler {
 // The safety rule: no request is answered before its event is durable, and
 // requests arriving within the window share one append.
 func TestNoAnswerBeforeTheEventIsStored(t *testing.T) {
-	fastQueue(t, 50*time.Millisecond)
 	log := &slowLog{release: make(chan struct{})}
-	h := handlerOn(t, log)
+	h := handlerOn(t, log, 50*time.Millisecond)
 	var wg sync.WaitGroup
 	codes := make([]int, 5)
 	answered := atomic.Int32{}
@@ -366,10 +361,9 @@ func TestNoAnswerBeforeTheEventIsStored(t *testing.T) {
 // When the append fails, every request in the batch gets 5xx, and /healthz
 // without a timer turns 503 until an append succeeds.
 func TestAFailedAppendAnswers5xxToTheWholeBatch(t *testing.T) {
-	fastQueue(t, 20*time.Millisecond)
 	log := &slowLog{release: make(chan struct{}), err: errors.New("store down")}
 	close(log.release)
-	h := handlerOn(t, log)
+	h := handlerOn(t, log, 20*time.Millisecond)
 	var wg sync.WaitGroup
 	codes := make([]int, 3)
 	for i := range codes {
@@ -404,10 +398,11 @@ func TestAFailedAppendAnswers5xxToTheWholeBatch(t *testing.T) {
 // An append still running at the hold cap gets its context ended, and the
 // requests get 5xx so Apollo can retry; none is answered 2xx.
 func TestTheHoldCapAnswers5xx(t *testing.T) {
-	fastQueue(t, 10*time.Millisecond)
+	old := holdCap
 	holdCap = 200 * time.Millisecond
+	t.Cleanup(func() { holdCap = old })
 	log := &slowLog{release: make(chan struct{})} // never released
-	h := handlerOn(t, log)
+	h := handlerOn(t, log, 10*time.Millisecond)
 	start := time.Now()
 	code := post(h, "/apollo/reply", []byte(`{"event":"email_sent","contact_email":"a@example.com"}`), testSecret).Code
 	if code != http.StatusServiceUnavailable {
@@ -421,7 +416,6 @@ func TestTheHoldCapAnswers5xx(t *testing.T) {
 // The Sheets store's "slow down" answers are retried inside the hold cap; the
 // request is answered 2xx once the append lands.
 func TestSheetsSlowDownIsRetriedWithinTheCap(t *testing.T) {
-	fastQueue(t, 10*time.Millisecond)
 	ts := sheetsStore(t)
 	h := newTestHandler(t, ts, nil)
 	ts.sheets.SlowDown(2)
@@ -436,9 +430,9 @@ func TestSheetsSlowDownIsRetriedWithinTheCap(t *testing.T) {
 
 // Close stores what was accepted and refuses later requests with 503.
 func TestCloseDrainsTheQueue(t *testing.T) {
-	fastQueue(t, time.Hour) // only Close sends the batch
 	ts := sqliteStore(t)
-	h := NewHandler(Options{Store: ts.store, Events: ts.events, Getenv: env(map[string]string{SecretVar: testSecret})})
+	// An hour's window: only Close sends the batch.
+	h := NewHandler(Options{Store: ts.store, Events: ts.events, Getenv: env(map[string]string{SecretVar: testSecret}), BatchWindow: time.Hour})
 	done := make(chan int)
 	go func() {
 		done <- post(h, "/apollo/reply", []byte(`{"event":"email_sent","contact_email":"a@example.com"}`), testSecret).Code
@@ -620,7 +614,6 @@ func TestUnauthenticatedReadsAreCapped(t *testing.T) {
 	for range cap(h.unauth) {
 		h.unauth <- struct{}{}
 	}
-	fastQueue(t, 5*time.Millisecond)
 	if c := post(h, "/apollo/reply", []byte(`{"event":"email_sent","contact_email":"a@example.com"}`), testSecret).Code; c != 200 {
 		t.Errorf("a header secret with every slot busy: %d, want 200", c)
 	}
@@ -632,7 +625,6 @@ func TestUnauthenticatedReadsAreCapped(t *testing.T) {
 // Broken JSON with the secret in the body (a value with an unescaped quote)
 // is accepted and stored as text, the secret masked.
 func TestBrokenJSONWithABodySecretIsStoredMasked(t *testing.T) {
-	fastQueue(t, 5*time.Millisecond)
 	ts := sqliteStore(t)
 	h := newTestHandler(t, ts, nil)
 	body := []byte(`{"event":"email_unsubscribed","contact_email":"dana@example.com","contact_name":"Dana "DJ" Example","leadscore_secret":"` + testSecret + `"}`)
@@ -649,9 +641,8 @@ func TestBrokenJSONWithABodySecretIsStoredMasked(t *testing.T) {
 // is put in the queue directly) fails alone: the innocent request in the same
 // batch is stored and answered 200.
 func TestAnOversizedEventDoesNotFailItsBatch(t *testing.T) {
-	fastQueue(t, 200*time.Millisecond)
 	ts := sheetsStore(t)
-	h := newTestHandler(t, ts, nil)
+	h := newTestHandlerWindow(t, ts, nil, 200*time.Millisecond)
 	bad, bi, err := h.q.submit(api.RawEvent{Kind: apollo.KindReply, ReceivedAt: fixedNow, Body: bytes.Repeat([]byte("y"), maxBodyChars+1)})
 	if err != nil {
 		t.Fatal(err)
@@ -675,8 +666,7 @@ func (panicLog) AppendEvents(context.Context, []api.RawEvent) error { panic("sto
 
 // A store that panics fails only that batch with 503; the receiver goes on.
 func TestAPanickingStoreFailsOnlyItsBatch(t *testing.T) {
-	fastQueue(t, 5*time.Millisecond)
-	h := handlerOn(t, panicLog{&slowLog{}})
+	h := handlerOn(t, panicLog{&slowLog{}}, testWindow)
 	for range 2 {
 		if c := post(h, "/apollo/reply", []byte(`{"event":"email_sent","contact_email":"a@example.com"}`), testSecret).Code; c != 503 {
 			t.Errorf("a panicking store: %d, want 503", c)
@@ -687,12 +677,11 @@ func TestAPanickingStoreFailsOnlyItsBatch(t *testing.T) {
 // When too many batches already wait for the writer, a new one is refused
 // with 503 at once instead of blocking every request.
 func TestAFullQueueAnswers503(t *testing.T) {
-	fastQueue(t, 5*time.Millisecond)
 	old := readyBatches
 	readyBatches = 1
 	t.Cleanup(func() { readyBatches = old })
 	log := &slowLog{release: make(chan struct{})}
-	h := handlerOn(t, log)
+	h := handlerOn(t, log, testWindow)
 	codes := make(chan int, 3)
 	go func() {
 		codes <- post(h, "/apollo/reply", []byte(`{"event":"email_sent","contact_email":"a@example.com"}`), testSecret).Code
@@ -783,7 +772,6 @@ func TestRefusalsAndOversizeAreLogged(t *testing.T) {
 // requests: each unauthenticated read has a short deadline of its own, so
 // the slots come free and a valid request gets through.
 func TestSlowSendersDoNotLockOutBodySecrets(t *testing.T) {
-	fastQueue(t, 5*time.Millisecond)
 	oldRead, oldWait := unauthReadTime, unauthWait
 	unauthReadTime, unauthWait = 200*time.Millisecond, 3*time.Second
 	t.Cleanup(func() { unauthReadTime, unauthWait = oldRead, oldWait })

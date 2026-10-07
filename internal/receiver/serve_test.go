@@ -154,7 +154,6 @@ func TestTimerNeverOverlaps(t *testing.T) {
 // A run that panics is recovered: the receiver keeps serving, serve writes
 // the failure to Health itself, /healthz turns 503, and the timer goes on.
 func TestAPanickingRunLeavesTheReceiverUp(t *testing.T) {
-	fastQueue(t, 10*time.Millisecond)
 	cfg, db := install(t, "")
 	var calls atomic.Int32
 	run := func(ctx context.Context, opts api.RunOptions) (api.RunResult, error) {
@@ -163,7 +162,7 @@ func TestAPanickingRunLeavesTheReceiverUp(t *testing.T) {
 		}
 		return api.RunResult{Healthy: true}, nil
 	}
-	url, sigterm, done := startServe(t, ServeOptions{ConfigPath: cfg, Timer: true, Every: 200 * time.Millisecond}, deps{run: run})
+	url, sigterm, done := startServe(t, ServeOptions{ConfigPath: cfg, Timer: true, Every: 200 * time.Millisecond}, deps{run: run, window: testWindow})
 	waitFor(t, func() bool { return calls.Load() >= 1 })
 	if code := postHTTP(t, url, "/apollo/reply", `{"event":"email_sent","contact_email":"a@example.com"}`); code != 200 {
 		t.Errorf("POST after a panicking run: %d, want 200", code)
@@ -203,7 +202,6 @@ func TestAPanickingRunLeavesTheReceiverUp(t *testing.T) {
 // webhooks until the run returns, and the run saves what it merged before
 // serve exits.
 func TestSIGTERMDuringARunSavesBeforeExit(t *testing.T) {
-	fastQueue(t, 10*time.Millisecond)
 	cfg, db := install(t, "")
 	var url string
 	inRun := make(chan struct{})
@@ -223,7 +221,7 @@ func TestSIGTERMDuringARunSavesBeforeExit(t *testing.T) {
 		runReturned.Store(true)
 		return res, err
 	}
-	u, sigterm, done := startServe(t, ServeOptions{ConfigPath: cfg, Timer: true, Every: time.Hour}, deps{run: run})
+	u, sigterm, done := startServe(t, ServeOptions{ConfigPath: cfg, Timer: true, Every: time.Hour}, deps{run: run, window: testWindow})
 	url = u
 	<-inRun
 	sigterm()
@@ -270,14 +268,13 @@ func TestSIGTERMDuringARunSavesBeforeExit(t *testing.T) {
 
 // Without --every there is no timer, and /healthz reports only the store.
 func TestServeWithoutATimer(t *testing.T) {
-	fastQueue(t, 10*time.Millisecond)
 	cfg, _ := install(t, "")
 	var calls atomic.Int32
 	run := func(context.Context, api.RunOptions) (api.RunResult, error) {
 		calls.Add(1)
 		return api.RunResult{}, nil
 	}
-	url, sigterm, done := startServe(t, ServeOptions{ConfigPath: cfg}, deps{run: run})
+	url, sigterm, done := startServe(t, ServeOptions{ConfigPath: cfg}, deps{run: run, window: testWindow})
 	if code := getHealthz(t, url); code != 200 {
 		t.Errorf("/healthz: %d", code)
 	}

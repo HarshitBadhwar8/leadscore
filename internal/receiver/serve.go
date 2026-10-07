@@ -41,6 +41,7 @@ type deps struct {
 	now      func() time.Time
 	getenv   func(string) string
 	started  chan<- string // gets the listen address once serving (tests)
+	window   time.Duration // the receiver's batch window; zero is the default
 }
 
 // Serve runs `leadscore serve` until ctx is done (SIGTERM), then shuts down
@@ -117,7 +118,7 @@ func serve(ctx context.Context, o ServeOptions, d deps) error {
 		}
 	}
 	started := d.now()
-	h := NewHandler(Options{Store: store, Events: events, Now: d.now, Getenv: d.getenv, Every: every, Started: started, Log: o.Log})
+	h := NewHandler(Options{Store: store, Events: events, Now: d.now, Getenv: d.getenv, Every: every, Started: started, Log: o.Log, BatchWindow: d.window})
 
 	ln := d.listener
 	if ln == nil {
