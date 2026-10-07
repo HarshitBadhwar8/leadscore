@@ -1,0 +1,13 @@
+# The install the CI Docker check runs: SQLite, the sample CSV, an export
+# lane only, webhooks through the receiver, and a one-minute timer so a
+# second run picks up a posted webhook quickly.
+version: 1
+rubric: rubric.yml
+store: { type: sqlite, path: /data/leadscore.db }
+sources:
+  - { id: leads, type: csv, path: leads.csv }
+replies: receiver
+receiver: { visit_events: [visit_pricing] }
+export: { dir: /out }
+pushes_enabled: false
+schedule: 1m
