@@ -17,7 +17,7 @@ func runInstall(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	files := map[string]string{
-		"leadscore.yml": "version: 1\nstore: { type: sqlite, path: store.db }\nsources:\n  - { id: leads, type: csv, path: leads.csv }\n",
+		"leadscore.yml": "version: 1\nstore: { type: sqlite, path: store.db }\nexport: { dir: out }\nsources:\n  - { id: leads, type: csv, path: leads.csv }\n",
 		"rubric.yml": "version: 1\nderive:\n  tier:\n    - { when: { field: title, contains: head }, then: 1 }\n    - else: 2\n" +
 			"score:\n  contact:\n    - { when: { field: title, contains: head }, points: 5 }\n" +
 			"lanes:\n  - { id: list, kind: export, when: { field: tier, lte: 2 }, push: \"export:list\" }\n",

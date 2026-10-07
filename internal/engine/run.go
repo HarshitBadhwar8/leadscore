@@ -49,6 +49,7 @@ type exec struct {
 	backlog      int      // input rows left for later runs
 	cursors      []cursorSet
 	scored       bool
+	degraded     bool // Enrich or Detect failed: the lanes were judged on partial inputs
 	phase1Failed bool
 	cutShort     bool // the deadline or Stop came before the run finished its steps
 	oldRanked    map[model.Key]model.RankedRow
@@ -175,6 +176,7 @@ func execute(ctx context.Context, opts api.RunOptions, s settings) (api.RunResul
 				x.takeover = owner
 			}
 		}
+		leaseAt := time.Now() // before asking: the store's expiry is no earlier
 		lease, err := store.Lease(runCtx, runID, cfg.Deadline+saveBudget+leaseMargin)
 		if errors.Is(err, api.ErrLeaseHeld) {
 			// A skipped run writes nothing; the next run that holds the lease
@@ -186,6 +188,7 @@ func execute(ctx context.Context, opts api.RunOptions, s settings) (api.RunResul
 			return api.RunResult{}, fmt.Errorf("taking the run lease: %w", err)
 		}
 		x.run.Lease = lease
+		x.run.leaseUntil = leaseAt.Add(cfg.Deadline + saveBudget + leaseMargin)
 		defer x.release(ctx)
 	}
 
@@ -269,6 +272,7 @@ func (x *exec) main() error {
 	if !x.phase1Failed {
 		x.push()
 	}
+	r.judged = x.scored && !x.degraded
 	if x.s.hooks.Export != nil {
 		if err := x.s.hooks.Export(r); err != nil {
 			x.hookFailed("export", err)
@@ -284,13 +288,28 @@ func (x *exec) main() error {
 	r.Model.Trim(model.TableLog, "at", r.Now().Add(-x.cfg.LogRetention))
 	trimEvents(r)
 	x.putHealth(!x.cutShort)
-	if err := x.commit("phase 2", codec.Encode(r.Model, phase2Tables(r.Model)...), false); err != nil {
+	if err := x.commit("phase 2", codec.Encode(r.Model, phase2Tables()...), false); err != nil {
 		return err
 	}
-	if x.scored {
-		if err := x.writeRanked(); err != nil {
-			return fmt.Errorf("writing Ranked: %w", err)
+	// The export tables, then Ranked, each in their own chunked commits. When
+	// either fails the run fails, but what was committed stays: the export
+	// CSVs (and only they of AfterSave) are still rewritten from the
+	// committed tables, so a list never lags a saved opt-out.
+	err := x.writeExports()
+	if err != nil {
+		err = fmt.Errorf("writing the export tables: %w", err)
+	} else if x.scored {
+		if rerr := x.writeRanked(); rerr != nil {
+			err = fmt.Errorf("writing Ranked: %w", rerr)
 		}
+	}
+	if err != nil {
+		if x.s.hooks.Export != nil && !x.lost {
+			if cerr := writeExportCSVs(r); cerr != nil {
+				x.problem("step_failed:aftersave", "the step after saving failed: "+cerr.Error(), "see the message; the next run tries again", false)
+			}
+		}
+		return err
 	}
 	if x.s.hooks.AfterSave != nil {
 		if err := x.s.hooks.AfterSave(r); err != nil {
@@ -311,9 +330,10 @@ var phase1Tables = []string{
 	model.TableState + ":key_conflicts", model.TableState + ":config_version",
 }
 
-// phase2Tables is every table the run writes but Ranked (written after) and
-// the people-owned Overrides (never written by a run).
-func phase2Tables(m *model.Model) []string {
+// phase2Tables is every table the run writes but the export tables and
+// Ranked (each written after, in chunks) and the people-owned Overrides
+// (never written by a run).
+func phase2Tables() []string {
 	var out []string
 	for _, d := range model.Tables {
 		if d.Pattern || d.Name == model.TableRanked || d.Name == model.TableOverrides {
@@ -321,21 +341,7 @@ func phase2Tables(m *model.Model) []string {
 		}
 		out = append(out, d.Name)
 	}
-	lanes := map[string]bool{}
-	for lane := range m.Exports {
-		lanes[lane] = true
-	}
-	for k := range m.State {
-		if lane, ok := strings.CutPrefix(string(k), model.ExportLaneKey); ok && lane != "" {
-			lanes[lane] = true
-		}
-	}
-	names := make([]string, 0, len(lanes))
-	for lane := range lanes {
-		names = append(names, model.ExportTable(lane))
-	}
-	sort.Strings(names)
-	return append(out, names...)
+	return out
 }
 
 // beforePhase1 is steps 3 to 6. The deadline or Stop arriving skips the
@@ -371,6 +377,7 @@ func (x *exec) beforePhase1(chunk int) error {
 	if h := x.s.hooks.Enrich; h != nil && !r.DryRun {
 		if err := h(r); err != nil {
 			x.hookFailed("enrich", err)
+			x.degraded = true
 		}
 	}
 	if x.cut("during enrichment") {
@@ -408,6 +415,7 @@ func (x *exec) beforePhase1(chunk int) error {
 		d, err := h(r)
 		if err != nil {
 			x.hookFailed("detect", err)
+			x.degraded = true
 		} else {
 			det = d
 		}
@@ -429,7 +437,7 @@ func (x *exec) resetAttempt() {
 	r.Input, r.Result = rules.Input{}, rules.Result{}
 	r.lv, r.pushing = nil, nil
 	x.columns, x.merged, x.backlog, x.cursors = nil, 0, 0, nil
-	x.scored, x.cutShort = false, false
+	x.scored, x.cutShort, x.degraded = false, false, false
 	x.oldRanked, x.tierLogs = nil, nil
 }
 
@@ -547,9 +555,10 @@ func (x *exec) candidates() []api.LeadID {
 }
 
 // commit checks the lease, then commits. A lost lease stops every later
-// write. ErrTooLarge on phase 1 is returned for the caller to halve; any
-// other failure is retried once at the same size.
-func (x *exec) commit(name string, writes []api.TableWrite, phase1 bool) error {
+// write. With halvable (phase 1, the export chunks) ErrTooLarge is returned
+// for the caller to halve; any other failure is retried once at the same
+// size.
+func (x *exec) commit(name string, writes []api.TableWrite, halvable bool) error {
 	if len(writes) == 0 {
 		return nil
 	}
@@ -570,14 +579,14 @@ func (x *exec) commit(name string, writes []api.TableWrite, phase1 bool) error {
 		x.problem("people_tab_check", errText(err), "open the tab the message names and check its rows", true)
 		err = nil
 	}
-	if err != nil && !x.lost && r.Ctx.Err() == nil && !(phase1 && errors.Is(err, api.ErrTooLarge)) {
+	if err != nil && !x.lost && r.Ctx.Err() == nil && !(halvable && errors.Is(err, api.ErrTooLarge)) {
 		err = try()
 	}
 	if err != nil {
 		if x.lost {
 			return fmt.Errorf("%s: %w (another run took over; this run writes nothing more)", name, err)
 		}
-		if phase1 && errors.Is(err, api.ErrTooLarge) {
+		if halvable && errors.Is(err, api.ErrTooLarge) {
 			return err
 		}
 		return fmt.Errorf("%s commit: %w", name, err)

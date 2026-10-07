@@ -22,7 +22,7 @@ the task breakdown); the contracts doc is the source of truth for every shape.
 | `internal/fakes/sheets`, `internal/fakes/gcs` | in-memory fakes of Google Sheets, Drive and Cloud Storage for tests |
 | `internal/rules` | the rubric compiler and evaluator: YAML rules compiled to CEL |
 | `internal/merge` | turns input rows into one lead per person: header aliases, identities, `same_as` merges, the Overrides tab |
-| `internal/engine` | the run: lease, sources and chunked merge, scoring, the two saves, `Ranked`, `Health`; later steps plug in as hooks |
+| `internal/engine` | the run: lease, sources and chunked merge, scoring, the two saves, `Ranked`, `Health`, lanes and the ledger, export lists and their CSVs; later steps plug in as hooks |
 | `internal/logredact` | log redaction: logs carry ids, never emails |
 | `adapters/csv` | the CSV file source (`type: csv`): lead rows, or event rows with `events: true` |
 | `adapters/sheetsource` | the Google Sheet tab source (`type: sheetsource`): tabs of the team's spreadsheet |
@@ -81,6 +81,22 @@ imported waits until they appear.
 login (`gcloud auth login --enable-gdrive-access` first), shares it with the run and
 receiver accounts, and writes `store.spreadsheet`; `--view` makes a SQLite store's
 read-only view; `--repair` puts an existing spreadsheet's settings back.
+
+## Export lists
+
+An `export` lane in the rubric keeps a list instead of pushing to a tool: one
+table per lane (`Export <lane id>`; a tab on a Sheets store) and, on SQLite, one
+CSV per lane in `export.dir` (`./out` on Docker), rewritten after every run.
+A lead is listed once. Every run refreshes each row's `status` and
+`do_not_contact`, also for lanes since removed from the rubric. **Filter on
+`do_not_contact` before every send**: it is `yes` for anyone opted out, blocked,
+at a company with an open deal, already contacted, or headed for a cold lane.
+Opt-outs reach the list from the receiver, polling and Overrides; the vendor
+opt-out lookups run only for leads about to be pushed.
+
+A cold lane claims its leads even before its sink is set up: anyone it matches
+is `do_not_contact`. So a CSV-only team removes the cold lanes from its rubric
+and lists leads only through export lanes.
 
 Without `--config`, commands read `/config/bundle.yaml`, else
 `/config/leadscore.yml`, else `./leadscore.yml`.

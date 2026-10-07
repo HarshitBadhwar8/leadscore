@@ -44,8 +44,10 @@ type Run struct {
 	Result rules.Result // step 6's result; PrePush may update it, and Ranked and the dry-run report follow it
 	Pushed int          // pushes made this run (S10b); RunResult.Pushed
 
-	lv      *view    // the lane view (S10b), built on first use; nil after invalidate
-	pushing *pushRun // what PrePush decided for Push (S10b); nil before PrePush
+	lv         *view     // the lane view (S10b), built on first use; nil after invalidate
+	pushing    *pushRun  // what PrePush decided for Push (S10b); nil before PrePush
+	leaseUntil time.Time // when the lease taken at start runs out (real clock); zero on a dry run
+	judged     bool      // step 6 finished on full inputs (no Enrich or Detect failure), so Result can list and reopen export rows; set before Export
 }
 
 // Hooks are the run's plug-in steps. A nil hook is skipped. Their errors are
@@ -72,7 +74,8 @@ func DefaultHooks() Hooks {
 		Detect:    detectHook,
 		PrePush:   prePushHook,
 		Push:      pushHook,
-		AfterSave: Chain(deleteProcessed),
+		Export:    exportHook,
+		AfterSave: Chain(deleteProcessed, writeExportCSVs),
 	}
 }
 

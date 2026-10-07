@@ -194,6 +194,11 @@ func (m *Model) Put(table string, row Row) error {
 
 var laneIDForm = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 
+// ValidLaneID reports a lane id that follows the section 2 rule (letters,
+// digits, "-" and "_", starting with a letter or digit), so it is safe in a
+// table name and a file name.
+func ValidLaneID(id string) bool { return laneIDForm.MatchString(id) }
+
 // checkExportLane refuses an export table whose lane id breaks the section 2
 // rule, or that matches a recorded lane only ignoring case. Other tables pass.
 func (m *Model) checkExportLane(table string) error {

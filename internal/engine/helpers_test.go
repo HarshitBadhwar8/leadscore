@@ -91,6 +91,13 @@ var flaky struct {
 	savedWithProblems int
 	// failPushes: the next commits that write Pushes fail.
 	failPushes int
+	// maxExportRows: a commit writing more rows than this to one export
+	// table is refused with ErrTooLarge (0: no limit).
+	maxExportRows int
+	// exportLog: each saved export row's do_not_contact, in commit order;
+	// exportInPhase2: a commit wrote Health and an export table together.
+	exportLog      []string
+	exportInPhase2 bool
 }
 
 type flakyStore struct{ *sqlite.Store }
@@ -129,7 +136,21 @@ func (f *flakyStore) Commit(ctx context.Context, writes []api.TableWrite) error 
 		flaky.failPushes--
 		failPushes = true
 	}
+	exportRows, health := 0, false
+	for _, w := range writes {
+		if strings.HasPrefix(w.Table, model.ExportPrefix) {
+			exportRows = max(exportRows, len(w.Rows))
+		}
+		health = health || w.Table == model.TableHealth
+	}
+	if exportRows > 0 && health {
+		flaky.exportInPhase2 = true
+	}
+	tooManyExport := flaky.maxExportRows > 0 && exportRows > flaky.maxExportRows
 	flaky.Unlock()
+	if tooManyExport {
+		return api.ErrTooLarge
+	}
 	if failPushes {
 		return errors.New("injected Pushes failure")
 	}
@@ -145,7 +166,19 @@ func (f *flakyStore) Commit(ctx context.Context, writes []api.TableWrite) error 
 	if failRanked {
 		return errors.New("injected Ranked failure")
 	}
-	return f.Store.Commit(ctx, writes)
+	if err := f.Store.Commit(ctx, writes); err != nil {
+		return err
+	}
+	flaky.Lock()
+	for _, w := range writes {
+		if strings.HasPrefix(w.Table, model.ExportPrefix) {
+			for _, r := range w.Rows {
+				flaky.exportLog = append(flaky.exportLog, r["do_not_contact"])
+			}
+		}
+	}
+	flaky.Unlock()
+	return nil
 }
 
 // testRubric scores a head-of title as tier 1, pays for a second channel,
@@ -183,6 +216,9 @@ func (in *install) config(body string) {
 	in.t.Helper()
 	if !strings.Contains(body, "store:") {
 		body = "store: { type: sqlite, path: leadscore.db }\n" + body
+	}
+	if !strings.Contains(body, "export:") {
+		body = "export: { dir: out }\n" + body // the /out default is Docker's
 	}
 	in.write("leadscore.yml", "version: 1\n"+body)
 }
