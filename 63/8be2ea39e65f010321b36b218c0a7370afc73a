@@ -1,0 +1,27 @@
+docs/design/oss-outbound-engine-contracts.md
+  s_9dab9ff7f2c580::t_57bfbaf5b8544f 957
+internal/e2e/expected_test.go
+  s_9dab9ff7f2c580::t_0fe30b1675afb7 213
+internal/engine/engine.go
+  s_9dab9ff7f2c580::t_7ffa3637346aa0 121
+internal/engine/review_test.go
+  s_9dab9ff7f2c580::t_1d9bffa47203b4 364-377
+internal/receiver/outcome_test.go
+  s_9dab9ff7f2c580::t_5c27b9a01b157c 8,17-20,23,29-30,68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "638be2ea39e65f010321b36b218c0a7370afc73a",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
