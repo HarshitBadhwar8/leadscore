@@ -71,9 +71,11 @@ func (x *exec) buildRanked() {
 	}
 }
 
-// rankedRow is one lead's Ranked row. The lane is the highest-priority lane
-// whose `when` holds, empty when none does or a rubric conflict blocks the
-// lead; S10b's lane checks refine it.
+// rankedRow is one lead's Ranked row. Once PrePush has planned the lanes,
+// the lane is the lead's planned lane (the highest-priority lane it is pushed
+// to or listed on) and the reasons end with why each lane it matched was
+// skipped; before that, the highest-priority lane whose `when` holds. It is
+// empty when no lane applies or a rubric conflict blocks the lead.
 func (x *exec) rankedRow(ref api.LeadRef, derived []string) model.RankedRow {
 	v := x.run.Result.Verdicts[ref.ID]
 	row := model.RankedRow{
@@ -91,10 +93,17 @@ func (x *exec) rankedRow(ref api.LeadRef, derived []string) model.RankedRow {
 	for _, n := range derived {
 		row.Derived[n] = formatValue(v.Values[n])
 	}
-	if why, blocked := x.run.Result.Blocked[ref.ID]; blocked {
+	st := x.run.pushing
+	switch why, blocked := x.run.Result.Blocked[ref.ID]; {
+	case blocked:
 		row.Reasons = joinReason(row.Reasons, "blocked: "+why)
-	} else if lanes := x.run.Result.Lanes[ref.ID]; len(lanes) > 0 {
-		row.Lane = lanes[0]
+	case st != nil:
+		row.Lane = st.planned[ref.ID]
+		for _, r := range st.reasons[ref.ID] {
+			row.Reasons = joinReason(row.Reasons, r)
+		}
+	case len(x.run.Result.Lanes[ref.ID]) > 0:
+		row.Lane = x.run.Result.Lanes[ref.ID][0]
 	}
 	return row
 }

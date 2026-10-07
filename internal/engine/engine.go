@@ -43,6 +43,9 @@ type Run struct {
 	Input  rules.Input  // step 6's evaluator input; a re-score (S10b) updates it
 	Result rules.Result // step 6's result; PrePush may update it, and Ranked and the dry-run report follow it
 	Pushed int          // pushes made this run (S10b); RunResult.Pushed
+
+	lv      *view    // the lane view (S10b), built on first use; nil after invalidate
+	pushing *pushRun // what PrePush decided for Push (S10b); nil before PrePush
 }
 
 // Hooks are the run's plug-in steps. A nil hook is skipped. Their errors are
@@ -65,8 +68,10 @@ type Hooks struct {
 func DefaultHooks() Hooks {
 	return Hooks{
 		Intake:    intake,
-		Fold:      defaultFold,
+		Fold:      foldHook,
 		Detect:    detectHook,
+		PrePush:   prePushHook,
+		Push:      pushHook,
 		AfterSave: Chain(deleteProcessed),
 	}
 }
@@ -140,24 +145,4 @@ func withTestClient(c *config.Config, client *http.Client) {
 	for _, b := range c.Sinks {
 		set(b)
 	}
-}
-
-// defaultFold is the Fold until S10b's status fold lands: every live lead
-// with no stored status gets `new` (contracts section 12.6). A stored status
-// is left as it is.
-func defaultFold(r *Run) error {
-	for k, p := range r.Model.People {
-		if p.MergedInto != "" {
-			continue
-		}
-		o := r.Model.Outcomes[k]
-		if o.Status != "" {
-			continue
-		}
-		o.LeadID, o.Status, o.StatusAt = p.LeadID, "new", r.Now()
-		if err := r.Model.Put(model.TableOutcomes, o); err != nil {
-			return err
-		}
-	}
-	return nil
 }
