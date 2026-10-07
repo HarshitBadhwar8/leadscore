@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,7 +11,6 @@ import (
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/config"
-	"github.com/HarshitBadhwar8/leadscore/internal/csvsafe"
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
 )
 
@@ -49,18 +47,7 @@ func runFacts(inv *invocation) int {
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i]["domain"] < rows[j]["domain"] })
 
 	if _, asCSV := inv.flags["csv"]; asCSV {
-		cols := factsColumns(rows)
-		w := csv.NewWriter(inv.stdout)
-		w.Write(cols)
-		for _, r := range rows {
-			rec := make([]string, len(cols))
-			for i, col := range cols {
-				rec[i] = r[col]
-			}
-			w.Write(csvsafe.Row(rec))
-		}
-		w.Flush()
-		if err := w.Error(); err != nil {
+		if err := writeCSV(inv.stdout, factsColumns(rows), rows); err != nil {
 			return inv.fail(err)
 		}
 		return exitOK

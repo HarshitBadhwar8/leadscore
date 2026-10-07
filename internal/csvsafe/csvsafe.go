@@ -1,7 +1,8 @@
 // Package csvsafe makes text safe to write into a CSV a person opens in a
 // spreadsheet (contracts section 12.1): a cell a spreadsheet would read as a
 // formula is prefixed with a quote, so stored text from a lead sheet can never
-// run as one. `ranked --csv` and the export CSVs (S13) use it.
+// run as one. `ranked --csv`, `facts --csv` and the export CSVs
+// (S13) use it.
 package csvsafe
 
 import (

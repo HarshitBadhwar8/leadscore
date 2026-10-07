@@ -23,6 +23,8 @@ var factsRows = []api.Row{
 	{"domain": "zeta.example", "facts": `{"employees":{"value":"120","origin":"enrichment","at":"2026-10-01T00:00:00Z"},` +
 		`"funding_stage":{"value":"Series B","origin":"input","at":"2026-09-01T00:00:00Z"}}`,
 		"previous":    `{"employees":{"value":"80","origin":"enrichment","at":"2026-09-01T00:00:00Z"}}`,
+		"rollups":     `{"open_deals":3}`,
+		"first_seen":  `{"visit":"2026-09-15T00:00:00Z"}`,
 		"enriched_at": "2026-10-01T00:00:00Z"},
 	{"domain": "+cmd.example", "facts": `{"region":{"value":"In\u001b[31mdia","origin":"input","at":"2026-09-01T00:00:00Z"}}`,
 		"not_found_at": "2026-10-02T00:00:00Z"},
@@ -30,11 +32,12 @@ var factsRows = []api.Row{
 
 // sqliteFactsInstall is a SQLite install whose store holds rows in Company
 // facts (none when rows is nil). It returns leadscore.yml and the store path.
-func sqliteFactsInstall(t *testing.T, rows []api.Row) (cfg, db string) {
+// With leftoverWAL, the store is copied while its writer is still open, as a
+// crash would leave it: the rows are only in the -wal file.
+func sqliteFactsInstall(t *testing.T, rows []api.Row, leftoverWAL bool) (cfg, db string) {
 	t.Helper()
-	dir := t.TempDir()
-	db = filepath.Join(dir, "store.db")
-	s, err := sqlite.Open(db)
+	src := filepath.Join(t.TempDir(), "store.db")
+	s, err := sqlite.Open(src)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +49,29 @@ func sqliteFactsInstall(t *testing.T, rows []api.Row) (cfg, db string) {
 	if err := s.Commit(context.Background(), w); err != nil {
 		t.Fatal(err)
 	}
-	s.Close()
+	dir := t.TempDir()
+	db = filepath.Join(dir, "store.db")
+	if leftoverWAL {
+		for _, suffix := range []string{"", "-wal"} {
+			data, err := os.ReadFile(src + suffix)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(db+suffix, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		s.Close()
+	} else {
+		s.Close()
+		data, err := os.ReadFile(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(db, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	cfg = filepath.Join(dir, "leadscore.yml")
 	if err := os.WriteFile(cfg, []byte("version: 1\nstore: { type: sqlite, path: store.db }\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -78,36 +103,48 @@ func checkFacts(t *testing.T, cfg string) {
 	if recs[1][0] != "'+cmd.example" {
 		t.Errorf("a formula-like domain must be quoted: %q", recs[1][0])
 	}
-	if recs[2][0] != "zeta.example" || recs[2][1] != factsRows[0]["facts"] || recs[2][2] != factsRows[0]["previous"] ||
-		recs[2][5] != "2026-10-01T00:00:00Z" || recs[1][6] != "2026-10-02T00:00:00Z" {
-		t.Errorf("CSV must carry the stored text: %q", recs)
-	}
-}
-
-// facts prints the stored rows and writes them as CSV with the table's own
-// columns, and never changes the SQLite file.
-func TestFactsSQLite(t *testing.T) {
-	cfg, db := sqliteFactsInstall(t, factsRows)
-	before, err := os.ReadFile(db)
-	if err != nil {
-		t.Fatal(err)
-	}
-	checkFacts(t, cfg)
-	after, _ := os.ReadFile(db)
-	if !bytes.Equal(before, after) {
-		t.Error("facts changed the SQLite file")
-	}
-	// A read-only reader of a WAL database may leave an empty -wal beside
-	// it (SQLite's own index files), but never data.
-	for _, suffix := range []string{"-wal", "-journal"} {
-		if data, err := os.ReadFile(db + suffix); err == nil && len(data) > 0 {
-			t.Errorf("facts wrote %d bytes to %s", len(data), suffix)
+	for i, col := range recs[0] {
+		for j, want := range []api.Row{factsRows[1], factsRows[0]} {
+			if col != "domain" && recs[j+1][i] != want[col] {
+				t.Errorf("CSV %s of %s = %q, want the stored %q", col, want["domain"], recs[j+1][i], want[col])
+			}
 		}
 	}
 }
 
+// facts prints the stored rows and writes them as CSV with the table's own
+// columns, and never changes the SQLite files: rows left only in a WAL are
+// read, but the WAL is not folded into the database.
+func TestFactsSQLite(t *testing.T) {
+	cfg, db := sqliteFactsInstall(t, factsRows, true)
+	read := func() (main, wal []byte) {
+		t.Helper()
+		main, err := os.ReadFile(db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wal, err = os.ReadFile(db + "-wal")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return main, wal
+	}
+	main0, wal0 := read()
+	if bytes.Contains(main0, []byte("zeta.example")) || !bytes.Contains(wal0, []byte("zeta.example")) {
+		t.Fatal("setup: the rows must be only in the WAL")
+	}
+	checkFacts(t, cfg)
+	main1, wal1 := read()
+	if !bytes.Equal(main0, main1) || !bytes.Equal(wal0, wal1) {
+		t.Error("facts changed the SQLite file or its WAL")
+	}
+	if _, err := os.Stat(db + "-journal"); err == nil {
+		t.Error("facts left a rollback journal")
+	}
+}
+
 func TestFactsEmpty(t *testing.T) {
-	cfg, _ := sqliteFactsInstall(t, nil)
+	cfg, _ := sqliteFactsInstall(t, nil, false)
 	if code, out, _ := cli("facts", "--config", cfg); code != 0 || !strings.Contains(out, "Company facts is empty") {
 		t.Errorf("facts on an empty store: %d %q", code, out)
 	}
@@ -148,10 +185,10 @@ func TestFactsSheets(t *testing.T) {
 	if err := fs.Put(c.Store.Spreadsheet, model.TableCompanyFacts, tab); err != nil {
 		t.Fatal(err)
 	}
-	writes := fs.Calls("batchUpdate")
+	writes, creates := fs.Calls("batchUpdate"), fs.Calls("create")
 	checkFacts(t, path)
-	if n := fs.Calls("batchUpdate"); n != writes {
-		t.Errorf("facts wrote to the spreadsheet (%d batchUpdate calls)", n-writes)
+	if n, m := fs.Calls("batchUpdate"), fs.Calls("create"); n != writes || m != creates {
+		t.Errorf("facts wrote to Google: %d batchUpdate and %d create calls", n-writes, m-creates)
 	}
 }
 
