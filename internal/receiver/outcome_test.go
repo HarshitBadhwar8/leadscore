@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/engine"
@@ -23,7 +22,6 @@ func init() {
 // An unsubscribe posted to /apollo/reply with the secret is stored by the
 // handler, and the next run does not push that person.
 func TestWebhookUnsubscribeBlocksTheNextPush(t *testing.T) {
-	fastQueue(t, 10*time.Millisecond)
 	dir := t.TempDir()
 	write := func(name, text string) {
 		t.Helper()

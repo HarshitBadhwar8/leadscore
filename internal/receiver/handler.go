@@ -66,7 +66,14 @@ type Options struct {
 	// three intervals are measured from it. Zero means Now() at construction.
 	Started time.Time
 	Log     io.Writer // nil discards
+	// BatchWindow is how long requests are gathered before they are
+	// appended together; zero is DefaultBatchWindow. Tests shorten it.
+	BatchWindow time.Duration
 }
+
+// DefaultBatchWindow is the write queue's gathering time (contracts section
+// 5.1).
+const DefaultBatchWindow = 2 * time.Second
 
 // Handler is the receiver's HTTP handler. S17 builds one in process with its
 // own clock; serve wraps it in an http.Server. Close drains it.
@@ -103,6 +110,9 @@ func NewHandler(o Options) *Handler {
 	if o.Log == nil {
 		o.Log = io.Discard
 	}
+	if o.BatchWindow <= 0 {
+		o.BatchWindow = DefaultBatchWindow
+	}
 	if o.Started.IsZero() {
 		o.Started = o.Now()
 	}
@@ -110,7 +120,7 @@ func NewHandler(o Options) *Handler {
 		strings.TrimSpace(o.Getenv(SecretVar)),
 		strings.TrimSpace(o.Getenv(PreviousSecretVar)),
 	}, unauth: make(chan struct{}, unauthReads)}
-	h.q = newQueue(o.Events, func(err error) {
+	h.q = newQueue(o.Events, o.BatchWindow, func(err error) {
 		h.logf("storing a batch of webhook events failed; each request in it got 503 so Apollo can retry: %v", err)
 	})
 	return h
