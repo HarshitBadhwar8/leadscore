@@ -39,22 +39,22 @@ var goldens = map[string]golden{
 	"apollo_reply_sent.json": {
 		events: []api.Event{{Kind: "sent", Email: "dana.reyes@example.com", LinkedInURL: "https://linkedin.example/in/dana-reyes-example/",
 			Domain: "example.com", At: goldenReceived, ReceivedAt: goldenReceived, Origin: "receiver",
-			Attrs: map[string]string{"stage": "Approaching", "contact_id": "ct-1001", "full_name": "Dana Reyes", "title": "VP Engineering"}}},
-		rows: []api.InputRow{row("contact_id", "ct-1001", "email", "dana.reyes@example.com",
+			Attrs: map[string]string{"stage": "Approaching", "full_name": "Dana Reyes", "title": "VP Engineering"}}},
+		rows: []api.InputRow{row("email", "dana.reyes@example.com",
 			"linkedin_url", "https://linkedin.example/in/dana-reyes-example/", "full_name", "Dana Reyes",
 			"title", "VP Engineering", "company.domain", "example.com")},
 	},
 	"apollo_reply_replied.json": {
 		events: []api.Event{{Kind: "replied", Email: "dana.reyes@example.com", Domain: "example.com", At: goldenReceived,
 			ReceivedAt: goldenReceived, Origin: "receiver",
-			Attrs: map[string]string{"stage": "Replied", "conversation_link": "https://app.apollo.io/#/conv/9", "contact_id": "ct-1001"}}},
-		rows: []api.InputRow{row("contact_id", "ct-1001", "email", "dana.reyes@example.com", "company.domain", "example.com")},
+			Attrs: map[string]string{"stage": "Replied", "conversation_link": "https://app.apollo.io/#/conv/9"}}},
+		rows: []api.InputRow{row("email", "dana.reyes@example.com", "company.domain", "example.com")},
 	},
 	"apollo_reply_replied_positive.json": {
 		events: []api.Event{{Kind: "replied_positive", Email: "dana.reyes@example.com", At: goldenReceived,
 			ReceivedAt: goldenReceived, Origin: "receiver",
-			Attrs: map[string]string{"stage": "Interested", "conversation_link": "https://app.apollo.io/#/conv/9", "contact_id": "ct-1001"}}},
-		rows: []api.InputRow{row("contact_id", "ct-1001", "email", "dana.reyes@example.com")},
+			Attrs: map[string]string{"stage": "Interested", "conversation_link": "https://app.apollo.io/#/conv/9"}}},
+		rows: []api.InputRow{row("email", "dana.reyes@example.com")},
 	},
 	"apollo_reply_unsubscribed.json": {
 		events: []api.Event{{Kind: "unsubscribed", Email: "sam.ortiz@example.org", At: goldenReceived,
@@ -140,6 +140,32 @@ func TestGoldenBodies(t *testing.T) {
 	for name := range goldens {
 		if _, err := os.Stat(filepath.Join(goldenDir, name)); err != nil {
 			t.Errorf("expectation for %s, but no such body", name)
+		}
+	}
+}
+
+// Apollo's workflow variables include no contact id, so neither the reply
+// templates nor the reply bodies carry contact_id: the email is the key.
+func TestReplyBodiesAndTemplatesCarryNoContactID(t *testing.T) {
+	bodies, _ := filepath.Glob(filepath.Join(goldenDir, "apollo_reply_*.json"))
+	templates, _ := filepath.Glob(filepath.Join("../../setup/apollo", "email_*.json"))
+	if len(bodies) == 0 || len(templates) == 0 {
+		t.Fatalf("found %d reply bodies and %d reply templates", len(bodies), len(templates))
+	}
+	for _, f := range append(bodies, templates...) {
+		raw, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatalf("%s: %v", f, err)
+		}
+		if _, ok := m["contact_id"]; ok {
+			t.Errorf("%s carries contact_id, which no workflow variable can fill", filepath.Base(f))
+		}
+		if _, ok := m["contact_email"]; !ok {
+			t.Errorf("%s has no contact_email, the reply body's only key", filepath.Base(f))
 		}
 	}
 }

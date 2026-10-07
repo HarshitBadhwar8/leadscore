@@ -1,21 +1,27 @@
 {
   "provisional": true,
+  "confirmed_from": "A live API test (record: Apollo transport spike, 2026-08-10): POST /v1/emailer_messages/search with a JSON body answers 200. Only the endpoint and method; the 429 is from Apollo's docs.",
   "documented": true,
-  "method": "GET",
+  "method": "POST",
   "path": "/api/v1/emailer_messages/search",
-  "query": {
-    "emailer_message_stats[]": "replied",
-    "emailer_message_date_range_mode": "completed_at",
-    "emailerMessageDateRange[min]": "2026-08-01",
-    "page": "1",
-    "per_page": "100"
-  },
+  "query": {},
   "request_headers": [
     "Accept",
     "Cache-Control",
+    "Content-Type",
     "X-Api-Key"
   ],
-  "request_body": null,
+  "request_body": {
+    "emailer_message_stats": [
+      "replied"
+    ],
+    "emailer_message_date_range_mode": "completed_at",
+    "emailerMessageDateRange": {
+      "min": "2026-08-01"
+    },
+    "page": 1,
+    "per_page": 100
+  },
   "status": 429,
   "response_headers": {
     "Content-Type": "application/json; charset=utf-8",

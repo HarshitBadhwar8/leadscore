@@ -67,7 +67,10 @@ type notification struct {
 	ConversationLink string `json:"last_conversation_link"`
 
 	// The person and company fields the reply template adds; each is
-	// optional, since a workflow may not be able to fill it.
+	// optional, since a workflow may not be able to fill it. ContactID is
+	// not in the template: the workflow setup shows Apollo's variables
+	// include no contact id. It is read only if a team adds one anyway;
+	// without it the email is the key.
 	ContactID   string `json:"contact_id"`
 	Name        string `json:"contact_name"`
 	Title       string `json:"contact_title"`

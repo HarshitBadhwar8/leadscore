@@ -5,6 +5,19 @@ in earlier working code's parser tests and contracts section 5.1, with made-up p
 example domains, not from real Apollo captures. Each file carries
 `"provisional": true` (an unknown field the parsers ignore).
 
+Some keys are backed by records of our own Apollo account, and each body
+says which in a `confirmed_from` field (also ignored by the parsers):
+
+- Reply bodies: the workflow setup shows `event` (a literal typed into each
+  workflow), `contact_email`, `contact_stage` and `last_conversation_link`.
+  Apollo's workflow variables include no contact id, so no reply body or
+  template carries `contact_id`; the email is the key. `contact_name`,
+  `contact_title`, `contact_linkedin_url` and `account_domain` are still
+  unconfirmed.
+- Visit bodies: the workflow setup shows the per-domain `event`, the contact's
+  email, first and last name, title and LinkedIn URL, and an `account` block.
+  `visited_at` is not confirmed: its values here are made up.
+
 When S0 saves real bodies of each kind here, replace these files, drop the
 `provisional` field, and update the expectations in
 `adapters/apollo/golden_test.go`.

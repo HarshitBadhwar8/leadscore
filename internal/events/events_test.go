@@ -513,3 +513,37 @@ func BenchmarkApplyOptOutLargeModel(b *testing.B) {
 		Apply(m, api.LeadID(fmt.Sprintf("L%05d", n)), e, nil)
 	}
 }
+
+// Apollo's workflow variables carry no contact id, so a reply body names the
+// person by email only. It still keys apart per person (the conversation
+// link, else the email), finds the lead by email, and an unsubscribe applies.
+func TestReplyBodyWithoutContactIDUsesTheEmail(t *testing.T) {
+	m := newModel(t, "L1")
+	m.Put(model.TableIdentities, model.Identity{Key: "ada@example.com", Kind: "email", LeadID: "L1", SourceID: "csv", FirstSeenAt: t0})
+	body := func(event, email string) api.RawEvent {
+		return api.RawEvent{Seq: "1", Kind: "apollo_reply", ReceivedAt: t0, Body: []byte(
+			`{"event":"` + event + `","contact_email":"` + email + `","contact_stage":"Do Not Contact"}`)}
+	}
+	evs, rows := Parse([]api.RawEvent{body("email_unsubscribed", " Ada@Example.com ")})
+	if len(evs) != 1 || evs[0].Kind != "unsubscribed" || evs[0].Attrs["contact_id"] != "" {
+		t.Fatalf("events = %+v", evs)
+	}
+	if len(rows) != 1 || rows[0].Columns["contact_id"] != "" || rows[0].Columns["email"] != "ada@example.com" {
+		t.Fatalf("rows = %+v", rows)
+	}
+	e := merge.NormalizeEventKeys(evs[0])
+	if key(t, body("email_unsubscribed", "ada@example.com")) == key(t, body("email_unsubscribed", "bo@example.com")) {
+		t.Error("two people's email-only replies share a key")
+	}
+	if !strings.Contains(string(Key(e)), "ada@example.com") {
+		t.Errorf("key %q, want it built from the email", Key(e))
+	}
+	lead, ok := merge.FindPerson(m, e)
+	if !ok || lead != "L1" {
+		t.Fatalf("FindPerson = %q, %v; want L1 by email", lead, ok)
+	}
+	Apply(m, lead, e, nil)
+	if o := outcome(m, "L1"); !o.UnsubscribedAt.Equal(t0) {
+		t.Errorf("the unsubscribe did not apply: %+v", o)
+	}
+}

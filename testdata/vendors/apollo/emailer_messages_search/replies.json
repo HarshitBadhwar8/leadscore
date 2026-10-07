@@ -1,21 +1,27 @@
 {
   "provisional": true,
-  "note": "S0 confirms: the replied filter, the date filter by day on completed_at, the label field (reply_class) and its values, replied_at, and to_email",
-  "method": "GET",
+  "confirmed_from": "A live API test (record: Apollo transport spike, 2026-08-10): POST /v1/emailer_messages/search with a JSON body answers 200; emailer_message_stats [\"replied\"] is applied by Apollo (all 9 records returned had replied true); records carry id, contact_id, emailer_campaign_id, to_email, to_name, status, completed_at and reply_class (null on 6 of 9, person_referral on 3). Not confirmed: the date filter, replied_at, the pagination record.",
+  "note": "S0 confirms: the date filter by day on completed_at, replied_at, and the pagination record",
+  "method": "POST",
   "path": "/api/v1/emailer_messages/search",
-  "query": {
-    "emailer_message_stats[]": "replied",
-    "emailer_message_date_range_mode": "completed_at",
-    "emailerMessageDateRange[min]": "2026-08-01",
-    "page": "1",
-    "per_page": "100"
-  },
+  "query": {},
   "request_headers": [
     "Accept",
     "Cache-Control",
+    "Content-Type",
     "X-Api-Key"
   ],
-  "request_body": null,
+  "request_body": {
+    "emailer_message_stats": [
+      "replied"
+    ],
+    "emailer_message_date_range_mode": "completed_at",
+    "emailerMessageDateRange": {
+      "min": "2026-08-01"
+    },
+    "page": 1,
+    "per_page": 100
+  },
   "status": 200,
   "response_headers": {
     "Content-Type": "application/json; charset=utf-8"
@@ -29,6 +35,7 @@
         "to_email": "dana.reyes@acme-robotics.example",
         "to_name": "Dana Reyes",
         "status": "completed",
+        "replied": true,
         "reply_class": "willing_to_meet",
         "completed_at": "2026-09-02T09:00:00.000+00:00",
         "replied_at": "2026-09-03T14:30:00.000+00:00"
@@ -40,6 +47,7 @@
         "to_email": "dana.reyes@acme-robotics.example",
         "to_name": "Dana Reyes",
         "status": "completed",
+        "replied": true,
         "reply_class": null,
         "completed_at": "2026-09-02T09:00:00.000+00:00",
         "replied_at": "2026-09-04T08:00:00.000+00:00"

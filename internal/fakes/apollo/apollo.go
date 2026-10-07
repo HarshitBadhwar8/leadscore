@@ -35,7 +35,8 @@ type Fixture struct {
 	ResponseBody    json.RawMessage   `json:"response_body"`
 	Provisional     bool              `json:"provisional"`
 	Documented      bool              `json:"documented"`
-	Note            string            `json:"note"` // what S0 must confirm about this file
+	Note            string            `json:"note"`           // what S0 must confirm about this file
+	ConfirmedFrom   string            `json:"confirmed_from"` // which record confirms which parts, when one does
 }
 
 // Call is one request the fake answered.

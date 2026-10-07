@@ -62,5 +62,6 @@
       }
     ]
   },
+  "confirmed_from": "HubSpot code that runs in production reads results[].id and label, and stages[].id and label. Stage metadata (isClosed, probability) is not confirmed.",
   "provisional": true
 }

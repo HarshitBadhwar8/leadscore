@@ -1,5 +1,6 @@
 {
   "provisional": true,
+  "confirmed_from": "A live API test (record: Apollo transport spike, 2026-08-10): POST /v1/emailer_campaigns/search answers 200. Only the endpoint and method; q_name and the reply shape are not confirmed.",
   "note": "S0 confirms: q_name is a keyword filter (so names are matched exactly by us), and the paging fields",
   "method": "POST",
   "path": "/api/v1/emailer_campaigns/search",

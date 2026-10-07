@@ -22,7 +22,7 @@ reads it. Create one workflow per file you need.
   it before storing. Never put the secret in the URL: URLs are logged.
   Prefer the header: a body secret is only known once the body is read, so
   the receiver reads such bodies a few at a time, and a flood of slow
-  senders can delay them (Apollo then retries); header requests are never
+  senders can delay them (Apollo may then retry; not yet confirmed); header requests are never
   delayed this way.
 - **Body:** the template, with each `<...>` value replaced by the Apollo
   variable it names, picked in Apollo's workflow editor. Keep the JSON keys
@@ -60,7 +60,13 @@ that goes quiet is noticed.
 ## What still needs checking
 
 These templates follow the body formats in the design (contracts section
-5.1). Which Apollo variables can fill each field, whether a workflow can send
-a custom header, and how long Apollo waits and whether it retries are being
-checked against a real Apollo account; this page will be updated with the
-answers.
+5.1). Already known from a real Apollo account: a workflow can send a custom
+header (a fixed value; it cannot compute a signature, which leadscore does not
+need), and Apollo has no contact id variable, so the reply templates leave it
+out and leadscore matches replies by email. Still being checked: which
+variables fill the name, title, LinkedIn and company fields, the visit time
+variable, how long Apollo waits, and whether it retries a failed request.
+Whatever the answer, the receiver never answers `200` before the event is
+stored, so it never claims an event it does not have. If Apollo turns out not
+to retry, an event answered `503` is lost, and the silence check (a workflow
+that goes quiet) is the backstop.

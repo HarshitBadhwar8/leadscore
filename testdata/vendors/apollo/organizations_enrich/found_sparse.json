@@ -1,5 +1,6 @@
 {
   "provisional": true,
+  "confirmed_from": "Enrichment code that runs in production reads these field names, and the funding date as a plain date. The values are made up.",
   "method": "GET",
   "path": "/api/v1/organizations/enrich",
   "query": {"domain": "quiet-co.example"},

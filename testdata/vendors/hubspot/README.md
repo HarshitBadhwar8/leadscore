@@ -14,6 +14,14 @@ Layout: `<call>/<case>.json`, each `{method, path, query, request_headers
 provisional}`. Names, emails and domains are made up (`example.com`); there
 are no keys or tokens.
 
+Some parts are backed by HubSpot code that runs in production (no response
+was saved, so every file stays provisional). Those files carry a
+`confirmed_from` field: the v4 `PUT` association path and method, and that
+repeating it is a no-op (`associations_put/deal_contact`); the contact create
+request skeleton (`{"properties": ...}` in, `id` out); the search path
+`/crm/v3/objects/{object}/search`; and the pipelines' `id` and `label` for
+pipelines and stages.
+
 What S0 must confirm (also marked "S0 confirms" in `adapters/hubspot`):
 
 - `hs_email_optout` is the opt-out flag, and `"true"` its set value.
@@ -26,7 +34,8 @@ What S0 must confirm (also marked "S0 confirms" in `adapters/hubspot`):
   company to deals, deal to companies) and the company batch read by id answer a record with no associations with a
   `NO_ASSOCIATIONS_FOUND` error entry, and whether they lag a fresh create
   (the deal step's retry relies on the contact-to-deals read not lagging).
-- The v4 `PUT` association call (`associations_put`).
+- The v4 `PUT` association's answer body (its path and no-op repeat are
+  confirmed above).
 - Stage metadata keys and values (`isClosed`, `probability`).
 - The `INVALID_EMAIL` code in a 400, and the 409 message `Existing ID: <id>`.
 - How long search lags a create (the engine waits 15 minutes after a deal
