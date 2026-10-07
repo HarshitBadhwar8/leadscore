@@ -1,0 +1,49 @@
+README.md
+  s_9dab9ff7f2c580::t_848ea77778e320 183-184
+docs/design/oss-outbound-engine-contracts.md
+  s_9dab9ff7f2c580::t_fe66e4b62a87d9 544,577,580,754,965-966,973
+internal/check/receiver_silence.go
+  s_9dab9ff7f2c580::t_bdb51709a561f1 24,36-39,54-56
+internal/check/receiver_silence_test.go
+  s_9dab9ff7f2c580::t_d274f8cc22525a 31-36,54-56
+internal/engine/engine.go
+  s_9dab9ff7f2c580::t_ac268012899a60 47-52
+internal/engine/fold.go
+  s_9dab9ff7f2c580::t_7af1e0afc4a34b 166-167,178,183,186-191
+internal/engine/health.go
+  s_9dab9ff7f2c580::t_883892321461a2 135-145,159,161-165
+internal/engine/helpers_test.go
+  s_9dab9ff7f2c580::t_654e73cbcd7e63 36,101-121
+internal/engine/intake.go
+  s_9dab9ff7f2c580::t_e5197fa9b5e413 104-109,111,133-147,169-171
+internal/engine/outcomes_test.go
+  s_9dab9ff7f2c580::t_eaa46bd9e95ff6 24-25,28-29,345-356,410,436,522-758
+internal/engine/reread.go
+  s_9dab9ff7f2c580::t_2515a961ef420f 15-18,20-26,28-30,33,39-44,48-49,52-53,55-57,59-68,79-85
+internal/engine/run.go
+  s_9dab9ff7f2c580::t_76b56a0eee2102 441
+internal/events/events.go
+  s_9dab9ff7f2c580::t_70d3d7800e2eb9 292-293,299-303,307,315,323,326-327,330,333,340-341,344,363,365-366,369-372,375-378,391-392,397-402,404,410-416,418-420,467-469,472,476,484,519,527,530
+internal/events/events_test.go
+  s_9dab9ff7f2c580::t_ab924caf008e0c 4,222-224,227-229,231-235,493-509
+internal/receiver/outcome_test.go
+  s_9dab9ff7f2c580::t_9fb2476c1a5948 1-70
+internal/receiver/serve.go
+  s_9dab9ff7f2c580::t_f0071ccd8fb246 255-256,258-262,268
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a83d1cf929cc172bc9198025a46c4a453c8becee",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
