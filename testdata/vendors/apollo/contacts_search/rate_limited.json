@@ -1,0 +1,26 @@
+{
+  "provisional": true,
+  "documented": true,
+  "method": "POST",
+  "path": "/api/v1/contacts/search",
+  "query": {},
+  "request_headers": [
+    "Accept",
+    "Cache-Control",
+    "Content-Type",
+    "X-Api-Key"
+  ],
+  "request_body": {
+    "q_keywords": "dana.reyes@acme-robotics.example",
+    "page": 1,
+    "per_page": 100
+  },
+  "status": 429,
+  "response_headers": {
+    "Content-Type": "application/json; charset=utf-8",
+    "Retry-After": "1"
+  },
+  "response_body": {
+    "message": "The maximum number of api calls allowed for api/v1/contacts/search is 600 times per hour. Please upgrade your plan if you need more."
+  }
+}

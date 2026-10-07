@@ -1,0 +1,32 @@
+{
+  "provisional": true,
+  "documented": true,
+  "method": "POST",
+  "path": "/api/v1/emailer_campaigns/seq-0001/add_contact_ids",
+  "query": {},
+  "request_headers": [
+    "Accept",
+    "Cache-Control",
+    "Content-Type",
+    "X-Api-Key"
+  ],
+  "request_body": {
+    "emailer_campaign_id": "seq-0001",
+    "contact_ids": [
+      "contact-0001"
+    ],
+    "send_email_from_email_account_id": "mailbox-0001",
+    "sequence_active_in_other_campaigns": false,
+    "sequence_finished_in_other_campaigns": false,
+    "sequence_no_email": false,
+    "sequence_unverified_email": false
+  },
+  "status": 429,
+  "response_headers": {
+    "Content-Type": "application/json; charset=utf-8",
+    "Retry-After": "1"
+  },
+  "response_body": {
+    "message": "The maximum number of api calls allowed for api/v1/emailer_campaigns/add_contact_ids is 600 times per hour. Please upgrade your plan if you need more."
+  }
+}

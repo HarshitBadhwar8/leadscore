@@ -1,0 +1,40 @@
+{
+  "provisional": true,
+  "note": "S0 confirms: q_name is a keyword filter (so names are matched exactly by us), and the paging fields",
+  "method": "POST",
+  "path": "/api/v1/emailer_campaigns/search",
+  "query": {},
+  "request_headers": [
+    "Accept",
+    "Cache-Control",
+    "Content-Type",
+    "X-Api-Key"
+  ],
+  "request_body": {
+    "q_name": "Qualified founders",
+    "page": 1,
+    "per_page": 100
+  },
+  "status": 200,
+  "response_headers": {
+    "Content-Type": "application/json; charset=utf-8"
+  },
+  "response_body": {
+    "emailer_campaigns": [
+      {
+        "id": "seq-0001",
+        "name": "Qualified founders",
+        "active": true,
+        "archived": false,
+        "num_steps": 4,
+        "created_at": "2026-08-01T09:00:00.000+00:00"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "per_page": 100,
+      "total_entries": 1,
+      "total_pages": 1
+    }
+  }
+}

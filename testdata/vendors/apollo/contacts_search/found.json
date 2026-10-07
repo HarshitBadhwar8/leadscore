@@ -1,0 +1,45 @@
+{
+  "provisional": true,
+  "note": "S0 confirms: the search spends no credits, matches by email through q_keywords, and the opt-out flag's name (email_unsubscribed) and that it is always sent",
+  "method": "POST",
+  "path": "/api/v1/contacts/search",
+  "query": {},
+  "request_headers": [
+    "Accept",
+    "Cache-Control",
+    "Content-Type",
+    "X-Api-Key"
+  ],
+  "request_body": {
+    "q_keywords": "dana.reyes@acme-robotics.example",
+    "page": 1,
+    "per_page": 100
+  },
+  "status": 200,
+  "response_headers": {
+    "Content-Type": "application/json; charset=utf-8"
+  },
+  "response_body": {
+    "contacts": [
+      {
+        "id": "contact-0001",
+        "first_name": "Dana",
+        "last_name": "Reyes",
+        "name": "Dana Reyes",
+        "title": "Head of Operations",
+        "organization_name": "Acme Robotics",
+        "email": "dana.reyes@acme-robotics.example",
+        "email_status": "verified",
+        "email_unsubscribed": false,
+        "contact_campaign_statuses": [],
+        "created_at": "2026-09-01T10:00:00.000+00:00"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "per_page": 100,
+      "total_entries": 1,
+      "total_pages": 1
+    }
+  }
+}

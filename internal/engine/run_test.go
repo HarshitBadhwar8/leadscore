@@ -46,12 +46,19 @@ func TestExampleRunFillsRanked(t *testing.T) {
 	if anna["tier"] != "1" || anna["priority"] != "A" || anna["score"] != "80" || anna["status"] != "new" || anna["lane"] != "fleet-ops" {
 		t.Errorf("Anna's row: %v", anna)
 	}
-	// No vendor sink is built yet, so the vendor lanes are reported.
-	if res.Healthy || !hasKey(res.Problems, "lane_sink_unregistered:fleet-ops") || hasKey(res.Problems, "lane_sink_unregistered:nurture") {
+	// A vendor lane whose sink this build does not have is reported; one
+	// whose sink it has is not, and an export lane needs no sink.
+	for lane, sink := range map[string]string{"demo-followup": "hubspot", "fleet-ops": "apollo"} {
+		if _, registered := api.SinkFactory(sink); hasKey(res.Problems, "lane_sink_unregistered:"+lane) == registered {
+			t.Errorf("lane %s (sink %s registered: %v): problems %v", lane, sink, registered, res.Problems)
+		}
+	}
+	if hasKey(res.Problems, "lane_sink_unregistered:nurture") {
 		t.Errorf("problems %v", res.Problems)
 	}
 	h := in.health()
-	if h["result:last_result"] != "unhealthy" || h["result:rubric_version"] == "" || h["result:schedule"] != "15m" {
+	if h["result:last_result"] != map[bool]string{true: "healthy", false: "unhealthy"}[res.Healthy] ||
+		h["result:rubric_version"] == "" || h["result:schedule"] != "15m" {
 		t.Errorf("Health %v", h)
 	}
 	t.Logf("output: %s", out)

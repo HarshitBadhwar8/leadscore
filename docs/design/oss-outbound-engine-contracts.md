@@ -593,7 +593,7 @@ The receiver decodes the JSON and shortens every string over 16KB with a `__trun
 | `out_of_office` | no outcome |
 | no label | `replied_unlabelled` |
 
-Teams override every row except `unsubscribe` with `reply_labels`. Two polled replies at the same received time are ordered by message id, then label.
+Teams override every row except `unsubscribe` with `reply_labels`. Two polled replies at the same received time are ordered by message id, then label. A polled reply's `At` and received time are Apollo's reply time (else its send time; S0 confirms the fields), so a relabelled reply keeps its place in time.
 
 ## 6. Vendor fields
 
@@ -603,7 +603,7 @@ Teams override every row except `unsubscribe` with `reply_labels`. Two polled re
 - **Funding stage.** The enricher writes one of `pre_seed`, `seed`, `series_a`, `series_b`, `series_c`, `series_d_plus`, or leaves it empty for other labels. Region is the vendor's country, trimmed.
 - **Checks.** The `apollo-key` check uses Apollo's free auth-health call (S0 confirms it), never an enrichment call. The `apollo-sequences` check confirms `mailbox_id` is in the email-accounts list and every lane's sequence name resolves.
 - **Sequences.** `apollo:sequence/<name>` names a sequence; the sink resolves names to ids once per run. An unresolved name makes `Do` return `ErrTransient`, so the step waits until the name is fixed.
-- **Refusals.** `ErrRefused`: contact active in another sequence, opted out, or invalid email.
+- **Refusals.** `ErrRefused`: contact active in another sequence, opted out, or invalid email. Until S0 confirms Apollo's answers, the sink reads the contact before enrolling: already in this sequence is a no-op, and membership of any other sequence (paused or finished too) is refused; Apollo skipping the contact for a reason the sink does not recognise is also refused, never retried.
 - **Budgets.** Every enrichment call made counts toward both budgets. A domain is looked up when `enriched_at` and `not_found_at` are both empty or older than `max_age`, and no lookup of it failed in the last 24 hours (`enrich_failed_at`). Never-tried domains go first, then the least recently tried. A personal mail provider's domain, or a name with no dot, is never looked up. Three failed lookups in a row stop the run's enrichment and raise the warning `enrich_failed`; so does any failed lookup. A rate limit stops it too, and is not a failure.
 
 **HubSpot properties** created by `leadscore setup hubspot`. The `leadscore_` prefix is configurable; properties go in a group named `leadscore`.

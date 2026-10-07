@@ -1,0 +1,31 @@
+{
+  "provisional": true,
+  "documented": true,
+  "note": "S0 confirms: a key without the needed scope; counts one attempt",
+  "method": "POST",
+  "path": "/api/v1/contacts",
+  "query": {},
+  "request_headers": [
+    "Accept",
+    "Cache-Control",
+    "Content-Type",
+    "X-Api-Key"
+  ],
+  "request_body": {
+    "email": "dana.reyes@acme-robotics.example",
+    "run_dedupe": true,
+    "first_name": "Dana",
+    "last_name": "Reyes",
+    "title": "Head of Operations",
+    "organization_name": "Acme Robotics",
+    "website_url": "https://acme-robotics.example"
+  },
+  "status": 403,
+  "response_headers": {
+    "Content-Type": "application/json; charset=utf-8"
+  },
+  "response_body": {
+    "error": "api/v1/... is not accessible with this api_key",
+    "error_code": "API_INACCESSIBLE"
+  }
+}

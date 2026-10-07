@@ -1,0 +1,27 @@
+{
+  "provisional": true,
+  "note": "S0 confirms: the call and that one reply lists every mailbox",
+  "method": "GET",
+  "path": "/api/v1/email_accounts",
+  "query": {},
+  "request_headers": [
+    "Accept",
+    "Cache-Control",
+    "X-Api-Key"
+  ],
+  "request_body": null,
+  "status": 200,
+  "response_headers": {
+    "Content-Type": "application/json; charset=utf-8"
+  },
+  "response_body": {
+    "email_accounts": [
+      {
+        "id": "mailbox-0001",
+        "email": "outreach@leadscore-demo.example",
+        "active": true,
+        "default": true
+      }
+    ]
+  }
+}
