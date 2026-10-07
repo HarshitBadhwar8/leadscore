@@ -42,6 +42,12 @@ const (
 	maxAttempts  = 3  // counted attempts before a step is failed
 	batchLeads   = 25 // leads per pushing batch
 	lookupMargin = 10 // percent: extra new pushes looked up to replace leads a lookup removes
+	// dealSearchLag is how long after a deal step was called (with no deal
+	// id back) a lookup's "no deal" answer for its company is not trusted:
+	// HubSpot's search can lag a fresh create. S0 confirms the lag is
+	// seconds; 15 minutes (the default schedule) holds the company one run
+	// longer at most.
+	dealSearchLag = 15 * time.Minute
 )
 
 // The sinks and destinations the engine's own rules name (RFC 6.10, 6.12):
@@ -465,6 +471,20 @@ func (v *view) dealWaits(id api.LeadID) bool {
 			continue
 		}
 		if !c.checked.After(p.CalledAt) {
+			return true
+		}
+	}
+	return false
+}
+
+// recentDealCall reports a deal step at the company that was called less
+// than dealSearchLag ago and has no deal id: its deal may exist and not yet
+// show in HubSpot's search, so a lookup's deal_lost for the company is not
+// trusted (contracts section 8).
+func (v *view) recentDealCall(domain string, now time.Time) bool {
+	for _, k := range v.company(domain).dealRows {
+		p := v.m.Pushes[k]
+		if p.VendorID == "" && !p.CalledAt.IsZero() && now.Sub(p.CalledAt) < dealSearchLag {
 			return true
 		}
 	}

@@ -1,0 +1,28 @@
+{
+  "method": "POST",
+  "path": "/crm/v3/properties/contacts",
+  "query": "",
+  "request_headers": [
+    "Authorization",
+    "Content-Type"
+  ],
+  "request_body": {
+    "name": "leadscore_lead_id",
+    "label": "leadscore lead id",
+    "type": "string",
+    "fieldType": "text",
+    "groupName": "leadscore",
+    "hasUniqueValue": true
+  },
+  "status": 409,
+  "response_headers": {
+    "Content-Type": "application/json;charset=utf-8"
+  },
+  "response_body": {
+    "status": "error",
+    "message": "Property named 'leadscore_lead_id' already exists.",
+    "correlationId": "0b5f0c1e-3c2a-4b7e-9f00-000000000001",
+    "category": "OBJECT_ALREADY_EXISTS"
+  },
+  "provisional": true
+}

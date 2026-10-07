@@ -1,0 +1,30 @@
+{
+  "method": "POST",
+  "path": "/crm/v3/properties/contacts",
+  "query": "",
+  "request_headers": [
+    "Authorization",
+    "Content-Type"
+  ],
+  "request_body": {
+    "name": "leadscore_lead_id",
+    "label": "leadscore lead id",
+    "type": "string",
+    "fieldType": "text",
+    "groupName": "leadscore",
+    "hasUniqueValue": true
+  },
+  "status": 201,
+  "response_headers": {
+    "Content-Type": "application/json;charset=utf-8"
+  },
+  "response_body": {
+    "name": "leadscore_lead_id",
+    "label": "leadscore lead id",
+    "type": "string",
+    "fieldType": "text",
+    "groupName": "leadscore",
+    "hasUniqueValue": true
+  },
+  "provisional": true
+}

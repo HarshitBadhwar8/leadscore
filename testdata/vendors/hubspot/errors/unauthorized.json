@@ -1,0 +1,20 @@
+{
+  "method": "GET",
+  "path": "/crm/v3/pipelines/deals",
+  "query": "",
+  "request_headers": [
+    "Authorization"
+  ],
+  "request_body": null,
+  "status": 401,
+  "response_headers": {
+    "Content-Type": "application/json;charset=utf-8"
+  },
+  "response_body": {
+    "status": "error",
+    "message": "Authentication credentials not found. This API supports OAuth 2.0 authentication.",
+    "correlationId": "0b5f0c1e-3c2a-4b7e-9f00-000000000001",
+    "category": "INVALID_AUTHENTICATION"
+  },
+  "provisional": true
+}

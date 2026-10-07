@@ -1,0 +1,59 @@
+{
+  "method": "POST",
+  "path": "/crm/v3/objects/deals/batch/read",
+  "query": "",
+  "request_headers": [
+    "Authorization",
+    "Content-Type"
+  ],
+  "request_body": {
+    "inputs": [
+      {
+        "id": "201"
+      },
+      {
+        "id": "999"
+      }
+    ],
+    "properties": [
+      "dealstage",
+      "pipeline"
+    ]
+  },
+  "status": 207,
+  "response_headers": {
+    "Content-Type": "application/json;charset=utf-8"
+  },
+  "response_body": {
+    "status": "COMPLETE",
+    "results": [
+      {
+        "id": "201",
+        "properties": {
+          "hs_object_id": "201",
+          "dealstage": "closedlost",
+          "pipeline": "default"
+        },
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-01-01T00:00:00.000Z",
+        "archived": false
+      }
+    ],
+    "numErrors": 1,
+    "errors": [
+      {
+        "status": "error",
+        "category": "OBJECT_NOT_FOUND",
+        "message": "Could not get some DEAL objects, they may be deleted or not exist. Check that ids are valid.",
+        "context": {
+          "ids": [
+            "999"
+          ]
+        }
+      }
+    ],
+    "startedAt": "2026-01-01T00:00:00.000Z",
+    "completedAt": "2026-01-01T00:00:00.100Z"
+  },
+  "provisional": true
+}

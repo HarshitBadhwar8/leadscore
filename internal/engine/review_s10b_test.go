@@ -158,6 +158,7 @@ func TestTimedOutDealStepReleasedByCompanyLookup(t *testing.T) {
 	}
 	lk := w.lookup("hubspot")
 	lk.DealsByCompany()
+	w.clock = func() time.Time { return time.Now().Add(dealSearchLag + time.Minute) } // past the search-lag window
 	w.mustRun()
 	if s := w.outcome("ben@acme.example")["status"]; s != statusNew {
 		t.Errorf("after the lookup found no deal, Ben is %q, want new", s)
