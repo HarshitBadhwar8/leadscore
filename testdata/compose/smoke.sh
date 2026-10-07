@@ -53,7 +53,9 @@ cid=$(dc ps -q leadscore)
 # The first run starts with serve and scores the sample CSV.
 wait_for 120 "the first timer run succeeded" sh -c "docker compose exec -T leadscore leadscore status | grep -q last_success_at"
 ls_ status
-ls_ ranked | grep -q 'anna.weber@kranlogistik.example' || fail "the first run did not rank the sample leads"
+# (Captured first: with pipefail, grep -q closing the pipe early fails it.)
+ranked=$(ls_ ranked)
+grep -q 'anna.weber@kranlogistik.example' <<<"$ranked" || fail "the first run did not rank the sample leads"
 
 # A wrong secret is refused; a golden visit body with the secret is stored.
 code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'X-Leadscore-Secret: wrong' \
@@ -76,8 +78,9 @@ sudo test -s out/nurture.csv || fail "no export list in ./out"
 dc stop leadscore
 exit_code=$(docker inspect -f '{{.State.ExitCode}}' "$cid")
 [ "$exit_code" = 0 ] || fail "serve exited $exit_code after SIGTERM, want 0"
-dc logs --no-color leadscore | grep -q 'leadscore serve: stopped' || fail "no clean shutdown line in the log"
+logs=$(dc logs --no-color leadscore)
+grep -q 'leadscore serve: stopped' <<<"$logs" || fail "no clean shutdown line in the log"
 
-dc logs --no-color leadscore
+echo "$logs"
 dc down -v
 echo "PASS: docker compose up and a timer run end to end"
