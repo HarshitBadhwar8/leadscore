@@ -62,8 +62,9 @@ that goes quiet is noticed.
 These templates follow the body formats in the design (contracts section
 5.1). Already known from a real Apollo account: a workflow can send a custom
 header (a fixed value; it cannot compute a signature, which leadscore does not
-need), and Apollo has no contact id variable, so the reply templates leave it
-out and leadscore matches replies by email. Still being checked: which
+need). The variable catalogue seen on 2026-08-19 lists no contact id (another
+token is not ruled out), so the reply templates leave it out and leadscore
+matches replies by email. Still being checked: which
 variables fill the name, title, LinkedIn and company fields, the visit time
 variable, how long Apollo waits, and whether it retries a failed request.
 Whatever the answer, the receiver never answers `200` before the event is

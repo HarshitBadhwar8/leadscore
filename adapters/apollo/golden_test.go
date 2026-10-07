@@ -144,8 +144,9 @@ func TestGoldenBodies(t *testing.T) {
 	}
 }
 
-// Apollo's workflow variables include no contact id, so neither the reply
-// templates nor the reply bodies carry contact_id: the email is the key.
+// The variable catalogue seen on 2026-08-19 lists no contact id (another
+// token is not ruled out), so neither the reply templates nor the reply
+// bodies carry contact_id: replies are matched by email.
 func TestReplyBodiesAndTemplatesCarryNoContactID(t *testing.T) {
 	bodies, _ := filepath.Glob(filepath.Join(goldenDir, "apollo_reply_*.json"))
 	templates, _ := filepath.Glob(filepath.Join("../../setup/apollo", "email_*.json"))
@@ -162,7 +163,7 @@ func TestReplyBodiesAndTemplatesCarryNoContactID(t *testing.T) {
 			t.Fatalf("%s: %v", f, err)
 		}
 		if _, ok := m["contact_id"]; ok {
-			t.Errorf("%s carries contact_id, which no workflow variable can fill", filepath.Base(f))
+			t.Errorf("%s carries contact_id, which the template leaves out", filepath.Base(f))
 		}
 		if _, ok := m["contact_email"]; !ok {
 			t.Errorf("%s has no contact_email, the reply body's only key", filepath.Base(f))

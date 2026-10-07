@@ -24,25 +24,27 @@ How sure each kind of check is:
 | Enrichment field names | `organization.name`, `estimated_num_employees`, `latest_funding_stage`, `latest_funding_round_date` (a plain date, not a timestamp), `country`, as the adapter reads them | Production | Core's GTM Apollo enrichment client |
 | Contact create call and its id | `POST` with `run_dedupe: true`; answer 200 or 201; id at `contact.id` | Production | Core's GTM Apollo contact push |
 | Reply search: does the replied filter work? | Yes, on Apollo's side: it returned 9 records, every one replied | Live API test | "Apollo transport spike — what Apollo can and cannot do" |
-| Reply search: label field and values | `reply_class`, with eight documented values; live, 6 of 9 replies had none and 3 had `person_referral` | Live API test | "Apollo transport spike — what Apollo can and cannot do" |
+| Reply search: label field and values | `reply_class`. Seen live: `null` (6 of 9) and `person_referral` (3 of 9). The other values are from Apollo's docs. | Live API test (values seen); Apollo's docs (the rest) | "Apollo transport spike — what Apollo can and cannot do" |
 | Reply search: is `to_email` on a message? | Yes, with `contact_id`, `emailer_campaign_id`, `to_name`, `status`, `completed_at` | Live API test | "Apollo transport spike — what Apollo can and cannot do" |
 | Can a workflow send a custom header? | Yes, a fixed value. It cannot compute a signature, which leadscore does not need. | Production | "GTM: the Apollo engagement workflows" |
-| Visit body shape | Trigger `website_visited` at contact level, one workflow per domain; the body has the contact's email, first and last name, title, LinkedIn URL, and an `account` block | Our account | "RFC: GTM Website Visitor Capture" |
-| HubSpot v4 PUT association | `PUT /crm/v4/objects/deals/{id}/associations/default/contacts/{id}` works; repeating it is a no-op | Production | Core's GTM HubSpot deal push |
+| Visit body shape | Trigger `website_visited` at contact level, one workflow per domain; the body has contact fields (email, first and last name, title, LinkedIn URL) and an `account` block. Open: the account block's domain, website and name, the contact id, and `visited_at` | Our account | "RFC: GTM Website Visitor Capture" |
+| HubSpot v4 PUT association | `PUT /crm/v4/objects/deals/{id}/associations/default/contacts/{id}` works (production). Repeating it is a no-op: production code (stated in a comment) | Production | Core's GTM HubSpot deal push |
 
 ## Partly answered, and what changed because of it
 
 - **The reply search is a POST.** The live API test called
-  `POST /v1/emailer_messages/search` with a JSON body. The poller now sends the
-  same filters and paging as a JSON body instead of a GET with a query. The
+  `POST /v1/emailer_messages/search` (body encoding not recorded). The poller
+  now sends the same filters and paging as a POST with a JSON body, like the
+  other searches, instead of a GET with a query. The
   same test reached `POST /v1/contacts/search`, `POST
   /v1/emailer_campaigns/search` and `GET /v1/email_accounts`, which the adapter
-  already uses. The test used `/v1/`; leadscore keeps `/api/v1/`, which
-  production enrichment also uses.
-- **Reply bodies have no contact id.** Our account's variable catalogue has no
-  contact id (and no `reply_class` or event-kind variable). The reply templates
-  in `setup/apollo/` drop `contact_id`, and reply bodies are matched and keyed
-  by email (the conversation link, else the email, in the key).
+  already uses. Enrichment answers on `/api/v1/`; the others were seen on
+  `/v1/`. Leadscore keeps `/api/v1/`.
+- **Reply bodies carry no contact id.** The variable catalogue seen on
+  2026-08-19 lists no contact id (nor `reply_class` or an event-kind
+  variable); another token is not ruled out. The reply templates
+  in `setup/apollo/` drop `contact_id`. A reply is matched by email, and its
+  key is the conversation link, else the email.
 - **Endpoints only:** the three searches and the mailbox list above answer, but
   their filters and reply shapes are still unconfirmed.
 

@@ -514,8 +514,8 @@ func BenchmarkApplyOptOutLargeModel(b *testing.B) {
 	}
 }
 
-// Apollo's workflow variables carry no contact id, so a reply body names the
-// person by email only. It still keys apart per person (the conversation
+// The variable catalogue seen on 2026-08-19 lists no contact id (another
+// token is not ruled out), so a reply body names the person by email only. It still keys apart per person (the conversation
 // link, else the email), finds the lead by email, and an unsubscribe applies.
 func TestReplyBodyWithoutContactIDUsesTheEmail(t *testing.T) {
 	m := newModel(t, "L1")

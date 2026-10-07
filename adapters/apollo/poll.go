@@ -44,7 +44,8 @@ func NewPoller(cfg api.Config) (api.Poller, error) {
 // Every page is read; any failure (a 429 included) fails the whole poll, so
 // the engine keeps last_poll_at and reads the same window next time.
 //
-// A live API test called this search as a POST with a JSON body and showed
+// A live API test called this search as a POST (body encoding not recorded;
+// this sends JSON, as the other searches do) and showed
 // that the replied filter is applied by Apollo (every record it returned had
 // replied true), that the label field is reply_class (null on most replies),
 // and that each message carries to_email. S0 confirms: the date filter by day

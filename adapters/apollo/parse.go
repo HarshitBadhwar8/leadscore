@@ -6,7 +6,7 @@
 //
 // The body shapes are built from our workflow templates. The workflow setup
 // in a real Apollo account shows the reply variables (email, stage,
-// conversation link; no contact id) and the visit body (the contact's email,
+// conversation link; the catalogue seen lists no contact id) and the visit body (the contact's email,
 // name, title and LinkedIn URL, and an account block). Fields still unknown
 // are marked "S0 confirms" where it matters.
 package apollo

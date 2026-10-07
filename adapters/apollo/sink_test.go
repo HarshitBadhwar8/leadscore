@@ -370,7 +370,8 @@ func TestPollUsesSinceAndCarriesLabelAndMessageID(t *testing.T) {
 	}
 }
 
-// The reply search is a POST with a JSON body, the form a live API test used:
+// The reply search is a POST, as a live API test used (body encoding not
+// recorded; it is sent as JSON, like the other searches):
 // the replied filter as a list, the date filter by completed_at from since's
 // UTC day, and the page asked for. The body is the replies fixture's request.
 func TestPollSendsTheSearchAsAJSONBody(t *testing.T) {

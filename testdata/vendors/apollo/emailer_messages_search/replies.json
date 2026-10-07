@@ -1,6 +1,6 @@
 {
   "provisional": true,
-  "confirmed_from": "A live API test (record: Apollo transport spike, 2026-08-10): POST /v1/emailer_messages/search with a JSON body answers 200; emailer_message_stats [\"replied\"] is applied by Apollo (all 9 records returned had replied true); records carry id, contact_id, emailer_campaign_id, to_email, to_name, status, completed_at and reply_class (null on 6 of 9, person_referral on 3). Not confirmed: the date filter, replied_at, the pagination record.",
+  "confirmed_from": "A live API test (record: Apollo transport spike, 2026-08-10): POST /v1/emailer_messages/search answers 200 (body encoding not recorded); emailer_message_stats [\"replied\"] is applied by Apollo (all 9 records returned had replied true); records carry contact_id, emailer_campaign_id, to_email, to_name, status, completed_at and reply_class (null on 6 of 9, person_referral on 3). Not confirmed: the date filter, replied_at, the pagination record.",
   "note": "S0 confirms: the date filter by day on completed_at, replied_at, and the pagination record",
   "method": "POST",
   "path": "/api/v1/emailer_messages/search",

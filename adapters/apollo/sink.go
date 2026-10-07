@@ -42,8 +42,8 @@ const SequencePrefix = "sequence/"
 
 // Paths of the outreach calls. Production code creates contacts with POST,
 // and a live API test reached the three searches with POST and the mailbox
-// list with GET (both under /v1/; production enrichment uses /api/v1/, so
-// both prefixes answer). S0 confirms the rest.
+// list with GET. Enrichment answers on /api/v1/; the others were seen on
+// /v1/. S0 confirms the rest.
 const (
 	contactsPath        = "/api/v1/contacts"                 // POST: create; GET /<id>: read one
 	contactsSearchPath  = "/api/v1/contacts/search"          // POST: search the team's contacts (no credits)

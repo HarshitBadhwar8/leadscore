@@ -68,9 +68,9 @@ type notification struct {
 
 	// The person and company fields the reply template adds; each is
 	// optional, since a workflow may not be able to fill it. ContactID is
-	// not in the template: the workflow setup shows Apollo's variables
-	// include no contact id. It is read only if a team adds one anyway;
-	// without it the email is the key.
+	// not in the template: the variable catalogue seen on 2026-08-19 lists
+	// no contact id (another token is not ruled out). It is read only if a
+	// team adds one; without it the reply is matched by email.
 	ContactID   string `json:"contact_id"`
 	Name        string `json:"contact_name"`
 	Title       string `json:"contact_title"`
