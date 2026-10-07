@@ -322,6 +322,8 @@ step_secrets() {
   for s in "$CONFIG_SECRET" "$CONFIG_VERSION_SECRET"; do
     grant_secret "$s" "$RUN_SA" roles/secretmanager.secretVersionAdder
   done
+  # So config push can see the version secret exists before it uploads.
+  grant_secret "$CONFIG_VERSION_SECRET" "$RUN_SA" roles/secretmanager.viewer
   for s in "$RECEIVER_SECRET" "$RECEIVER_SECRET_PREVIOUS" "$CONFIG_SECRET"; do
     grant_secret "$s" "$RECEIVER_SA" roles/secretmanager.secretAccessor
   done

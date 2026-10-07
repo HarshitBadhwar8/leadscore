@@ -151,6 +151,12 @@ func TestHostingCheckFindsEachProblem(t *testing.T) {
 		{"a push from before the version secret", func(f *gcp.Server) {
 			f.DisableVersion("p", hosting.ConfigVersionSecret, "1")
 		}, hostedSheets, "1", "hosting:config_interrupted"},
+		{"job pins the version secret instead of reading its latest", func(f *gcp.Server) {
+			f.SetResource(runBase+"jobs/leadscore-run", strings.Replace(healthyJob, `leadscore-config-version","version":"latest"`, `leadscore-config-version","version":"1"`, 1))
+		}, hostedSheets, "1", "hosting:job_config_version"},
+		{"a bundle and no version secret at all", func(f *gcp.Server) {
+			f.RemoveSecret("p", hosting.ConfigVersionSecret)
+		}, hostedSheets, "1", "hosting:config_interrupted"},
 		{"job does not read the version secret", func(f *gcp.Server) {
 			f.SetResource(runBase+"jobs/leadscore-run", strings.Replace(healthyJob, "leadscore-config-version", "leadscore-config", 1))
 		}, hostedSheets, "1", "hosting:job_config_version"},

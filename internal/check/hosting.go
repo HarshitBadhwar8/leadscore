@@ -102,9 +102,9 @@ func (h hostingCheck) Run(ctx context.Context, env Env) []Problem {
 	default:
 		jobExists = true
 		wrongAccount("job_account", "run job", job.Account, accountOf(hc.RunAccount))
-		if ref := job.SecretEnv[hosting.ConfigVersionVariable]; ref.Secret != hosting.ConfigVersionSecret {
+		if ref := job.SecretEnv[hosting.ConfigVersionVariable]; ref.Secret != hosting.ConfigVersionSecret || ref.Version != "latest" {
 			add("job_config_version", "the run job does not read "+hosting.ConfigVersionVariable+" from "+hosting.ConfigVersionSecret+
-				", so runs cannot record which configuration they used", redeployFix)
+				":latest, so runs cannot record which configuration they used", redeployFix)
 		}
 		if want := hosting.TaskTimeout(c.Deadline); job.TaskTimeout != want {
 			add("job_timeout", fmt.Sprintf("the run job's task timeout is %s; it must be the deadline plus the save budget, %s", job.TaskTimeout, want),

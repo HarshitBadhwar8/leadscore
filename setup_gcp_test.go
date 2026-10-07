@@ -240,6 +240,7 @@ func TestGCPScript(t *testing.T) {
 			{"leadscore-config", runSA + " --role roles/secretmanager.secretVersionAdder"},
 			{"leadscore-config-version", runSA + " --role roles/secretmanager.secretAccessor"},
 			{"leadscore-config-version", runSA + " --role roles/secretmanager.secretVersionAdder"},
+			{"leadscore-config-version", runSA + " --role roles/secretmanager.viewer"},
 			{"receiver-secret", recvSA + " --role roles/secretmanager.secretAccessor"},
 			{"receiver-secret-previous", recvSA + " --role roles/secretmanager.secretAccessor"},
 			{"leadscore-config", recvSA + " --role roles/secretmanager.secretAccessor"},

@@ -72,3 +72,14 @@ func (c *Client) AddSecretVersion(ctx context.Context, project, secret string, d
 	}
 	return version, nil
 }
+
+// SecretExists reports whether a secret exists, versions or not. It needs
+// secretmanager.secrets.get (Secret Manager Viewer), which setup grants the
+// run account on leadscore-config-version only.
+func (c *Client) SecretExists(ctx context.Context, project, secret string) (bool, error) {
+	err := c.call(ctx, http.MethodGet, "secretmanager", "/v1/projects/"+esc(project)+"/secrets/"+esc(secret), nil, nil)
+	if IsNotFound(err) {
+		return false, nil
+	}
+	return err == nil, err
+}

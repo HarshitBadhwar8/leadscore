@@ -29,6 +29,7 @@ type Server struct {
 	secrets   map[string][]version // "project/secret" -> versions, oldest first
 	resources map[string]string    // API path (without the API prefix) -> JSON
 	denied    map[string]bool      // "project/secret" -> answer 403
+	noWrites  map[string]bool      // "project/secret" -> answer 403 to addVersion only
 	calls     []string             // "METHOD /api/path", in order
 }
 
@@ -39,7 +40,7 @@ type version struct {
 
 // New returns a fake with no secrets and no resources.
 func New() *Server {
-	return &Server{secrets: map[string][]version{}, resources: map[string]string{}, denied: map[string]bool{}}
+	return &Server{secrets: map[string][]version{}, resources: map[string]string{}, denied: map[string]bool{}, noWrites: map[string]bool{}}
 }
 
 // CreateSecret makes an empty secret (no versions), as `gcloud secrets create`.
@@ -49,6 +50,13 @@ func (s *Server) CreateSecret(project, secret string) {
 	if _, ok := s.secrets[project+"/"+secret]; !ok {
 		s.secrets[project+"/"+secret] = []version{}
 	}
+}
+
+// RemoveSecret deletes a secret and its versions.
+func (s *Server) RemoveSecret(project, secret string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.secrets, project+"/"+secret)
 }
 
 // AddVersion adds an enabled version and returns its number.
@@ -76,6 +84,14 @@ func (s *Server) Deny(project, secret string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.denied[project+"/"+secret] = true
+}
+
+// DenyWrites makes adding a version to a secret answer 403, as for an
+// account that may read it but not add to it.
+func (s *Server) DenyWrites(project, secret string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.noWrites[project+"/"+secret] = true
 }
 
 // Versions returns a secret's version values, oldest first.
@@ -133,12 +149,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, doc)
 }
 
-// secretManager serves {project}/secrets/{secret}/versions/latest:access and
+// secretManager serves {project}/secrets/{secret} (get),
+// {project}/secrets/{secret}/versions/latest:access and
 // {project}/secrets/{secret}:addVersion.
 func (s *Server) secretManager(w http.ResponseWriter, r *http.Request, rest string) {
 	project, rest, _ := strings.Cut(rest, "/secrets/")
 	var secret, action string
 	switch {
+	case !strings.Contains(rest, "/") && !strings.Contains(rest, ":") && r.Method == http.MethodGet:
+		secret, action = rest, "get"
 	case strings.HasSuffix(rest, "/versions/latest:access") && r.Method == http.MethodGet:
 		secret, action = strings.TrimSuffix(rest, "/versions/latest:access"), "access"
 	case strings.HasSuffix(rest, ":addVersion") && r.Method == http.MethodPost:
@@ -148,13 +167,17 @@ func (s *Server) secretManager(w http.ResponseWriter, r *http.Request, rest stri
 		return
 	}
 	k := project + "/" + secret
-	if s.denied[k] {
+	if s.denied[k] || (action == "add" && s.noWrites[k]) {
 		apiError(w, http.StatusForbidden, "PERMISSION_DENIED")
 		return
 	}
 	vs, ok := s.secrets[k]
 	if !ok {
 		apiError(w, http.StatusNotFound, "NOT_FOUND")
+		return
+	}
+	if action == "get" {
+		writeJSON(w, map[string]string{"name": fmt.Sprintf("projects/%s/secrets/%s", project, secret)})
 		return
 	}
 	name := func(n int) string { return fmt.Sprintf("projects/%s/secrets/%s/versions/%d", project, secret, n) }

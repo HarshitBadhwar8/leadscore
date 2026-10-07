@@ -293,7 +293,9 @@ the changes it would make without making them.
    not compile, a SQLite store or CSV path (Cloud Run keeps no files), a
    `schedule` or `deadline` Cloud Scheduler cannot run (write them in whole
    days, hours, minutes or seconds, like `15m`), and anything that looks like
-   a key: keys go only in their own secrets.
+   a key, including the API keys already in Secret Manager: keys go only in
+   their own secrets. It cannot see the receiver secret (the run account may
+   not read it), so never paste that into `leadscore.yml` or the rubric.
 6. `setup/gcp.sh deploy <image>`: the receiver service (at most one instance,
    no sign-in check so Apollo can reach it) and the run job (task timeout the
    deadline plus 90 seconds, no retries). It prints the receiver's address:

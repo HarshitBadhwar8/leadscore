@@ -110,7 +110,7 @@ func TestConfigPushVersionWriteFails(t *testing.T) {
 	f := fakeGCP(t)
 	f.CreateSecret("p", hosting.ConfigSecret)
 	f.CreateSecret("p", hosting.ConfigVersionSecret)
-	f.Deny("p", hosting.ConfigVersionSecret)
+	f.DenyWrites("p", hosting.ConfigVersionSecret)
 	code, _, stderr := run("config", "push", "--config", pushInstall(t, pushConfig, pushRubric))
 	if code != exitFail || !strings.Contains(stderr, "run `leadscore config push` again") || !strings.Contains(stderr, "version 1") {
 		t.Errorf("exit %d, stderr %q", code, stderr)
@@ -123,22 +123,31 @@ func TestConfigPushRefusesKeys(t *testing.T) {
 	f := fakeGCP(t)
 	f.CreateSecret("p", hosting.ConfigSecret)
 	f.CreateSecret("p", hosting.ConfigVersionSecret)
-	t.Setenv("APOLLO_API_KEY", "apollo-live-key-98765")
+	f.CreateSecret("p", "apollo-api-key")
+	f.AddVersion("p", "apollo-api-key", []byte("apollo-stored-key-55555\n"))
+	t.Setenv("APOLLO_API_KEY", "")
+	t.Setenv("HUBSPOT_TOKEN", "hubspot-env-token-98765")
 	for _, tt := range []struct{ name, cfg, rubric, want string }{
-		{"a token pattern in the rubric", pushConfig, pushRubric + "# pat-na1-12345678-1234-1234-1234-123456789012\n", "looks like a key"},
-		{"a key variable's value", pushConfig + "# apollo-live-key-98765\n", pushRubric, "value of APOLLO_API_KEY"},
-		{"an adapter key named like a credential", pushConfig + "sinks: { apollo: { mailbox_id: m, api_key: x } }\n", pushRubric, `sinks.apollo has a key named "api_key"`},
-		{"a nested one", pushConfig + "enrich: { type: apollo, auth: { password: x } }\n", pushRubric, `"password"`},
+		{"a token pattern in the rubric", pushConfig, pushRubric + "# pat-na1-12345678-1234-1234-1234-123456789012\n", "rubric.yml line 7 holds what looks like a key"},
+		{"a key variable's value", pushConfig + "# hubspot-env-token-98765\n", pushRubric, "leadscore.yml line 6 holds the value of HUBSPOT_TOKEN"},
+		{"a key stored in Secret Manager, not in the environment", pushConfig, pushRubric + "# apollo-stored-key-55555\n", "rubric.yml line 7 holds the key stored in secret apollo-api-key"},
+		{"an adapter key named like a credential", pushConfig + "sinks: { apollo: { mailbox_id: m, api_key: x } }\n", pushRubric, `leadscore.yml line 6: sinks.apollo has a key named "api_key"`},
+		{"a nested one", pushConfig + "enrich:\n  type: apollo\n  auth:\n    password: x\n", pushRubric, `leadscore.yml line 9: enrich has a key named "password"`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			code, _, stderr := run("config", "push", "--config", pushInstall(t, tt.cfg, tt.rubric))
-			if code != exitFail || !strings.Contains(stderr, tt.want) || strings.Contains(stderr, "98765") {
+			if code != exitFail || !strings.Contains(stderr, tt.want) || strings.Contains(stderr, "98765") || strings.Contains(stderr, "55555") {
 				t.Errorf("exit %d, stderr %q; want %q", code, stderr, tt.want)
 			}
 		})
 	}
 	if n := len(f.Versions("p", hosting.ConfigSecret)); n != 0 {
 		t.Errorf("%d versions uploaded", n)
+	}
+	// Ordinary words that merely resemble a token format pass.
+	ok := pushRubric + "# a bearer bond buyer; lane ids like sk-leads\n"
+	if code, _, stderr := run("config", "push", "--config", pushInstall(t, pushConfig, ok)); code != exitOK {
+		t.Errorf("an ordinary rubric was refused: %s", stderr)
 	}
 }
 
@@ -167,6 +176,20 @@ func TestConfigPushRefusals(t *testing.T) {
 	}
 	if n := len(f.Versions("p", hosting.ConfigSecret)); n != 0 {
 		t.Errorf("%d versions uploaded by refused pushes", n)
+	}
+}
+
+// Without the version secret, nothing is uploaded: the bundle could not have
+// its number recorded.
+func TestConfigPushNeedsTheVersionSecretFirst(t *testing.T) {
+	f := fakeGCP(t)
+	f.CreateSecret("p", hosting.ConfigSecret)
+	code, _, stderr := run("config", "push", "--config", pushInstall(t, pushConfig, pushRubric))
+	if code != exitFail || !strings.Contains(stderr, "leadscore-config-version") || !strings.Contains(stderr, "setup/gcp.sh secrets") {
+		t.Errorf("exit %d, stderr %q", code, stderr)
+	}
+	if n := len(f.Versions("p", hosting.ConfigSecret)); n != 0 {
+		t.Errorf("the bundle was uploaded (%d versions) though its number could not be recorded", n)
 	}
 }
 

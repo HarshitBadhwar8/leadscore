@@ -62,10 +62,25 @@ func Redact(s string) string {
 	return s
 }
 
-// ContainsSecret reports whether s holds a known secret format (a token
-// pattern Redact masks) or a value MaskEnvSecrets registered. Unlike
-// comparing Redact(s) with s, it ignores emails and home paths, which are
-// personal data but not keys.
+// keyPatterns are the token formats ContainsSecret looks for: Redact's,
+// anchored and with a minimum length, so ordinary words ("bearer bond", an id
+// like sk-leads) do not read as keys. Redact keeps its broader patterns: in a
+// log line, masking too much is safe; refusing a team's file is not.
+var keyPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----`),
+	regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{20,}`),
+	regexp.MustCompile(`(?i)\bpat-[a-z]{2,4}\d*-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`),
+	regexp.MustCompile(`\bAIza[0-9A-Za-z_\-]{35}`),
+	regexp.MustCompile(`\bya29\.[A-Za-z0-9._-]{20,}`),
+	regexp.MustCompile(`\bgh[ops]_[A-Za-z0-9]{20,}`),
+	regexp.MustCompile(`\bsk-[A-Za-z0-9_-]{20,}`),
+	regexp.MustCompile(`\bxox[abp]-[A-Za-z0-9-]{10,}`),
+	regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}`), // JWT
+}
+
+// ContainsSecret reports whether s holds a known key or token format, or a
+// value MaskEnvSecrets registered. Unlike comparing Redact(s) with s, it
+// ignores emails and home paths, which are personal data but not keys.
 func ContainsSecret(s string) bool {
 	if vals := secretValues.Load(); vals != nil {
 		for _, v := range *vals {
@@ -74,7 +89,7 @@ func ContainsSecret(s string) bool {
 			}
 		}
 	}
-	for _, p := range tokenPatterns {
+	for _, p := range keyPatterns {
 		if p.MatchString(s) {
 			return true
 		}

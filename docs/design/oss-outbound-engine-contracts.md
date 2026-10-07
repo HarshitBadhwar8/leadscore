@@ -693,7 +693,7 @@ The README follows these steps in order (RFC section 6.14). It says up front tha
 
 | Account | Roles, on which resource |
 |---|---|
-| Run account | Secret Manager Secret Accessor on the key secrets, `leadscore-config` and `leadscore-config-version`; Secret Version Adder on `leadscore-config` and `leadscore-config-version` (for `config push`); Storage Object Admin on the lease bucket; Cloud Run Viewer and Cloud Scheduler Viewer on the project, and Artifact Registry Reader on `ghcr-proxy` when it exists (for `doctor`); editor on the spreadsheet |
+| Run account | Secret Manager Secret Accessor on the key secrets, `leadscore-config` and `leadscore-config-version`; Secret Version Adder on `leadscore-config` and `leadscore-config-version`, and Secret Manager Viewer on `leadscore-config-version` (for `config push`, which checks it exists before uploading and refuses a bundle holding a stored API key; the run account cannot read `receiver-secret`, so a receiver secret pasted into the bundle is not detected); Storage Object Admin on the lease bucket; Cloud Run Viewer and Cloud Scheduler Viewer on the project, and Artifact Registry Reader on `ghcr-proxy` when it exists (for `doctor`); editor on the spreadsheet |
 | Receiver account | Secret Manager Secret Accessor on `receiver-secret`, `receiver-secret-previous` and `leadscore-config`; editor on the spreadsheet (`Events` tabs protected for it) |
 | Scheduler account | Cloud Run Invoker on the job `leadscore-run` |
 | The person | the roles to create the above, plus Service Account Token Creator on the run account |
