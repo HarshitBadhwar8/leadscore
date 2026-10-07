@@ -18,15 +18,12 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/check"
 	"github.com/HarshitBadhwar8/leadscore/internal/config"
+	"github.com/HarshitBadhwar8/leadscore/internal/hosting"
 	"github.com/HarshitBadhwar8/leadscore/internal/logredact"
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
 	"github.com/HarshitBadhwar8/leadscore/internal/rules"
 	"github.com/HarshitBadhwar8/leadscore/internal/store/codec"
 )
-
-// configVersionVar carries the hosted bundle's secret version number; S14b's
-// deploy sets it (contracts section 3).
-const configVersionVar = "LEADSCORE_CONFIG_VERSION"
 
 // exec is one run in progress.
 type exec struct {
@@ -91,6 +88,13 @@ func execute(ctx context.Context, opts api.RunOptions, s settings) (api.RunResul
 	}
 	if ps := check.CloudRunRefusal(cfg, s.getenv); len(ps) > 0 {
 		return api.RunResult{}, fmt.Errorf("%s (%s)", ps[0].Message, ps[0].Fix)
+	}
+	if s.loadKeys != nil {
+		// A key that cannot be read stays empty; the secrets check reports it
+		// and the adapter needing it fails, as with a missing variable.
+		if err := s.loadKeys(ctx, cfg); err != nil {
+			fmt.Fprintf(s.out, "keys from Secret Manager: %s\n", logredact.Redact(err.Error()))
+		}
 	}
 	withTestClient(cfg, s.client)
 	text, err := cfg.Rubric()
@@ -449,7 +453,7 @@ func (x *exec) resetAttempt() {
 // lane's sink.
 func (x *exec) prepare() {
 	r, m := x.run, x.run.Model
-	if v := x.s.getenv(configVersionVar); v != "" && m.StateValue("config_version") != v {
+	if v := x.s.getenv(hosting.ConfigVersionVariable); v != "" && m.StateValue("config_version") != v {
 		m.SetState("config_version", v)
 	}
 	if last := m.Health[model.K("result", "last_run_at")].Value; last != "" {

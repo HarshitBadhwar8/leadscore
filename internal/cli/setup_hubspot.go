@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/HarshitBadhwar8/leadscore/adapters/hubspot"
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/config"
+	"github.com/HarshitBadhwar8/leadscore/internal/hosting"
 )
 
 // testHubSpotClient is the HTTP client tests give the HubSpot adapter when
@@ -32,6 +34,10 @@ func runSetupHubSpot(inv *invocation) int {
 	block := api.Config{}
 	for k, v := range src {
 		block[k] = v
+	}
+	// On a hosted install the token may live only in Secret Manager.
+	if err := hosting.LoadKeys(context.Background(), c, os.Getenv, os.Setenv, gcpConnector, hubspot.TokenVariable); err != nil {
+		return inv.fail(err)
 	}
 	if base, _ := block["base_url"].(string); base != "" && testHubSpotClient != nil {
 		block["_http_client"] = testHubSpotClient

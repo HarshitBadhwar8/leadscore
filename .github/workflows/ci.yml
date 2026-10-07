@@ -36,6 +36,9 @@ jobs:
         run: go test -race ./...
       - name: build and vet for Windows
         run: GOOS=windows go build ./... && GOOS=windows go vet ./...
+      # setup/gcp.sh runs on people's machines; the runner has shellcheck.
+      - name: shellcheck the Google Cloud setup script
+        run: shellcheck setup/gcp.sh testdata/gcloud/gcloud
 
   image:
     name: image (linux/amd64, linux/arm64)

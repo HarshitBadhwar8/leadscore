@@ -26,14 +26,17 @@ the task breakdown); the contracts doc is the source of truth for every shape.
 | `internal/receiver/auth` | the constant-time secret check |
 | `internal/engine` | the run: lease, sources and chunked merge, scoring, the two saves, `Ranked`, `Health`, lanes and the ledger, export lists and their CSVs; later steps plug in as hooks |
 | `internal/logredact` | log redaction: logs carry ids, never emails |
+| `internal/hosting` | Google Cloud: the fixed resource names, Secret Manager reads and writes (`config push`, hosted keys), the schedule's cron form, and the reads behind the `hosting` check |
+| `internal/fakes/gcp` | an in-memory fake of Secret Manager, Cloud Run, Cloud Scheduler and Artifact Registry for tests |
 | `adapters/csv` | the CSV file source (`type: csv`): lead rows, or event rows with `events: true` |
 | `adapters/sheetsource` | the Google Sheet tab source (`type: sheetsource`): tabs of the team's spreadsheet |
 | `adapters/hubspot` | the HubSpot sink (`hubspot:contacts`, `hubspot:deals`), the opt-out and deal lookup, `setup hubspot` and the `hubspot` check |
 | `internal/fakes/hubspot` | a fake HubSpot portal for tests, held to the provisional fixtures in `testdata/vendors/hubspot` |
 | `storetest/`, `sinktest/` | conformance suites for plug-in stores and sinks |
-| `examples/` | a made-up example rubric (`rubric.yml`), a sample lead sheet (`leads.csv`), and example `leadscore.yml` files for Docker on a laptop and on a server |
+| `examples/` | a made-up example rubric (`rubric.yml`), a sample lead sheet (`leads.csv`), and example `leadscore.yml` files for Docker on a laptop and on a server, and for Google Cloud |
 | `compose.yaml`, `Dockerfile` | the Docker setup: the image and the compose file that runs it |
 | `setup/apollo/` | the Apollo workflow templates the receiver accepts |
+| `setup/gcp.sh` | the Google Cloud setup script, one subcommand per runbook step |
 
 ## Build and test
 
@@ -47,10 +50,18 @@ go test -race ./...
 live Sheets check: it saves 20,000 leads and a year of events to a scratch
 spreadsheet and loads them within a minute. Without it the check is skipped.
 
+`LEADSCORE_LIVE_CLOUDRUN=1`, with `LEADSCORE_LIVE_PROJECT` (a billed, throwaway
+project, never `leadscore-dev`) and `LEADSCORE_LIVE_IMAGE`, runs the live
+Google Cloud check: it sets the project up with `setup/gcp.sh`, starts a run
+longer than 3 minutes from Cloud Scheduler, posts webhook bursts during the run
+and during a redeploy, and checks no event was lost. Its comment lists what to
+do first. Without it the check is skipped. `setup/gcp.sh` itself is tested
+offline against a fake `gcloud` (`testdata/gcloud/gcloud`).
+
 ## Commands
 
 `leadscore help` lists every command. So far `run`, `serve`, `healthz`, `status`, `ranked`,
-`explain`, `config get`, `config set-hosting`, `rules check`, `setup sheet`,
+`explain`, `config get`, `config set-hosting`, `config push`, `rules check`, `setup sheet`,
 `setup hubspot` and the Overrides writers work; every other command prints `not built yet (slice S<n>)` and
 exits 2.
 
@@ -208,7 +219,8 @@ it if it might have leaked. Without it every webhook is refused, while
 `LEADSCORE_RECEIVER_SECRET_PREVIOUS`, set a new `LEADSCORE_RECEIVER_SECRET`,
 update each Apollo workflow, then remove the previous one. Both are accepted
 in between, so no webhook is lost. On Docker, edit `.env` and run
-`docker compose up -d` after each change.
+`docker compose up -d` after each change. On Google Cloud, see "Rotating a
+secret" under Google Cloud below.
 
 ## Docker
 
@@ -242,6 +254,124 @@ and the container shows unhealthy. A Cloudflare Tunnel can give it a public URL 
 live webhooks, but only while the laptop is awake. On a server, the compose
 file's optional Caddy service (`docker compose --profile caddy up -d`) gets an
 HTTPS certificate for your domain.
+
+## Google Cloud
+
+The path for non-technical teams: the receiver runs as a Cloud Run service,
+each run as a Cloud Run job that Cloud Scheduler starts, and the store is a
+Google Sheet. Nothing runs on your machine after setup. Billing must be on.
+
+You need `gcloud`, logged in as someone who may create service accounts,
+secrets, Cloud Run services and jobs, Cloud Scheduler jobs and Artifact
+Registry repositories, and the `leadscore` CLI. Copy
+`examples/leadscore.gcp.yml` (as `leadscore.yml`) and your rubric into one
+folder and run every step from it. `setup/gcp.sh` changes `leadscore.yml` only
+through `leadscore config set-hosting`. Add `--dry-run` to any step to print
+the changes it would make without making them.
+
+1. `setup/gcp.sh accounts --project <id> [--region asia-south1]`: enables the
+   APIs, creates the run account (`leadscore-run`) and the receiver account
+   (`leadscore-receiver`), writes the `hosting` block, and ends by signing your
+   local commands in as the run account (a browser opens). From then on,
+   Google's application-default login on your machine acts as the run
+   account for every program that uses it; `gcloud auth application-default
+   revoke` undoes it.
+2. `setup/gcp.sh bucket`: creates the lease bucket,
+   `<project>-leadscore-lease`. Bucket names are global: only if that name is
+   taken, set `store.lease_bucket` to another and run it again.
+3. `gcloud auth login --enable-gdrive-access`, then `leadscore setup sheet`:
+   creates the spreadsheet with your own login, so you own it, and shares it
+   with both accounts.
+4. `setup/gcp.sh secrets`: creates the secrets and asks for each API key (a
+   person pastes it; input is hidden; Enter skips a key you do not use). It
+   generates the receiver secret and never prints it; read it only when you
+   paste it into the Apollo workflows:
+   `gcloud secrets versions access latest --secret receiver-secret`.
+5. Write the rubric, `leadscore setup hubspot` if you use HubSpot, then
+   `leadscore config push`: uploads `leadscore.yml` and the rubric together as
+   one version of the `leadscore-config` secret. It refuses a rubric that does
+   not compile, a SQLite store or CSV path (Cloud Run keeps no files), a
+   `schedule` or `deadline` Cloud Scheduler cannot run (write them in whole
+   days, hours, minutes or seconds, like `15m`), and anything that looks like
+   a key, including the API keys already in Secret Manager: keys go only in
+   their own secrets. It cannot see the receiver secret (the run account may
+   not read it), so never paste that into `leadscore.yml` or the rubric.
+6. `setup/gcp.sh deploy <image>`: the receiver service (at most one instance,
+   no sign-in check so Apollo can reach it) and the run job (task timeout the
+   deadline plus 90 seconds, no retries). It prints the receiver's address:
+   set `receiver.public_url` to it, run `leadscore config push` again, and
+   point the Apollo workflows at it, from the templates in `setup/apollo/`. Before release, pass the private
+   registry's image; a release image (`ghcr.io/...`) is pulled through an
+   Artifact Registry repository, `ghcr-proxy`, that the step creates.
+7. `setup/gcp.sh schedule`: creates the scheduler account and the scheduler
+   job from `schedule` (UTC). Pushes are still off, so runs only score.
+8. `leadscore doctor` until green (the `doctor` command arrives in S16; until
+   then, `leadscore status`), then open the `Ranked` tab. Review
+   `leadscore run --dry-run`; when it looks right, set `pushes_enabled: true`
+   and `leadscore config push`.
+
+**Changing settings or rules** is editing the files and `leadscore config push`;
+the next run reads them, with no redeploy. A new `schedule` also needs
+`setup/gcp.sh schedule`, and a new `deadline` `setup/gcp.sh redeploy`.
+Each run records the bundle version it read in `State` (`config_version`).
+
+**Keys on your machine.** Local commands on a Google Cloud install read an API
+key you have not set as a variable from Secret Manager, as the run account,
+and only the keys the command's adapters need. Inside Cloud Run the keys come
+from the service's and job's own secret references.
+
+**Rotating a secret.** No webhook is refused at any point. Replace `P` with
+your project id:
+
+```sh
+# 1. Keep the current secret as the previous one, and add a new current one.
+gcloud secrets versions access latest --secret receiver-secret --project P |
+  gcloud secrets versions add receiver-secret-previous --project P --data-file=-
+head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' |
+  gcloud secrets versions add receiver-secret --project P --data-file=-
+# 2. Deploy: the receiver accepts both.
+setup/gcp.sh redeploy
+# 3. Paste the new secret into each Apollo workflow; read it with:
+gcloud secrets versions access latest --secret receiver-secret --project P
+# 4. Stop accepting the previous one: detach it first, then disable it.
+setup/gcp.sh redeploy --finish-rotation
+gcloud secrets versions disable latest --secret receiver-secret-previous --project P
+```
+
+Keep that order: a disabled version that is still attached stops a new
+receiver instance from starting. To rotate an API key, set its variable
+(`APOLLO_API_KEY` or `HUBSPOT_TOKEN`) and run `setup/gcp.sh secrets`; runs
+read the newest version. A key added for the first time after deploy needs
+`setup/gcp.sh redeploy`, which the script reminds you of.
+
+**Upgrading** is `setup/gcp.sh deploy <new image>`, then `doctor`; rolling
+back is deploying the previous image.
+
+### Run time and monthly cost
+
+Not measured yet: this needs a billed project. The live
+check (`LEADSCORE_LIVE_CLOUDRUN`) prints the run length; the cost follows from
+it. The method, to fill in the table:
+
+1. Run the live check, and note `MEASURE run length` for the synthetic Sheet,
+   then the length of an ordinary run on a team-sized Sheet (2,000 leads),
+   from `gcloud run jobs executions list --job leadscore-run`.
+2. Runs per month at the default 15 minutes: 4 × 24 × 30 = 2,880. The job
+   has 1 vCPU and 1 GiB, so a month uses 2,880 × run seconds vCPU-seconds and
+   as many GiB-seconds.
+3. Compare with Cloud Run's free tier per billing account (240,000
+   vCPU-seconds and 450,000 GiB-seconds a month at the time of writing) and
+   price the rest from Google's price list for the region. Add Cloud Scheduler
+   (three jobs free per billing account), Secret Manager (a few secret
+   versions and one access per run per secret) and the receiver (scales to
+   zero; billed only while it answers a webhook).
+
+| Measure | Value |
+|---|---|
+| Run length, 2,000 leads | _to measure_ |
+| Run length, live check's synthetic Sheet | _to measure_ |
+| vCPU-seconds per month at 15 minutes | _to measure_ |
+| Monthly cost beyond the free tier | _to measure_ |
 
 ## The rubric
 

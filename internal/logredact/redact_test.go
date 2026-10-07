@@ -78,3 +78,26 @@ func TestMaskEnvSecrets(t *testing.T) {
 		t.Errorf("a one-character secret masked text: %q", got)
 	}
 }
+
+func TestContainsSecret(t *testing.T) {
+	t.Cleanup(func() { MaskEnvSecrets(func(string) string { return "" }) })
+	MaskEnvSecrets(func(k string) string {
+		if k == "APOLLO_API_KEY" {
+			return "apolloKEY123456"
+		}
+		return ""
+	})
+	for s, want := range map[string]bool{
+		"key: apolloKEY123456":                                true,
+		"token: pat-na1-12345678-1234-1234-1234-123456789012": true,
+		"Authorization: Bearer abcdefghij.klmnopqrstuvwxyz":   true,
+		"Authorization: Bearer abc.def":                       false, // too short to be a token
+		"owner: ana@acme.example":                             false, // personal data, not a key
+		"path: /Users/ana/leads.csv":                          false,
+		"pipeline: Sales":                                     false,
+	} {
+		if got := ContainsSecret(s); got != want {
+			t.Errorf("ContainsSecret(%q) = %v, want %v", s, got, want)
+		}
+	}
+}
