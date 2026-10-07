@@ -1,0 +1,70 @@
+sinktest/sinktest.go
+  s_9dab9ff7f2c580::t_5192bff0748e30 2-4,12-15,17,31-42,57-72,76-262
+internal/fakes/sink/sink.go
+  s_9dab9ff7f2c580::t_994912c47890f9 1-254
+  s_9dab9ff7f2c580::t_45ccd4606b88bb 255-278
+internal/engine/lanes.go
+  s_9dab9ff7f2c580::t_66fc1e676205ec 1-693
+  s_9dab9ff7f2c580::t_7716725c3fdf42 694-728
+internal/engine/fold.go
+  s_9dab9ff7f2c580::t_b5918d1099ca65 1-299
+  s_9dab9ff7f2c580::t_6b6f7545045c69 300-305
+internal/engine/prepush.go
+  s_9dab9ff7f2c580::t_f77109461cdaf8 1-235
+  s_9dab9ff7f2c580::t_70dbe3596137f2 236-239
+internal/engine/push.go
+  s_9dab9ff7f2c580::t_c42d46c186cbd7 1-484
+internal/engine/push_helpers_test.go
+  s_9dab9ff7f2c580::t_7df3c4b1413b55 1-286
+  s_9dab9ff7f2c580::t_b6f1eff5ab1f8a 287-303
+docs/design/oss-outbound-engine-contracts.md
+  s_9dab9ff7f2c580::t_af82f7b518ab70 486,626,633,666-667,741-742,804,911,929
+internal/check/pushes.go
+  s_9dab9ff7f2c580::t_136ac7847ea3f5 1-80
+internal/check/pushes_test.go
+  s_9dab9ff7f2c580::t_1d1709100a3953 1-64
+internal/check/store.go
+  s_9dab9ff7f2c580::t_aeeaed37c4bcaa 27,70-80
+internal/engine/budget_test.go
+  s_9dab9ff7f2c580::t_aa34df6d10cdbd 1-76
+internal/engine/engine.go
+  s_9dab9ff7f2c580::t_5224992cf39ca2 46-48,71,73-74
+internal/engine/lanes_test.go
+  s_9dab9ff7f2c580::t_8847972eac8ac3 1-337
+internal/engine/ledger_test.go
+  s_9dab9ff7f2c580::t_dd23dd57f5fc05 1-317
+internal/engine/lookup_test.go
+  s_9dab9ff7f2c580::t_af78740780a162 1-144
+internal/engine/pushing_test.go
+  s_9dab9ff7f2c580::t_982c0d30ea722e 1-230
+internal/engine/run.go
+  s_9dab9ff7f2c580::t_ed151b566de5ba 430,460
+internal/engine/score.go
+  s_9dab9ff7f2c580::t_7e77ce3a058486 74-78,96-98,100-106
+internal/engine/states_test.go
+  s_9dab9ff7f2c580::t_498f1f02fa08b3 1-253
+internal/engine/status_test.go
+  s_9dab9ff7f2c580::t_18d7ee0e613107 1-235
+internal/fakes/sink/sink_test.go
+  s_9dab9ff7f2c580::t_b49982b0f7a082 1-20
+sinktest/sinktest_internal_test.go
+  s_9dab9ff7f2c580::t_a75b0dee7f5ed2 1-117
+stub_adapters_test.go
+  s_9dab9ff7f2c580::t_3aea935a7a439e 17,256-257,259,261-263
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bf6a07c6342fd24747b9d0da26e642e32d1fea69",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
