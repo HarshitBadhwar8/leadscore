@@ -447,3 +447,21 @@ func TestReplyLabelKeysAreLowercased(t *testing.T) {
 		t.Errorf("%v", c.ReplyLabels)
 	}
 }
+
+func TestNoConfigAnywhereNamesEveryPath(t *testing.T) {
+	configDir, cwd := withDefaultPaths(t)
+	_, err := Load(Options{Getenv: noEnv})
+	if err == nil {
+		t.Fatal("Load with no config anywhere succeeded")
+	}
+	for _, want := range []string{
+		filepath.Join(configDir, "bundle.yaml"),
+		filepath.Join(configDir, "leadscore.yml"),
+		filepath.Join(cwd, "leadscore.yml"),
+		"mounted at /config",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
+		}
+	}
+}

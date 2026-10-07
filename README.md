@@ -65,8 +65,8 @@ when a run fails. Someone has to look (`leadscore status`, the `Health` tab,
 - **Apollo or HubSpot:** a paid Apollo plan (workflows and the API need it)
   and an Apollo master API key; a HubSpot private app token. Not needed for
   CSV only.
-- **Docker paths:** Docker (Docker Desktop on macOS, Docker Engine on Linux)
-  or podman with compose.
+- **Docker paths:** Docker (Docker Desktop or Colima on macOS, Docker Engine
+  on Linux) or podman with compose.
 - **Docker on a server:** a VM with a public IP, ports 80 and 443 open, and a
   domain (or subdomain) whose DNS points at it.
 - **Google Cloud:** a Google account that may create a project with billing,
@@ -320,10 +320,13 @@ Steps:
    or `examples/leadscore.server.yml`, renamed `leadscore.yml`; or
    `examples/leadscore.csv-only.yml` for CSV only), the example rubric as
    `rubric.yml`, and your CSV files. The folder is mounted read-only at
-   `/config`; the export lists land in `./out`. On Linux the container runs
-   as its own user (uid 10001), so also run:
-   - `mkdir -p out && sudo chown 10001:10001 out`: the container can write
-     the lists into `./out`.
+   `/config`; the export lists land in `./out`. Make that folder private
+   (the lists hold personal data): `mkdir -m 700 out`. On macOS with Colima
+   or podman, keep the folder under your home folder: they share only that
+   with Docker, and a folder elsewhere shows up empty inside the container.
+   On Linux the container runs as its own user (uid 10001), so also run:
+   - `sudo chown 10001:10001 out`: the container can write the lists into
+     `./out`.
    - `chmod o+rx . && chmod o+r leadscore.yml rubric.yml *.csv`: the
      container can read your settings, rubric and leads (not secrets).
 2. **[person]** Create `.env` in the folder, holding the keys (only those you

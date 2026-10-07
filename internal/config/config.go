@@ -187,6 +187,14 @@ func Load(opts Options) (*Config, error) {
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
+		if opts.ConfigPath == "" && errors.Is(err, fs.ErrNotExist) {
+			// Nothing at any default location: say where we looked, since on
+			// Docker an empty /config usually means the folder was not shared.
+			return nil, fmt.Errorf("no leadscore.yml: looked for %s, %s and %s; "+
+				"pass --config, or on Docker check the folder is mounted at /config "+
+				"(Colima and podman on macOS share only your home folder)",
+				defaultBundlePath, defaultConfigPath, path)
+		}
 		return nil, fmt.Errorf("reading config: %w", err)
 	}
 	dir := filepath.Dir(path)
