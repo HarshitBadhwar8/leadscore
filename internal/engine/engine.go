@@ -46,6 +46,7 @@ type Run struct {
 
 	lv      *view    // the lane view (S10b), built on first use; nil after invalidate
 	pushing *pushRun // what PrePush decided for Push (S10b); nil before PrePush
+	scored  bool     // step 6 finished, so Result holds this run's lanes (set before Export)
 }
 
 // Hooks are the run's plug-in steps. A nil hook is skipped. Their errors are
@@ -72,7 +73,8 @@ func DefaultHooks() Hooks {
 		Detect:    detectHook,
 		PrePush:   prePushHook,
 		Push:      pushHook,
-		AfterSave: Chain(deleteProcessed),
+		Export:    exportHook,
+		AfterSave: Chain(deleteProcessed, writeExportCSVs),
 	}
 }
 

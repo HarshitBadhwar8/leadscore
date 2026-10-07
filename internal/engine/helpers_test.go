@@ -184,6 +184,9 @@ func (in *install) config(body string) {
 	if !strings.Contains(body, "store:") {
 		body = "store: { type: sqlite, path: leadscore.db }\n" + body
 	}
+	if !strings.Contains(body, "export:") {
+		body = "export: { dir: out }\n" + body // the /out default is Docker's
+	}
 	in.write("leadscore.yml", "version: 1\n"+body)
 }
 

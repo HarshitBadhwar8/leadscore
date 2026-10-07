@@ -269,6 +269,7 @@ func (x *exec) main() error {
 	if !x.phase1Failed {
 		x.push()
 	}
+	r.scored = x.scored
 	if x.s.hooks.Export != nil {
 		if err := x.s.hooks.Export(r); err != nil {
 			x.hookFailed("export", err)
@@ -287,17 +288,20 @@ func (x *exec) main() error {
 	if err := x.commit("phase 2", codec.Encode(r.Model, phase2Tables(r.Model)...), false); err != nil {
 		return err
 	}
+	// AfterSave runs once phase 2 is committed, even when the Ranked write
+	// then fails: the export CSVs must show the opt-outs phase 2 saved.
+	var rankedErr error
 	if x.scored {
 		if err := x.writeRanked(); err != nil {
-			return fmt.Errorf("writing Ranked: %w", err)
+			rankedErr = fmt.Errorf("writing Ranked: %w", err)
 		}
 	}
-	if x.s.hooks.AfterSave != nil {
+	if x.s.hooks.AfterSave != nil && !x.lost {
 		if err := x.s.hooks.AfterSave(r); err != nil {
 			x.lateProblem("step_failed:aftersave", "the step after saving failed: "+err.Error(), "see the message; the next run tries again")
 		}
 	}
-	return nil
+	return rankedErr
 }
 
 // Phase 1 tables (contracts section 12.6): with the keys and cursors, every
