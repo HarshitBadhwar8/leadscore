@@ -1,0 +1,67 @@
+adapters/apollo/golden_test.go
+  s_9dab9ff7f2c580::t_cf23ef09c35887 147-149,166
+adapters/apollo/notification.go
+  s_9dab9ff7f2c580::t_b3e0b924c1598a 71-73
+adapters/apollo/parse.go
+  s_9dab9ff7f2c580::t_386d784db03545 9
+adapters/apollo/poll.go
+  s_9dab9ff7f2c580::t_a6224ae83c284f 47-48
+adapters/apollo/sink.go
+  s_9dab9ff7f2c580::t_5eedc9f3e54f15 45-46
+adapters/apollo/sink_test.go
+  s_9dab9ff7f2c580::t_0d9c91836b7cec 373-374
+docs/design/oss-outbound-engine-contracts.md
+  s_9dab9ff7f2c580::t_5c63959d9407b6 548
+docs/design/oss-outbound-engine-s0-answers.md
+  s_9dab9ff7f2c580::t_1e4e579946e861 27,30-31,36-38,41-47
+docs/design/oss-outbound-engine.md
+  s_9dab9ff7f2c580::t_c8d2441a5974f2 613,619-621,624,626,710
+internal/events/events_test.go
+  s_9dab9ff7f2c580::t_fecc85da1d1438 517-518
+setup/apollo/README.md
+  s_9dab9ff7f2c580::t_7e2302aab526dd 65-67
+testdata/events/README.md
+  s_9dab9ff7f2c580::t_2692d888d66e30 13-15,20-21
+testdata/events/apollo_reply_opened.json
+  s_9dab9ff7f2c580::t_11ddb24fa9d7c2 1
+testdata/events/apollo_reply_replied.json
+  s_9dab9ff7f2c580::t_9584e965276487 1
+testdata/events/apollo_reply_replied_positive.json
+  s_9dab9ff7f2c580::t_5b938314e4bfaf 1
+testdata/events/apollo_reply_reserved_stage.json
+  s_9dab9ff7f2c580::t_f7fde335c2b1dd 1
+testdata/events/apollo_reply_sent.json
+  s_9dab9ff7f2c580::t_2ad068da0ab78c 1
+testdata/events/apollo_reply_unsubscribed.json
+  s_9dab9ff7f2c580::t_e3b52f3114b0a3 1
+testdata/events/apollo_visit_company_only.json
+  s_9dab9ff7f2c580::t_43899d34513e73 1
+testdata/events/apollo_visit_identified.json
+  s_9dab9ff7f2c580::t_1f79d5bb449f91 1
+testdata/events/apollo_visit_linkedin_only.json
+  s_9dab9ff7f2c580::t_0c7a7ff7cbe5b5 1
+testdata/events/apollo_visit_no_identity.json
+  s_9dab9ff7f2c580::t_1d52e37d7ec62e 1
+testdata/events/apollo_visit_no_visited_at.json
+  s_9dab9ff7f2c580::t_8bf8ea04ffaf5a 1
+testdata/vendors/apollo/emailer_messages_search/rate_limited.json
+  s_9dab9ff7f2c580::t_25e6c857b89ab6 3
+testdata/vendors/apollo/emailer_messages_search/replies.json
+  s_9dab9ff7f2c580::t_1efe32d51c4f37 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b430dbfb3f5e7b53e45de426ff64bbf15e5ec133",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
