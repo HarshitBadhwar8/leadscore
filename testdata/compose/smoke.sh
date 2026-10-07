@@ -11,6 +11,9 @@ set -euo pipefail
 image=${1:?usage: smoke.sh <image>}
 repo=$(pwd)
 dir=$(mktemp -d)
+# mktemp makes the folder owner-only; a team's folder is normally readable by
+# others, which the container's own user (10001) needs to read /config.
+chmod 755 "$dir"
 secret=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')
 
 cp compose.yaml "$dir/"

@@ -152,7 +152,8 @@ one folder, add a `.env` with your keys and the receiver secret, and run
 `docker compose up -d`. The folder is mounted read-only at `/config`, the
 SQLite store lives on a named volume, and the export lists land in `./out`
 (on Linux, first `mkdir -p out && sudo chown 10001:10001 out`, since the
-container runs as its own user). Every command runs inside the container:
+container runs as its own user, uid 10001, which must also be able to read
+the folder and the files the container reads). Every command runs inside the container:
 `docker compose exec leadscore leadscore status`. `docker ps` shows the
 container unhealthy when `/healthz` does.
 
