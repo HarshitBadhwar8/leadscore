@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HarshitBadhwar8/leadscore/adapters/apollo"
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/detect"
 	"github.com/HarshitBadhwar8/leadscore/internal/events"
@@ -34,10 +35,15 @@ var (
 
 // Log kinds Intake writes.
 const (
-	logRowRejected   = "row_rejected"   // a source event row that cannot be an event
-	logEventRejected = "event_rejected" // a stored receiver request that cannot be applied
-	logEventNoPerson = "event_unmatched"
+	logRowRejected   = "row_rejected"    // a source event row that cannot be an event
+	logEventRejected = "event_rejected"  // a stored receiver request that cannot be applied
+	logEventIgnored  = "event_ignored"   // a stored request of a kind we do not act on
+	logEventNoPerson = "event_unmatched" // an event naming no usable person key
 )
+
+// replyKinds are the receiver's reply-workflow kinds; with them and the
+// configured visit kinds, the kinds whose last_received:<kind> is kept.
+var replyKinds = map[string]bool{"sent": true, "replied": true, "replied_positive": true, "unsubscribed": true}
 
 // intake is the Intake hook (step 3, contracts section 12.7). It reads the
 // event log from cursor:events, parses it, merges the receiver rows, polls
@@ -62,7 +68,15 @@ func intake(r *Run) error {
 		return fmt.Errorf("reading the event log: %w", err)
 	}
 
-	parsed, rows := events.Parse(raws)
+	var parsed []api.Event
+	var rows []api.InputRow
+	for _, raw := range raws {
+		es, rs := events.Parse([]api.RawEvent{raw})
+		if suppressed(r, es) {
+			rs = nil // under polling a receiver reply has no effect at all, its row included
+		}
+		parsed, rows = append(parsed, es...), append(rows, rs...)
+	}
 	if len(rows) > 0 {
 		aliases := r.Rubric.Aliases()
 		norm := make([]merge.Normalized, 0, len(rows))
@@ -72,15 +86,15 @@ func intake(r *Run) error {
 		merge.Apply(m, norm, merge.ApplyCtx{Now: now, RunID: r.ID, Sources: r.Config.Sources, Aliases: aliases})
 	}
 
-	in := &intaker{r: r, m: m, now: now, taken: map[api.EventID]bool{}, received: map[string]time.Time{}}
+	in := &intaker{r: r, m: m, now: now, received: map[string]time.Time{}}
 	for _, e := range parsed {
-		in.take(merge.NormalizeEventKeys(e))
+		in.take(merge.NormalizeEventKeys(e), false)
 	}
 	for _, e := range poll(r) {
-		in.take(merge.NormalizeEventKeys(e))
+		in.take(merge.NormalizeEventKeys(e), false)
 	}
 	for _, e := range r.SourceEvents {
-		in.take(e) // normalized by the run when it fetched the sources
+		in.take(e, true) // normalized by the run when it fetched the sources
 	}
 
 	if shrank == nil && next != cursor {
@@ -95,45 +109,63 @@ func intake(r *Run) error {
 	return shrank
 }
 
+// suppressed reports a receiver `replied` or `replied_positive` under
+// `replies: polling`: keyed in Seen events, with no effect, no window row and
+// no merged receiver row, so one reply never counts twice (contracts 5.3).
+func suppressed(r *Run, es []api.Event) bool {
+	if r.Config.Replies != "polling" {
+		return false
+	}
+	for _, e := range es {
+		if e.Origin == events.OriginReceiver && (e.Kind == "replied" || e.Kind == "replied_positive") {
+			return true
+		}
+	}
+	return false
+}
+
 // intaker takes the events of one Intake.
 type intaker struct {
 	r        *Run
 	m        *model.Model
 	now      time.Time
-	taken    map[api.EventID]bool
-	received map[string]time.Time // newest receiver event per kind
+	received map[string]time.Time // newest receiver event per watched kind
 }
 
-func (in *intaker) take(e api.Event) {
+// take applies one event. fromSource marks the sources' events
+// (Run.SourceEvents): a source never reports a vendor-only kind, whatever its
+// Origin says.
+func (in *intaker) take(e api.Event, fromSource bool) {
 	m, r := in.m, in.r
-	if e.Origin == events.OriginReceiver && e.Kind != "" {
-		if t := e.ReceivedAt.UTC(); t.After(in.received[strings.ToLower(e.Kind)]) {
-			in.received[strings.ToLower(e.Kind)] = t
-		}
-	}
 	if e.Kind == "" {
-		in.reject(e, e.Attrs[events.AttrReject])
+		if why := e.Attrs[events.AttrIgnored]; why != "" {
+			in.log("info", logEventIgnored, "", why)
+			return
+		}
+		in.reject(e, e.Attrs[events.AttrReject], fromSource)
 		return
 	}
 	e.Kind = strings.ToLower(e.Kind)
-	if e.Origin != events.OriginReceiver && e.Origin != events.OriginPolling && events.VendorOnly(e.Kind) {
-		in.reject(e, fmt.Sprintf("a %s event may only come from a vendor, not from source %s", e.Kind, e.Origin))
+	if len(e.Kind) > apollo.MaxKindLen {
+		in.reject(e, fmt.Sprintf("an event kind is longer than %d characters", apollo.MaxKindLen), fromSource)
 		return
+	}
+	if fromSource && events.VendorOnly(e.Kind) {
+		in.reject(e, fmt.Sprintf("a %s event may only come from a vendor, not from a source", e.Kind), true)
+		return
+	}
+	if !fromSource && e.Origin == events.OriginReceiver && in.watched(e.Kind) {
+		if t := e.ReceivedAt.UTC(); t.After(in.received[e.Kind]) {
+			in.received[e.Kind] = t
+		}
 	}
 
 	e.ID = events.Key(e)
-	if in.taken[e.ID] {
-		return
-	}
-	in.taken[e.ID] = true
 	if _, seen := m.SeenEvents[model.Key(e.ID)]; seen {
-		return
+		return // seen in an earlier run, or earlier in this one
 	}
 	m.Put(model.TableSeenEvents, model.SeenEvent{EventKey: string(e.ID), FirstReceivedAt: in.now, RunID: r.ID})
-
-	// With replies by polling, a receiver reply is keyed but has no effect and
-	// no window row, so one reply never counts twice (contracts section 5.3).
-	if r.Config.Replies == "polling" && e.Origin == events.OriginReceiver && (e.Kind == "replied" || e.Kind == "replied_positive") {
+	if !fromSource && suppressed(r, []api.Event{e}) {
 		return
 	}
 
@@ -148,10 +180,7 @@ func (in *intaker) take(e api.Event) {
 	}
 	events.Apply(m, lead, e, r.Config.ReplyLabels)
 
-	at := e.At.UTC()
-	if at.IsZero() {
-		at = e.ReceivedAt.UTC()
-	}
+	at := events.Time(e)
 	domain := e.Domain
 	if domain == "" && lead != "" {
 		domain = m.People[model.Key(lead)].Fields[model.CompanyDomainField].Value
@@ -178,13 +207,28 @@ func (in *intaker) take(e api.Event) {
 	m.Put(model.TableWindowEvents, w)
 }
 
+// watched reports a kind whose last_received:<kind> is kept: the reply kinds
+// and the configured visit kinds (receiver.visit_events), so a body cannot
+// add State keys at will.
+func (in *intaker) watched(kind string) bool {
+	if replyKinds[kind] {
+		return true
+	}
+	for _, k := range in.r.Config.Receiver.VisitEvents {
+		if strings.ToLower(k) == kind {
+			return true
+		}
+	}
+	return false
+}
+
 // windowAttrs keeps an event's attributes for detectors, without the person's
 // name, title and company, which People already holds.
 func windowAttrs(a map[string]string) map[string]string {
 	out := map[string]string{}
 	for k, v := range a {
 		switch k {
-		case "full_name", "title", "company", events.AttrReject:
+		case apollo.AttrFullName, apollo.AttrTitle, apollo.AttrCompany, events.AttrReject:
 			continue
 		}
 		out[k] = v
@@ -229,12 +273,12 @@ func withTime(times map[string]time.Time, kind string, at time.Time) map[string]
 // reject logs an event that cannot be applied. A receiver request is read
 // once (the cursor moves past it); a source row comes back every run from a
 // snapshot source, so it is logged once, under a key in Seen events.
-func (in *intaker) reject(e api.Event, reason string) {
+func (in *intaker) reject(e api.Event, reason string, fromSource bool) {
 	if reason == "" {
 		reason = "no event kind"
 	}
 	kind := logEventRejected
-	if e.Origin != events.OriginReceiver && e.Origin != events.OriginPolling {
+	if fromSource {
 		kind = logRowRejected
 		key := model.Key("reject|" + e.Origin + "|" + reason)
 		if _, seen := in.m.SeenEvents[key]; seen {
@@ -255,8 +299,9 @@ func (in *intaker) log(level, kind string, lead api.LeadID, msg string) {
 // the last poll is older than the polling interval; never on a dry run. The
 // window starts at the earlier of now − (sequence_length + window_margin) and
 // last_poll_at − window_margin, so an outage longer than the window loses
-// nothing. last_poll_at moves only when every poller succeeded. Polled replies
-// come back ordered by received time, then message id, then label.
+// nothing. last_poll_at moves only when every poller succeeded. Polled
+// events always get Origin `polling`, and come back ordered by received
+// time, then message id, then label.
 func poll(r *Run) []api.Event {
 	cfg, m := r.Config, r.Model
 	if cfg.Replies != "polling" || r.DryRun {
@@ -295,14 +340,12 @@ func poll(r *Run) []api.Event {
 		evs, err := pollOne(r.Ctx, typ, cfg.Sinks[typ], since)
 		if err != nil {
 			ok = false
-			r.Problem("poll_failed:"+typ, fmt.Sprintf("reading replies from %s failed: %v", typ, err),
+			r.Problem("poll_failed:"+typ, logredact.Redact(fmt.Sprintf("reading replies from %s failed: %v", typ, err)),
 				"check the key and the vendor's status; the next poll reads the same window again", false)
 			continue
 		}
 		for _, e := range evs {
-			if e.Origin == "" {
-				e.Origin = events.OriginPolling
-			}
+			e.Origin = events.OriginPolling
 			out = append(out, e)
 		}
 	}
@@ -311,10 +354,10 @@ func poll(r *Run) []api.Event {
 		if !a.ReceivedAt.Equal(b.ReceivedAt) {
 			return a.ReceivedAt.Before(b.ReceivedAt)
 		}
-		if a.Attrs["message_id"] != b.Attrs["message_id"] {
-			return a.Attrs["message_id"] < b.Attrs["message_id"]
+		if a.Attrs[apollo.AttrMessageID] != b.Attrs[apollo.AttrMessageID] {
+			return a.Attrs[apollo.AttrMessageID] < b.Attrs[apollo.AttrMessageID]
 		}
-		return a.Attrs["label"] < b.Attrs["label"]
+		return a.Attrs[apollo.AttrLabel] < b.Attrs[apollo.AttrLabel]
 	})
 	if ok {
 		m.SetState(lastPollKey, model.FormatTime(now))
@@ -358,21 +401,23 @@ func trimEvents(r *Run) {
 // deleteProcessed is S9's AfterSave step (RFC 6.6): it deletes stored events
 // at or below the committed cursor that are older than the window retention.
 // Every fact a later run needs is already in Window events, Seen events and
-// Outcomes. When the store drops a partition from the cursor, the new cursor
-// is committed at once, under the lease, so the next run never reads a
-// cursor naming a partition that is gone.
+// Outcomes. It is skipped in a run whose event log shrank.
+//
+// When the store drops a partition from the cursor, the new cursor is
+// committed at once, under the lease, retried once (contracts 12.6). If that
+// still fails, the stored cursor names a dropped partition and the next run
+// raises events_shrank; the error names the value to set as State
+// cursor:events by hand to recover.
 func deleteProcessed(r *Run) error {
-	if r.DryRun || r.Events == nil {
+	if r.DryRun || r.Events == nil || r.EventsShrank {
 		return nil
 	}
 	cur := r.Model.StateValue(eventsCursorKey)
 	if cur == "" {
 		return nil
 	}
-	if r.Lease != nil {
-		if err := r.Lease.Check(r.Ctx); err != nil {
-			return fmt.Errorf("deleting processed events: %w", err)
-		}
+	if err := r.Lease.Check(r.Ctx); err != nil {
+		return fmt.Errorf("deleting processed events: %w", err)
 	}
 	next, err := r.Events.DeleteProcessed(r.Ctx, api.Cursor(cur), r.Now().Add(-windowRetention))
 	if err != nil {
@@ -383,13 +428,19 @@ func deleteProcessed(r *Run) error {
 	}
 	r.Model.SetState(eventsCursorKey, string(next))
 	writes := codec.Encode(r.Model, model.TableState+":"+eventsCursorKey)
-	if r.Lease != nil {
+	try := func() error {
 		if err := r.Lease.Check(r.Ctx); err != nil {
-			return fmt.Errorf("saving the event cursor after deleting processed events: %w", err)
+			return err
 		}
+		return r.Store.Commit(r.Ctx, writes)
 	}
-	if err := r.Store.Commit(r.Ctx, writes); err != nil {
-		return fmt.Errorf("saving the event cursor after deleting processed events: %w", err)
+	err = try()
+	if err != nil && !errors.Is(err, api.ErrLeaseLost) && r.Ctx.Err() == nil {
+		err = try()
+	}
+	if err != nil {
+		return fmt.Errorf("saving the event cursor after deleting processed events failed (%w); "+
+			"set State cursor:events to %q to recover", err, string(next))
 	}
 	r.Model.Committed(writes)
 	return nil

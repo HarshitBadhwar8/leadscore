@@ -424,6 +424,9 @@ func (p *parser) sources(c *Config, raw map[string]any) error {
 		if s.Type == "" && p.err == nil {
 			return fmt.Errorf("`%s.type` is required", name)
 		}
+		if reservedSourceIDs[s.ID] {
+			return fmt.Errorf("`%s.id` %q is reserved for events the engine reads itself (receiver, polling, hubspot, apollo_lookup); choose another id", name, s.ID)
+		}
 		if seen[s.ID] {
 			return fmt.Errorf("`%s.id` %q is used by another source", name, s.ID)
 		}
@@ -553,7 +556,8 @@ func (p *parser) replyLabels(c *Config, raw map[string]any) {
 		p.fail("`reply_labels` must be a mapping of label to status")
 		return
 	}
-	for label, val := range m {
+	for raw, val := range m {
+		label := strings.ToLower(strings.TrimSpace(raw)) // polled labels compare lowercased
 		if label == "unsubscribe" {
 			p.fail("`reply_labels.unsubscribe` cannot be overridden: an unsubscribe always opts the person out")
 			return
@@ -566,6 +570,11 @@ func (p *parser) replyLabels(c *Config, raw map[string]any) {
 		c.ReplyLabels[label] = s
 	}
 }
+
+// reservedSourceIDs are the origins and source ids of events the engine reads
+// itself (contracts section 3). A source under one of these ids could pose as
+// a vendor and land an opt-out or a reply on no evidence.
+var reservedSourceIDs = map[string]bool{"receiver": true, "polling": true, "hubspot": true, "apollo_lookup": true}
 
 // parser keeps the first error so the field readers stay one line each.
 type parser struct {

@@ -75,7 +75,7 @@ func ago(d time.Duration) string { return time.Now().UTC().Add(-d).Format(time.R
 // The proof: three visits arriving over three runs count three, because
 // detectors read Window events, not this run's events.
 func TestThreeVisitsAcrossThreeRunsFireADetector(t *testing.T) {
-	in := newInstall(t, "", eventsRubric)
+	in := newInstall(t, "receiver: { visit_events: [visit_pricing] }\n", eventsRubric)
 	for i, want := range []string{"cold", "cold", "hot"} {
 		in.appendEvents(visitRaw("Lee.Park@Example.net", ago(time.Duration(3-i)*time.Hour), time.Now()))
 		res, out, err := in.run(DefaultHooks())
@@ -106,10 +106,14 @@ func TestThreeVisitsAcrossThreeRunsFireADetector(t *testing.T) {
 	if !strings.Contains(people["first_seen"], "visit_pricing") {
 		t.Errorf("People.first_seen: %q", people["first_seen"])
 	}
+	companySeen := ""
 	for _, r := range in.rows(model.TableCompanyFacts) {
-		if r["domain"] == "example.net" && !strings.Contains(r["first_seen"], "visit_pricing") {
-			t.Errorf("Company facts first_seen: %q", r["first_seen"])
+		if r["domain"] == "example.net" {
+			companySeen = r["first_seen"]
 		}
+	}
+	if !strings.Contains(companySeen, "visit_pricing") {
+		t.Errorf("Company facts first_seen for example.net: %q", companySeen)
 	}
 }
 
@@ -145,6 +149,10 @@ func TestDedupeAcrossDeliveriesAndRuns(t *testing.T) {
 	o := outcomeOf(in, leadOf(in, "lee@example.net"))
 	if o["contacted_at"] == "" || o["reply_status"] != "replied_neutral" {
 		t.Errorf("outcome %v", o)
+	}
+	// last_received is kept for reply kinds and configured visit kinds only.
+	if in.state("last_received:sent") == "" || in.state("last_received:visit_pricing") != "" {
+		t.Errorf("last_received: sent %q, unconfigured visit_pricing %q", in.state("last_received:sent"), in.state("last_received:visit_pricing"))
 	}
 }
 
@@ -268,19 +276,27 @@ func TestPolling(t *testing.T) {
 	at := func(o *api.RunOptions, s *settings) { s.now = func() time.Time { return clock } }
 
 	// A failing poll does not move last_poll_at and makes the run unhealthy.
-	setPoll(t, nil, errors.New("vendor down"))
+	setPoll(t, nil, errors.New("vendor down for x@secret.example"))
 	res, _, err := in.run(DefaultHooks(), at)
 	if err != nil || res.Healthy || !hasKey(res.Problems, "poll_failed:testpoll") || in.state("last_poll_at") != "" {
 		t.Fatalf("%+v %v last_poll_at %q", res, err, in.state("last_poll_at"))
+	}
+	if v := in.health()["problem:poll_failed:testpoll"]; v == "" || strings.Contains(v, "x@secret.example") {
+		t.Errorf("poll error in Health must be redacted: %q", v)
 	}
 	if c := pollCalls(); len(c) != 1 || !c[0].Equal(clock.Add(-37*24*time.Hour)) {
 		t.Errorf("first poll since %v, want now - 37d", c)
 	}
 
 	// A receiver reply is keyed but has no effect; the polled one applies.
-	in.appendEvents(replyRaw("email_replied_positive", "ana@example.com", "Interested", clock))
+	in.appendEvents(replyRaw("email_replied_positive", "ana@example.com", "Interested", clock),
+		replyRaw("email_replied", "bo@example.com", "Replied", clock))
+	// A poller that sets its own origin still reads as polling, so its
+	// opt-out is applied, not refused.
 	setPoll(t, []api.Event{{Kind: "reply", Email: "Ana@Example.com", At: clock, ReceivedAt: clock,
-		Attrs: map[string]string{"label": "not_interested", "message_id": "m1"}}}, nil)
+		Attrs: map[string]string{"label": "not_interested", "message_id": "m1"}},
+		{Kind: "reply", Email: "cy@example.com", At: clock, ReceivedAt: clock, Origin: "apollo",
+			Attrs: map[string]string{"label": "unsubscribe", "message_id": "m2"}}}, nil)
 	clock = clock.Add(time.Hour)
 	if res, out, err := in.run(DefaultHooks(), at); err != nil || !res.Healthy {
 		t.Fatalf("%+v %v\n%s", res, err, out)
@@ -292,8 +308,14 @@ func TestPolling(t *testing.T) {
 	if o["reply_status"] != "replied_negative" {
 		t.Errorf("outcome %v: the receiver's positive reply must not count under polling", o)
 	}
-	if n := len(in.rows(model.TableSeenEvents)); n != 2 {
-		t.Errorf("Seen events %d, want the receiver reply's key and the polled one", n)
+	if n := len(in.rows(model.TableSeenEvents)); n != 4 {
+		t.Errorf("Seen events %d, want two receiver replies' keys and two polled ones", n)
+	}
+	if leadOf(in, "bo@example.com") != "" {
+		t.Error("a receiver reply under polling merged its row: it must have no effect at all")
+	}
+	if o := outcomeOf(in, leadOf(in, "cy@example.com")); o["unsubscribed_at"] == "" {
+		t.Errorf("a polled opt-out from a poller with its own origin was lost: %v", o)
 	}
 	for _, w := range in.rows(model.TableWindowEvents) {
 		if w["kind"] == "replied_positive" {
@@ -332,11 +354,15 @@ func TestEventsShrankKeepsSourceEvents(t *testing.T) {
 		Rows: []api.Row{{"key": "cursor:events", "value": "50"}}}}); err != nil {
 		t.Fatal(err)
 	}
-	in.appendEvents(visitRaw("lee@example.net", ago(time.Hour), time.Now()))
+	old := time.Now().Add(-100 * 24 * time.Hour)
+	in.appendEvents(visitRaw("lee@example.net", ago(time.Hour), old))
 	setStub(t, "site", &stubOut{next: "s1", events: []api.Event{{Kind: "visit_site", Email: "ana@example.com", At: time.Now().Add(-time.Hour)}}})
 	res, out, err := in.run(DefaultHooks())
 	if err != nil || !hasKey(res.Problems, "events_shrank") {
 		t.Fatalf("%+v %v\n%s", res, err, out)
+	}
+	if left, _, _ := in.store().ReadEvents(context.Background(), ""); len(left) != 1 {
+		t.Error("a run whose event log shrank deleted processed events")
 	}
 	if in.state("cursor:events") != "50" {
 		t.Errorf("cursor moved to %q", in.state("cursor:events"))
@@ -420,7 +446,8 @@ func TestRejectedSourceEventsAreLoggedOnce(t *testing.T) {
 func TestRejectedReceiverBodyIsLogged(t *testing.T) {
 	in := newInstall(t, "", eventsRubric)
 	in.appendEvents(api.RawEvent{Kind: "apollo_reply", ReceivedAt: time.Now(),
-		Body: []byte(`{"event":"email_replied","contact_email":"x@secret.example","contact_stage":"__unsubscribed__"}`)})
+		Body: []byte(`{"event":"email_replied","contact_email":"x@secret.example","contact_stage":"__unsubscribed__"}`)},
+		api.RawEvent{Kind: "apollo_reply", ReceivedAt: time.Now(), Body: []byte(`{"event":"email_opened","contact_email":"x@secret.example"}`)})
 	if _, out, err := in.run(DefaultHooks()); err != nil {
 		t.Fatal(err, out)
 	}
@@ -436,7 +463,143 @@ func TestRejectedReceiverBodyIsLogged(t *testing.T) {
 	if !found {
 		t.Error("no event_rejected line")
 	}
-	if in.state("cursor:events") != "1" {
+	ignored := false
+	for _, r := range in.rows(model.TableLog) {
+		ignored = ignored || (r["kind"] == "event_ignored" && strings.Contains(r["message"], "email_opened"))
+	}
+	if !ignored {
+		t.Error("an unacted kind must be logged as event_ignored, not dropped silently")
+	}
+	if in.state("cursor:events") != "2" {
 		t.Error("the cursor must move past a rejected body")
+	}
+}
+
+// A source can never pose as a vendor: whatever Origin it sets, its events
+// keep its own id, and a vendor-only kind from it is refused.
+func TestSourcesCannotPoseAsVendors(t *testing.T) {
+	in := newInstall(t, "sources:\n  - { id: site, type: stub, events: true }\n", eventsRubric)
+	setStub(t, "site", &stubOut{next: "s1", events: []api.Event{
+		{Kind: "unsubscribed", Email: "a@example.com", At: time.Now(), Origin: "polling"},
+		{Kind: "replied_positive", Email: "b@example.com", At: time.Now(), Origin: "receiver"},
+		{Kind: "reply", Email: "c@example.com", At: time.Now(), Origin: "polling", Attrs: map[string]string{"label": "unsubscribe", "message_id": "m"}},
+	}})
+	if _, out, err := in.run(DefaultHooks()); err != nil {
+		t.Fatal(err, out)
+	}
+	if n := len(in.rows(model.TablePeople)) + len(in.rows(model.TableOutcomes)); n != 0 {
+		t.Errorf("a source's vendor-only events were applied: %v %v", in.rows(model.TablePeople), in.rows(model.TableOutcomes))
+	}
+	n := 0
+	for _, r := range in.rows(model.TableLog) {
+		if r["kind"] == "row_rejected" {
+			n++
+		}
+	}
+	if n != 3 {
+		t.Errorf("row_rejected %d times, want 3", n)
+	}
+}
+
+// The body-hash fallback: a visit with no visited_at is keyed by person and
+// received day, so repeat visits on different days count and a redelivery the
+// same day does not.
+func TestVisitsWithNoTimeCountPerDay(t *testing.T) {
+	in := newInstall(t, "", eventsRubric)
+	body := func(received time.Time) api.RawEvent {
+		return api.RawEvent{Kind: "apollo_visit", ReceivedAt: received, Body: []byte(
+			`{"event":"website_visited_pricing","contact":{"email":"lee@example.net"},"account":{"domain":"example.net"}}`)}
+	}
+	now := time.Now().UTC()
+	in.appendEvents(body(now.Add(-50*time.Hour)), body(now.Add(-26*time.Hour)), body(now.Add(-time.Minute)), body(now.Add(-time.Minute)))
+	if _, out, err := in.run(DefaultHooks()); err != nil {
+		t.Fatal(err, out)
+	}
+	if n := len(in.rows(model.TableWindowEvents)); n != 3 {
+		t.Errorf("Window events %d, want one per day", n)
+	}
+	if got := ranked(in)["lee@example.net"]["hot_lead"]; got != "hot" {
+		t.Errorf("three visits on three days must fire hot, got %q", got)
+	}
+}
+
+// The reviewer's probe, end to end: lead A is known only by LinkedIn; an
+// unsubscribe for an unknown email carrying A's URL opts A out too.
+func TestOptOutReachesALinkedInOnlyLead(t *testing.T) {
+	in := newInstall(t, "sources:\n  - { id: rows, type: stub }\n", testRubric)
+	setStub(t, "rows", &stubOut{next: "1", rows: []api.InputRow{{Headers: []string{"linkedin_url", "full_name"},
+		Columns: map[string]string{"linkedin_url": "https://www.linkedin.com/in/ana", "full_name": "Ana"}}}})
+	if _, out, err := in.run(DefaultHooks()); err != nil {
+		t.Fatal(err, out)
+	}
+	a := leadOf(in, "linkedin.com/in/ana")
+	in.appendEvents(api.RawEvent{Kind: "apollo_reply", ReceivedAt: time.Now(), Body: []byte(
+		`{"event":"email_unsubscribed","contact_email":"ana@example.com","contact_linkedin_url":"https://www.linkedin.com/in/ana"}`)})
+	if _, out, err := in.run(DefaultHooks()); err != nil {
+		t.Fatal(err, out)
+	}
+	if o := outcomeOf(in, a); a == "" || o["unsubscribed_at"] == "" {
+		t.Errorf("LinkedIn-only lead %q not opted out: %v", a, o)
+	}
+}
+
+// deleteProcessed's cursor path, with a store that drops a partition: the new
+// cursor is committed (retried once), and a second failure names the value to
+// recover with.
+type fakeLog struct {
+	api.EventLog
+	next api.Cursor
+}
+
+func (f fakeLog) DeleteProcessed(context.Context, api.Cursor, time.Time) (api.Cursor, error) {
+	return f.next, nil
+}
+
+type fakeStore struct {
+	api.Backend
+	fails   int
+	commits [][]api.TableWrite
+}
+
+func (f *fakeStore) Commit(_ context.Context, w []api.TableWrite) error {
+	f.commits = append(f.commits, w)
+	if f.fails > 0 {
+		f.fails--
+		return errors.New("injected")
+	}
+	return nil
+}
+
+type okLease struct{}
+
+func (okLease) Check(context.Context) error   { return nil }
+func (okLease) Release(context.Context) error { return nil }
+
+func TestDeleteProcessedCommitsAChangedCursor(t *testing.T) {
+	for _, fails := range []int{1, 2} {
+		m := model.New()
+		m.SetState(eventsCursorKey, "2026-07:40,2026-08:12")
+		m.Committed(m.Writes())
+		st := &fakeStore{fails: fails}
+		r := &Run{Ctx: context.Background(), Model: m, Store: st, Events: fakeLog{next: "2026-08:12"}, Lease: okLease{}, Now: time.Now}
+		err := deleteProcessed(r)
+		if len(st.commits) != 2 {
+			t.Errorf("fails %d: %d commit attempts, want 2 (one retry)", fails, len(st.commits))
+		}
+		if fails == 1 && err != nil {
+			t.Errorf("one failure must be retried: %v", err)
+		}
+		if fails == 2 && (err == nil || !strings.Contains(err.Error(), "2026-08:12")) {
+			t.Errorf("two failures must name the cursor to recover with: %v", err)
+		}
+		if w := st.commits[0]; len(w) != 1 || w[0].Table != model.TableState || w[0].Rows[0]["value"] != "2026-08:12" {
+			t.Errorf("committed %+v", w)
+		}
+	}
+	// A run whose event log shrank deletes nothing.
+	r := &Run{Ctx: context.Background(), Model: model.New(), EventsShrank: true, Events: fakeLog{next: "x"}}
+	r.Model.SetState(eventsCursorKey, "5")
+	if err := deleteProcessed(r); err != nil {
+		t.Error(err)
 	}
 }

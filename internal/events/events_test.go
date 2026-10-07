@@ -1,6 +1,8 @@
 package events
 
 import (
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,22 +74,25 @@ func TestVisitKeys(t *testing.T) {
 	if key(t, visitBody(withTime("ct-1", "new@example.com", "2026-08-20T10:00:00Z"), t0.Add(time.Hour))) != a {
 		t.Error("a corrected email on the same contact and visit must key the same")
 	}
-	if key(t, visitBody(withTime("ct-1", "old@example.com", "2026-08-20T11:00:00Z"), t0)) == a {
+	if key(t, visitBody(withTime("ct-1", "old@example.com", "2026-08-20T11:00:00Z"), t0.Add(2*time.Hour))) == a {
 		t.Error("a second visit by the same person is a new event")
 	}
 	if key(t, visitBody(withTime("ct-2", "other@example.com", "2026-08-20T10:00:00Z"), t0)) == a {
 		t.Error("two people visiting at one time are two events")
 	}
 
-	// No usable visited_at: the body hash keys it, so a redelivered body is one
-	// event and a different body is another.
+	// No usable visited_at: person, page and received day key it, so the same
+	// body twice in a day is one event and on another day a new one.
 	noTime := `{"event":"website_visited_site","contact":{"email":"ada@example.com"}}`
 	h := key(t, visitBody(noTime, t0))
 	if key(t, visitBody(noTime, t0.Add(time.Hour))) != h {
-		t.Error("a redelivered body with no visit time must key the same")
+		t.Error("the same body twice in one day must key the same")
 	}
-	if key(t, visitBody(`{"event":"website_visited_site","contact":{"email":"ada@example.com","title":"CTO"}}`, t0)) == h {
-		t.Error("a different body is a different event")
+	if key(t, visitBody(noTime, t0.Add(24*time.Hour))) == h {
+		t.Error("the same body on another day is a new visit")
+	}
+	if key(t, visitBody(`{"event":"website_visited_site","contact":{"email":"bo@example.com"}}`, t0)) == h {
+		t.Error("another person the same day is a different event")
 	}
 
 	// A company-only visit keys on the employer domain and time.
@@ -164,7 +169,8 @@ func TestApplySetsEachEffect(t *testing.T) {
 	}
 	// A visit has no outcome effect and does not make the lead Apollo-held.
 	m2 := newModel(t, "L2")
-	if Apply(m2, "L2", api.Event{Kind: "visit_site", At: t0}, nil) || !m2.People["L2"].ApolloHeldAt.IsZero() {
+	Apply(m2, "L2", api.Event{Kind: "visit_site", At: t0}, nil)
+	if len(m2.Outcomes) != 0 || !m2.People["L2"].ApolloHeldAt.IsZero() {
 		t.Error("a visit must change nothing")
 	}
 }
@@ -184,7 +190,9 @@ func TestOptOutEarliestAndOrigin(t *testing.T) {
 	if !o.UnsubscribedAt.Equal(t0.Add(-time.Hour)) || o.UnsubscribedOrigin != UnsubLookup {
 		t.Errorf("%+v", o)
 	}
-	if Apply(m, "L1", api.Event{Kind: "optout", At: t0.Add(-time.Hour), Origin: OriginApolloLookup}, nil) {
+	before := len(codecWrites(m))
+	Apply(m, "L1", api.Event{Kind: "optout", At: t0.Add(-time.Hour), Origin: OriginApolloLookup}, nil)
+	if !reflect.DeepEqual(outcome(m, "L1"), o) || len(codecWrites(m)) != before {
 		t.Error("applying the same opt-out twice must change nothing")
 	}
 	m2 := newModel(t, "L2")
@@ -280,5 +288,100 @@ func TestDealFanOut(t *testing.T) {
 		if o := outcome(m, id); o.DealID != "" {
 			t.Errorf("%s must not get the deal: %+v", id, o)
 		}
+	}
+}
+
+func codecWrites(m *model.Model) []api.TableWrite { return m.Writes(model.TableOutcomes) }
+
+// A stage typed in another case or with spaces is the same state.
+func TestStageTextIsNormalizedInTheKey(t *testing.T) {
+	if key(t, replyBody("email_replied", "ada@example.com", "Replied")) != key(t, replyBody("email_replied", "ada@example.com", " REPLIED ")) {
+		t.Error("a stage differing only in case or spaces made a new event")
+	}
+}
+
+// Two people's polled replies with no message id never share a key, so b's
+// opt-out is not dropped as a repeat of a's.
+func TestPolledReplyWithoutMessageIDKeysThePerson(t *testing.T) {
+	ev := func(email string) api.Event {
+		return api.Event{Kind: "reply", Origin: OriginPolling, Email: email, At: t0, ReceivedAt: t0, Attrs: map[string]string{"label": "unsubscribe"}}
+	}
+	if Key(ev("a@example.com")) == Key(ev("b@example.com")) {
+		t.Fatal("two people's opt-outs share a key")
+	}
+	if Key(ev("a@example.com")) != Key(ev("a@example.com")) {
+		t.Error("the same reply polled twice must key the same")
+	}
+	withLabel := func(l string) api.EventID {
+		return Key(api.Event{Kind: "reply", Origin: OriginPolling, Attrs: map[string]string{"message_id": "m1", "label": l}})
+	}
+	if withLabel("Unsubscribe") != withLabel("unsubscribe") {
+		t.Error("labels compare lowercased")
+	}
+}
+
+func linkedInLead(m *model.Model, id, url string) {
+	m.Put(model.TablePeople, model.Person{LeadID: api.LeadID(id), CreatedAt: t0})
+	m.Put(model.TableIdentities, model.Identity{Key: url, Kind: "linkedin", LeadID: api.LeadID(id), SourceID: "csv", FirstSeenAt: t0})
+}
+
+// The reviewer's probe: lead A is known only by its LinkedIn URL. An
+// unsubscribe for ana@example.com carrying that URL makes a new lead B (an
+// unknown email never matches by URL), and the opt-out reaches A too.
+func TestOptOutReachesTheLinkedInHolder(t *testing.T) {
+	m := model.New()
+	linkedInLead(m, "A", "linkedin.com/in/ana")
+	e := merge.NormalizeEventKeys(api.Event{Kind: "unsubscribed", Email: "ana@example.com", LinkedInURL: "https://www.linkedin.com/in/ana",
+		At: t0, ReceivedAt: t0, Origin: OriginReceiver})
+	b := merge.ApplyEventPerson(m, e)
+	if b == "" || b == "A" {
+		t.Fatalf("resolved %q, want a new lead", b)
+	}
+	Apply(m, b, e, nil)
+	for _, id := range []string{"A", string(b)} {
+		if o := outcome(m, id); o.UnsubscribedAt.IsZero() || o.UnsubscribedOrigin != UnsubEvent {
+			t.Errorf("%s not opted out: %+v", id, o)
+		}
+	}
+	logged := false
+	for _, l := range m.Log {
+		if l.Kind == merge.LogKeyConflict && l.LeadID == "A" && !strings.Contains(l.Message, "@") {
+			logged = true
+		}
+	}
+	if !logged {
+		t.Error("no key_conflict line (ids only) for the opt-out reaching A")
+	}
+
+	// The different-email variant: the email belongs to lead C, the URL to A.
+	m = model.New()
+	linkedInLead(m, "A", "linkedin.com/in/ana")
+	m.Put(model.TablePeople, model.Person{LeadID: "C", CreatedAt: t0})
+	m.Put(model.TableIdentities, model.Identity{Key: "ana.other@example.com", Kind: "email", LeadID: "C", SourceID: "csv", FirstSeenAt: t0})
+	e = merge.NormalizeEventKeys(api.Event{Kind: "optout", Email: "ana.other@example.com", LinkedInURL: "linkedin.com/in/ana", At: t0, Origin: OriginApolloLookup})
+	c := merge.ApplyEventPerson(m, e)
+	Apply(m, c, e, nil)
+	if outcome(m, "A").UnsubscribedAt.IsZero() || outcome(m, "C").UnsubscribedAt.IsZero() {
+		t.Errorf("A %+v, C %+v: both must be opted out", outcome(m, "A"), outcome(m, "C"))
+	}
+
+	// A reply or a visit stays on the resolved lead.
+	m = model.New()
+	linkedInLead(m, "A", "linkedin.com/in/ana")
+	m.Put(model.TablePeople, model.Person{LeadID: "C", CreatedAt: t0})
+	Apply(m, "C", api.Event{Kind: "replied", LinkedInURL: "linkedin.com/in/ana", At: t0, ReceivedAt: t0, Origin: OriginReceiver}, nil)
+	if outcome(m, "A").ReplyStatus != "" {
+		t.Error("a reply spread to another lead")
+	}
+}
+
+// A deal event's domain is normalized before it finds the company's leads.
+func TestDealDomainIsNormalized(t *testing.T) {
+	m := model.New()
+	m.Put(model.TablePeople, model.Person{LeadID: "A", CreatedAt: t0,
+		Fields: map[string]model.Field{model.CompanyDomainField: {Value: "example.com", SourceID: "csv", At: t0}}})
+	Apply(m, "", api.Event{Kind: "deal_open", Domain: "https://www.Example.com/", At: t0, Origin: OriginHubSpot, Attrs: map[string]string{"deal_id": "d1"}}, nil)
+	if outcome(m, "A").DealID != "d1" {
+		t.Errorf("%+v", outcome(m, "A"))
 	}
 }

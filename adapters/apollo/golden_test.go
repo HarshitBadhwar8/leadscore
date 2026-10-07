@@ -36,11 +36,11 @@ func row(cols ...string) api.InputRow {
 
 var goldens = map[string]golden{
 	"apollo_reply_sent.json": {
-		events: []api.Event{{Kind: "sent", Email: "dana.reyes@example.com", LinkedInURL: "https://www.linkedin.com/in/dana-reyes-example/",
+		events: []api.Event{{Kind: "sent", Email: "dana.reyes@example.com", LinkedInURL: "https://linkedin.example/in/dana-reyes-example/",
 			Domain: "example.com", At: goldenReceived, ReceivedAt: goldenReceived, Origin: "receiver",
 			Attrs: map[string]string{"stage": "Approaching", "contact_id": "ct-1001", "full_name": "Dana Reyes", "title": "VP Engineering"}}},
 		rows: []api.InputRow{row("contact_id", "ct-1001", "email", "dana.reyes@example.com",
-			"linkedin_url", "https://www.linkedin.com/in/dana-reyes-example/", "full_name", "Dana Reyes",
+			"linkedin_url", "https://linkedin.example/in/dana-reyes-example/", "full_name", "Dana Reyes",
 			"title", "VP Engineering", "company.domain", "example.com")},
 	},
 	"apollo_reply_replied.json": {
@@ -61,14 +61,14 @@ var goldens = map[string]golden{
 			Attrs: map[string]string{"stage": "Do Not Contact", "full_name": "Sam Ortiz"}}},
 		rows: []api.InputRow{row("email", "sam.ortiz@example.org", "full_name", "Sam Ortiz")},
 	},
-	"apollo_reply_opened.json":         {}, // an unacted kind: nothing, and no error
+	"apollo_reply_opened.json":         {reject: "not one we act on"}, // ignored, and logged as such
 	"apollo_reply_reserved_stage.json": {reject: "reserved"},
 	"apollo_visit_identified.json": {
-		events: []api.Event{{Kind: "visit_pricing", Email: "lee.park@example.net", LinkedInURL: "https://www.linkedin.com/in/lee-park-example/",
+		events: []api.Event{{Kind: "visit_pricing", Email: "lee.park@example.net", LinkedInURL: "https://linkedin.example/in/lee-park-example/",
 			Domain: "example.net", At: time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC), ReceivedAt: goldenReceived, Origin: "receiver",
 			Attrs: map[string]string{"contact_id": "ct-2002", "full_name": "Lee Park", "title": "Head of Platform", "company": "Example Net"}}},
 		rows: []api.InputRow{row("contact_id", "ct-2002", "email", "lee.park@example.net",
-			"linkedin_url", "https://www.linkedin.com/in/lee-park-example/", "full_name", "Lee Park",
+			"linkedin_url", "https://linkedin.example/in/lee-park-example/", "full_name", "Lee Park",
 			"title", "Head of Platform", "company.name", "Example Net", "company.domain", "example.net")},
 	},
 	"apollo_visit_company_only.json": {
@@ -77,14 +77,14 @@ var goldens = map[string]golden{
 	},
 	"apollo_visit_no_visited_at.json": {
 		events: []api.Event{{Kind: "visit_docs", Email: "lee.park@example.net", At: goldenReceived, ReceivedAt: goldenReceived,
-			Origin: "receiver", Attrs: map[string]string{"full_name": "Lee", "body_sha256": "*"}}},
+			Origin: "receiver", Attrs: map[string]string{"full_name": "Lee", "no_visited_at": "yes"}}},
 		rows: []api.InputRow{row("email", "lee.park@example.net", "full_name", "Lee")},
 	},
 	"apollo_visit_linkedin_only.json": {
-		events: []api.Event{{Kind: "visit_pricing", LinkedInURL: "https://www.linkedin.com/in/ada-example/", Domain: "example.com",
+		events: []api.Event{{Kind: "visit_pricing", LinkedInURL: "https://linkedin.example/in/ada-example/", Domain: "example.com",
 			At: time.Date(2026, 8, 22, 8, 0, 0, 0, time.UTC), ReceivedAt: goldenReceived, Origin: "receiver",
 			Attrs: map[string]string{"full_name": "Ada"}}},
-		rows: []api.InputRow{row("linkedin_url", "https://www.linkedin.com/in/ada-example/", "full_name", "Ada", "company.domain", "example.com")},
+		rows: []api.InputRow{row("linkedin_url", "https://linkedin.example/in/ada-example/", "full_name", "Ada", "company.domain", "example.com")},
 	},
 	"apollo_visit_no_identity.json": {reject: "neither a contact nor a company"},
 }
@@ -125,13 +125,8 @@ func TestGoldenBodies(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for i := range evs {
-				if want.events[i].Attrs["body_sha256"] == "*" {
-					if len(evs[i].Attrs["body_sha256"]) != 64 {
-						t.Errorf("a visit with no visited_at must carry its body hash, got %q", evs[i].Attrs["body_sha256"])
-					}
-					want.events[i].Attrs["body_sha256"] = evs[i].Attrs["body_sha256"]
-				}
+			if len(evs) != len(want.events) || len(rows) != len(want.rows) {
+				t.Fatalf("%d events and %d rows, want %d and %d", len(evs), len(rows), len(want.events), len(want.rows))
 			}
 			if !reflect.DeepEqual(evs, want.events) {
 				t.Errorf("events\n got %+v\nwant %+v", evs, want.events)

@@ -3,6 +3,10 @@
 // they turn one stored request into events (section 5.3) and the receiver
 // input row its person yields. Parsing is pure; the engine keys, resolves and
 // applies what comes back (internal/events).
+//
+// The body shapes are built from our workflow templates and contracts section
+// 5.1; which fields Apollo's workflow variables can actually fill is marked
+// "S0 confirms" where it matters.
 package apollo
 
 import (
@@ -13,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
+	"github.com/HarshitBadhwar8/leadscore/internal/merge"
 )
 
 // RawEvent kinds: which receiver route stored the body (section 5.1).
@@ -22,8 +27,12 @@ const (
 )
 
 // OriginReceiver is Event.Origin, and the source id of input rows, for
-// everything parsed from a stored body.
-const OriginReceiver = "receiver"
+// everything parsed from a stored body: merge's receiver source.
+const OriginReceiver = merge.ReceiverSource
+
+// MaxKindLen bounds an event kind. Kinds name State keys and first-seen map
+// keys, so a body cannot grow them without limit.
+const MaxKindLen = 64
 
 // Event Attrs keys the parsers set.
 const (
@@ -33,12 +42,18 @@ const (
 	AttrFullName         = "full_name"
 	AttrTitle            = "title"
 	AttrCompany          = "company"
-	// AttrBodyHash is set on a visit with no usable visited_at: the hex SHA-256
-	// of its stored body, which keys it instead (RFC 6.7).
-	AttrBodyHash  = "body_sha256"
-	AttrLabel     = "label"      // polled replies
-	AttrMessageID = "message_id" // polled replies
+	AttrPage             = "page" // the visited page, when a body carries one (S0 confirms)
+	// AttrNoVisitTime is "yes" on a visit with no usable visited_at: it is
+	// timed at receipt and keyed by person, page and received day (RFC 6.7).
+	AttrNoVisitTime = "no_visited_at"
+	AttrLabel       = "label"      // polled replies
+	AttrMessageID   = "message_id" // polled replies
 )
+
+// ErrIgnored marks a body of an engagement kind we do not act on (an open, a
+// click, a bounce): not a reject, but logged so a workflow whose event literal
+// is mistyped does not look like silence.
+var ErrIgnored = errors.New("ignored")
 
 // Receiver input row columns (section 5.1), in this order.
 const (
@@ -53,10 +68,11 @@ const (
 
 // ParseRaw parses one stored request into its events and the receiver input
 // row its person yields (none for a company-only visit). An unacted reply kind
-// (an open, a click) gives nothing and no error. An error means the body
-// cannot be applied; its text never quotes an email.
+// gives an error wrapping ErrIgnored. Any other error means the body cannot be
+// applied; its text never quotes an email.
 //
-// Keys come back trimmed only; the engine normalizes them once.
+// Emails come back trimmed and lowercased and domains as lowercase hosts;
+// the engine still normalizes every key once (merge.NormalizeEventKeys).
 func ParseRaw(raw api.RawEvent) ([]api.Event, []api.InputRow, error) {
 	var probe struct {
 		NotJSON bool `json:"__not_json"`
@@ -73,7 +89,7 @@ func ParseRaw(raw api.RawEvent) ([]api.Event, []api.InputRow, error) {
 	case KindReply:
 		return parseReplyRaw(raw)
 	}
-	return nil, nil, fmt.Errorf("unknown stored kind %q", raw.Kind)
+	return nil, nil, fmt.Errorf("unknown stored kind %q", short(raw.Kind))
 }
 
 func parseReplyRaw(raw api.RawEvent) ([]api.Event, []api.InputRow, error) {
@@ -82,9 +98,9 @@ func parseReplyRaw(raw api.RawEvent) ([]api.Event, []api.InputRow, error) {
 		return nil, nil, err
 	}
 	if !n.acts() {
-		return nil, nil, nil
+		return nil, nil, fmt.Errorf("%w: engagement kind %q is not one we act on", ErrIgnored, short(n.Event))
 	}
-	at := raw.ReceivedAt.UTC() // reply bodies carry no vendor time
+	at := raw.ReceivedAt.UTC() // reply bodies carry no vendor time (S0 confirms)
 	e := api.Event{
 		Kind:        replyKinds[n.Event],
 		Email:       n.Email,
@@ -108,6 +124,9 @@ func parseVisitRaw(raw api.RawEvent) ([]api.Event, []api.InputRow, error) {
 	if kind == "" {
 		return nil, nil, fmt.Errorf("a visit body's event must be %s<name>", visitEventPrefix)
 	}
+	if len(kind) > MaxKindLen {
+		return nil, nil, fmt.Errorf("the visit's event name is longer than %d characters", MaxKindLen-len("visit_"))
+	}
 	employer := v.employerDomain()
 	if !v.identifiable() && employer == "" {
 		return nil, nil, errors.New("the visit names neither a contact nor a company")
@@ -122,13 +141,18 @@ func parseVisitRaw(raw api.RawEvent) ([]api.Event, []api.InputRow, error) {
 		Domain:     employer,
 		ReceivedAt: received,
 		Origin:     OriginReceiver,
+		Attrs:      map[string]string{},
 	}
 	if t, ok := v.visitedAt(); ok {
+		// A visit cannot happen after we received it: a clock ahead of ours
+		// would otherwise park the visit in the future, outside every window.
 		e.At = t
-		e.Attrs = map[string]string{}
+		if t.After(received) {
+			e.At = received
+		}
 	} else {
 		e.At = received
-		e.Attrs = map[string]string{AttrBodyHash: bodyHash(raw.Body)}
+		e.Attrs[AttrNoVisitTime] = "yes"
 	}
 	if !v.identifiable() {
 		if company != "" {
@@ -144,6 +168,14 @@ func parseVisitRaw(raw api.RawEvent) ([]api.Event, []api.InputRow, error) {
 	}
 	row := receiverRow(id, v.email(), li, v.fullName(), strings.TrimSpace(v.Contact.Title), company, employer)
 	return []api.Event{e}, []api.InputRow{row}, nil
+}
+
+// short caps a body value quoted in an error, so a log line stays small.
+func short(s string) string {
+	if len(s) > MaxKindLen {
+		return s[:MaxKindLen] + "..."
+	}
+	return s
 }
 
 // attrs builds an Attrs map from key, value pairs, leaving empty values out.
@@ -174,15 +206,18 @@ func receiverRow(contactID, email, linkedin, name, title, company, domain string
 }
 
 // PolledReplyKey is the de-duplication key of a polled reply: its message id
-// plus its label, so a label the team changes later is a new fact (RFC 6.7).
-// Both parts are length-prefixed, so no two pairs can flatten to one key.
+// plus its label (lowercased), so a label the team changes later is a new
+// fact (RFC 6.7). Both parts are length-prefixed, so no two pairs can flatten
+// to one key. A reply with no message id is keyed by events.Key instead.
 func PolledReplyKey(messageID, label string) api.EventID {
+	label = strings.ToLower(strings.TrimSpace(label))
 	return api.EventID("polled:" + strconv.Itoa(len(messageID)) + ":" + messageID + ":" + label)
 }
 
 // RequiredPaths are the body fields the parsers read, as dotted JSON paths at
 // their original places (contracts section 5.4). A receiver cutting an
-// oversized body down keeps exactly these.
+// oversized body down keeps exactly these: the keys, the times and the
+// person and company fields that make the receiver row.
 func RequiredPaths() []string {
 	return []string{
 		"event",

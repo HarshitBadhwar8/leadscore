@@ -354,3 +354,17 @@ func nestedAll(depth int) string {
 	}
 	return e
 }
+
+// A built-in detector kind in another case is the built-in kind, with its
+// checks: written without min it fails, rather than compiling as a registered
+// kind that fires for every lead.
+func TestDetectorKindNamesAreLowercased(t *testing.T) {
+	_, err := Compile([]byte(rubric("detectors:\n  hot: { kind: Count_In_Window, event: visit_x, window: 7d }\n")))
+	if err == nil || !strings.Contains(err.Error(), "min") {
+		t.Fatalf("err = %v, want count_in_window's missing min", err)
+	}
+	r := mustCompile(t, rubric("detectors:\n  hot: { kind: Count_In_Window, event: visit_x, window: 7d, min: 2 }\n"))
+	if d := r.Detectors()[0]; d.Kind != "count_in_window" || d.Min != 2 {
+		t.Errorf("%+v", d)
+	}
+}

@@ -1,8 +1,6 @@
 package apollo
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -42,7 +40,7 @@ type websiteVisit struct {
 		WebsiteURL string `json:"website_url"`
 		Name       string `json:"name"`
 	} `json:"account"`
-	VisitedAt string `json:"visited_at"`
+	VisitedAt string `json:"visited_at"` // RFC 3339 (S0 confirms the format)
 }
 
 func parseVisit(body []byte) (websiteVisit, error) {
@@ -78,18 +76,18 @@ func (v websiteVisit) employerDomain() string {
 	if d := strings.ToLower(strings.TrimSpace(v.Account.Domain)); d != "" {
 		return d
 	}
-	host, err := HostOf(v.Account.WebsiteURL)
+	host, err := hostOf(v.Account.WebsiteURL)
 	if err != nil {
 		return ""
 	}
 	return host
 }
 
-// HostOf reduces a bare host or a full URL to its lowercase host with no
+// hostOf reduces a bare host or a full URL to its lowercase host with no
 // `www.`. The scheme test is anchored on "://": a bare host with a doubled
 // path separator ("acme.io/careers//apply") must not be read as a URL with a
 // scheme, or its host comes back empty.
-func HostOf(raw string) (string, error) {
+func hostOf(raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return "", nil
@@ -123,20 +121,14 @@ func (v websiteVisit) identifiable() bool {
 	return v.email() != "" || strings.TrimSpace(v.Contact.LinkedinURL) != ""
 }
 
-// visitedAt is the vendor's visit time, and whether it was usable. With no
-// usable time the visit is keyed by a hash of its body (RFC 6.7) and recorded
-// at its received time.
+// visitedAt is the vendor's visit time, and whether it was usable (that the
+// workflow can send a per-visit time: S0 confirms). With no usable time the
+// visit is recorded at its received time and keyed by person, page and
+// received day (RFC 6.7).
 func (v websiteVisit) visitedAt() (time.Time, bool) {
 	t, err := time.Parse(time.RFC3339, strings.TrimSpace(v.VisitedAt))
 	if err != nil {
 		return time.Time{}, false
 	}
 	return t.UTC(), true
-}
-
-// bodyHash is the hex SHA-256 of a stored body: the de-duplication key of a
-// visit with no usable visit time, so a redelivered body keys the same.
-func bodyHash(body []byte) string {
-	h := sha256.Sum256(body)
-	return hex.EncodeToString(h[:])
 }

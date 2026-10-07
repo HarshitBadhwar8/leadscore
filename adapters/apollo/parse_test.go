@@ -1,6 +1,7 @@
 package apollo
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -38,7 +39,7 @@ func TestParseNotificationRequiresWhatCannotBeInferred(t *testing.T) {
 	}
 }
 
-func TestParseNotificationNormalisesEmail(t *testing.T) {
+func TestParseNotificationLowercasesEmail(t *testing.T) {
 	n, err := parseNotification([]byte(`{"event":"email_replied","contact_email":"  Ada@EXAMPLE.com "}`))
 	if err != nil || n.Email != "ada@example.com" {
 		t.Fatalf("%q %v", n.Email, err)
@@ -101,14 +102,14 @@ func TestHostOfIsAnchoredOnTheScheme(t *testing.T) {
 		"example.com/careers//apply":      "example.com",
 		"sub.example.com/take//step2":     "sub.example.com",
 	} {
-		if got, err := HostOf(raw); err != nil || got != want {
-			t.Errorf("HostOf(%q) = %q, %v; want %q", raw, got, err, want)
+		if got, err := hostOf(raw); err != nil || got != want {
+			t.Errorf("hostOf(%q) = %q, %v; want %q", raw, got, err, want)
 		}
 	}
-	if got, err := HostOf("   "); err != nil || got != "" {
+	if got, err := hostOf("   "); err != nil || got != "" {
 		t.Errorf("an absent value is not an error: %q %v", got, err)
 	}
-	if _, err := HostOf("://"); err == nil {
+	if _, err := hostOf("://"); err == nil {
 		t.Error("a malformed value must be told apart from an absent one")
 	}
 }
@@ -152,5 +153,31 @@ func TestRequiredPathsCoverWhatTheParsersRead(t *testing.T) {
 		if !have[p] {
 			t.Errorf("RequiredPaths lacks %s", p)
 		}
+	}
+}
+
+// A visit time after our received time is clamped to it; a missing one is
+// marked, timed at receipt.
+func TestVisitTimeIsClampedAndMarked(t *testing.T) {
+	evs, _, err := ParseRaw(raw(KindVisit, `{"event":"website_visited_site","visited_at":"2026-09-30T00:00:00Z","contact":{"email":"a@example.com"}}`))
+	if err != nil || !evs[0].At.Equal(received) || evs[0].Attrs[AttrNoVisitTime] != "" {
+		t.Errorf("future visit: %+v %v", evs, err)
+	}
+	evs, _, err = ParseRaw(raw(KindVisit, `{"event":"website_visited_site","contact":{"email":"a@example.com"}}`))
+	if err != nil || !evs[0].At.Equal(received) || evs[0].Attrs[AttrNoVisitTime] != "yes" {
+		t.Errorf("no visit time: %+v %v", evs, err)
+	}
+}
+
+// An unacted kind is reported as ignored, not dropped silently; an overlong
+// visit name is refused.
+func TestIgnoredAndOverlongKinds(t *testing.T) {
+	_, _, err := ParseRaw(raw(KindReply, `{"event":"email_opened","contact_email":"a@example.com"}`))
+	if !errors.Is(err, ErrIgnored) {
+		t.Errorf("unacted kind: %v", err)
+	}
+	long := strings.Repeat("x", 80)
+	if _, _, err := ParseRaw(raw(KindVisit, `{"event":"website_visited_`+long+`","contact":{"email":"a@example.com"}}`)); err == nil {
+		t.Error("an overlong visit kind was accepted")
 	}
 }

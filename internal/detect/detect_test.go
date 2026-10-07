@@ -149,13 +149,13 @@ func init() {
 }
 
 // A registered kind receives the subject's window events; a missing one does
-// not fire and is reported; kind names are compared lowercased.
+// not fire and is reported. Kind names arrive lowercased from the compiler.
 func TestRegisteredAndMissingKinds(t *testing.T) {
 	m, leads := setup(t, win("1", "A", "", "x", now), win("2", "A", "", "y", now), win("3", "B", "", "x", now))
 	specs := []rules.DetectorSpec{
-		{Name: "even", Kind: "Test_Even_Count", Subject: "lead"},
+		{Name: "even", Kind: "test_even_count", Subject: "lead"},
 		{Name: "gone", Kind: "not_in_this_build", Subject: "lead"},
-		{Name: "counted", Kind: "Count_In_Window", Subject: "lead", Event: "x", Window: day, Min: 1},
+		{Name: "counted", Kind: "count_in_window", Subject: "lead", Event: "x", Window: day, Min: 1},
 	}
 	res, errs := Evaluate(specs, m, leads, now)
 	if !res.Leads["A"]["even"] || res.Leads["B"]["even"] {
@@ -165,6 +165,6 @@ func TestRegisteredAndMissingKinds(t *testing.T) {
 		t.Errorf("missing kind: %+v %v", res.Leads, errs)
 	}
 	if !res.Leads["A"]["counted"] || !res.Leads["B"]["counted"] {
-		t.Errorf("a built-in kind written in another case: %+v", res.Leads)
+		t.Errorf("built-in kind: %+v", res.Leads)
 	}
 }

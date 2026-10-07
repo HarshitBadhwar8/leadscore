@@ -11,8 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/text/unicode/norm"
-
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/merge"
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
@@ -78,10 +76,7 @@ func Evaluate(specs []rules.DetectorSpec, m *model.Model, leads []api.LeadRef, n
 		if builtIn(s.Kind) {
 			continue
 		}
-		f, ok := api.DetectorFactory(strings.ToLower(s.Kind))
-		if !ok {
-			f, ok = api.DetectorFactory(s.Kind)
-		}
+		f, ok := api.DetectorFactory(s.Kind)
 		if !ok {
 			errs = append(errs, fmt.Errorf("detector %s has kind %q, which this build does not register; it does not fire", s.Name, s.Kind))
 			continue
@@ -131,7 +126,7 @@ func Evaluate(specs []rules.DetectorSpec, m *model.Model, leads []api.LeadRef, n
 }
 
 func builtIn(kind string) bool {
-	switch strings.ToLower(kind) {
+	switch kind {
 	case KindCount, KindFirstSeen, KindChange:
 		return true
 	}
@@ -142,14 +137,14 @@ func builtIn(kind string) bool {
 // times by kind, and its company's facts.
 func eval(s rules.DetectorSpec, custom api.Detector, subj api.Subject, ws []model.WindowEvent,
 	firstSeen map[string]time.Time, cf model.CompanyFact, now time.Time) bool {
-	switch strings.ToLower(s.Kind) {
+	switch s.Kind {
 	case KindCount:
-		return CountInWindow(ws, s.Event, s.Window, now) >= s.Min
+		return countInWindow(ws, s.Event, s.Window, now) >= s.Min
 	case KindFirstSeen:
-		first := FirstSeen(firstSeen, s.Event)
+		first := firstSeenOf(firstSeen, s.Event)
 		return !first.IsZero() && inWindow(first, s.Within, now)
 	case KindChange:
-		return Changed(cf, s.Field, s.Within, s.From, s.To, now)
+		return changed(cf, s.Field, s.Within, s.From, s.To, now)
 	}
 	evs := make([]api.Event, 0, len(ws))
 	for _, w := range ws {
@@ -159,10 +154,10 @@ func eval(s rules.DetectorSpec, custom api.Detector, subj api.Subject, ws []mode
 	return fired
 }
 
-// Matches reports whether an event kind matches a detector's `event`: equal,
+// matches reports whether an event kind matches a detector's `event`: equal,
 // or, for a pattern ending in `*`, starting with the part before it. Both are
 // compared lowercased.
-func Matches(pattern, kind string) bool {
+func matches(pattern, kind string) bool {
 	p, k := strings.ToLower(pattern), strings.ToLower(kind)
 	if pre, ok := strings.CutSuffix(p, "*"); ok {
 		return strings.HasPrefix(k, pre)
@@ -175,34 +170,34 @@ func inWindow(at time.Time, window time.Duration, now time.Time) bool {
 	return at.After(now.Add(-window)) && !at.After(now)
 }
 
-// CountInWindow counts the events of a matching kind in (now - window, now].
-func CountInWindow(ws []model.WindowEvent, event string, window time.Duration, now time.Time) int {
+// countInWindow counts the events of a matching kind in (now - window, now].
+func countInWindow(ws []model.WindowEvent, event string, window time.Duration, now time.Time) int {
 	n := 0
 	for _, w := range ws {
-		if Matches(event, w.Kind) && inWindow(w.At, window, now) {
+		if matches(event, w.Kind) && inWindow(w.At, window, now) {
 			n++
 		}
 	}
 	return n
 }
 
-// FirstSeen is the earliest first-seen time over the kinds matching event, or
+// firstSeenOf is the earliest first-seen time over the kinds matching event, or
 // the zero time.
-func FirstSeen(firstSeen map[string]time.Time, event string) time.Time {
+func firstSeenOf(firstSeen map[string]time.Time, event string) time.Time {
 	var first time.Time
 	for kind, t := range firstSeen {
-		if Matches(event, kind) && !t.IsZero() && (first.IsZero() || t.Before(first)) {
+		if matches(event, kind) && !t.IsZero() && (first.IsZero() || t.Before(first)) {
 			first = t
 		}
 	}
 	return first
 }
 
-// Changed reports whether a stored company fact changed within `within`: the
+// changed reports whether a stored company fact changed within `within`: the
 // fact holds a value set in the window (facts.<f>.at) that replaced a
 // different one (previous.<f>), matching from and to when given. A fact set
 // for the first time is not a change.
-func Changed(cf model.CompanyFact, field string, within time.Duration, from, to *string, now time.Time) bool {
+func changed(cf model.CompanyFact, field string, within time.Duration, from, to *string, now time.Time) bool {
 	cur, ok := cf.Facts[field]
 	prev, had := cf.Previous[field]
 	if !ok || !had || cur.Value == "" || !inWindow(cur.At, within, now) || sameText(cur.Value, prev.Value) {
@@ -220,5 +215,5 @@ func Changed(cf model.CompanyFact, field string, within time.Duration, from, to 
 // sameText compares text as the rubric does (contracts section 2): trimmed,
 // Unicode NFC, ignoring case.
 func sameText(a, b string) bool {
-	return strings.EqualFold(norm.NFC.String(strings.TrimSpace(a)), norm.NFC.String(strings.TrimSpace(b)))
+	return rules.NormText(a) == rules.NormText(b)
 }
