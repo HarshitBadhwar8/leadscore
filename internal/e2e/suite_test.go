@@ -133,8 +133,9 @@ func TestOptOutsWithVendors(t *testing.T) {
 				if o["status"] != "unsubscribed" || o["unsubscribed_origin"] != origin {
 					t.Errorf("%s outcome %v, want unsubscribed by %s", e, o, origin)
 				}
-				if r := ranked[e]; r["status"] != "unsubscribed" || r["lane"] != "" {
-					t.Errorf("%s Ranked status %q lane %q, want unsubscribed and no lane", e, r["status"], r["lane"])
+				if r := ranked[e]; r["status"] != "unsubscribed" || r["lane"] != "" || !strings.Contains(r["reasons"], "unsubscribed") {
+					t.Errorf("%s Ranked status %q lane %q reasons %q, want unsubscribed, no lane, and the block in the reasons",
+						e, r["status"], r["lane"], r["reasons"])
 				}
 			}
 			if r := ranked[nora]; r["full_name"] != "Nora Klein" {
@@ -153,7 +154,7 @@ func TestOptOutsCSVOnly(t *testing.T) {
 			in := newInstall(t, kind, csvOnlyC)
 			in.setStatus(lea, "unsubscribed")
 			in.setStatus(nora, "unsubscribed")
-			res := in.run(t1)
+			res := in.run(t1, "override_unmatched:") // Nora's row waits for her
 			if !hasPrefix(res.Problems, "override_unmatched:") {
 				t.Errorf("run 1 problems %v, want override_unmatched for Nora's waiting row", res.Problems)
 			}
@@ -162,9 +163,16 @@ func TestOptOutsCSVOnly(t *testing.T) {
 			if hasPrefix(res.Problems, "override_unmatched:") {
 				t.Errorf("run 2 problems %v: Nora's row should have matched", res.Problems)
 			}
+			ranked := map[string]map[string]string{}
+			for _, r := range in.rows(model.TableRanked) {
+				ranked[r["email"]] = r
+			}
 			for _, e := range []string{lea, nora} {
 				if o := in.outcome(e); o["status"] != "unsubscribed" || o["unsubscribed_origin"] != "manual" {
 					t.Errorf("%s outcome %v, want unsubscribed by manual", e, o)
+				}
+				if r := ranked[e]; r["lane"] != "" || !strings.Contains(r["reasons"], "unsubscribed") {
+					t.Errorf("%s Ranked lane %q reasons %q, want no lane and the block in the reasons", e, r["lane"], r["reasons"])
 				}
 			}
 			in.checkExport("run 2", optOutExportC)
@@ -204,6 +212,148 @@ func TestPolling(t *testing.T) {
 	}
 	if n := len(in.hub.IDs("deals")); n != 1 {
 		t.Errorf("%d HubSpot deals, want Tom's one", n)
+	}
+}
+
+// Safety (a): a lead that holds its cold push is never cold-contacted again
+// when it starts matching another cold lane, and an opt-out after contact
+// flips its export row (expected.md, "Safety cases").
+func TestNoSecondColdPushAfterALaneChange(t *testing.T) {
+	for _, kind := range stores {
+		t.Run(kind, func(t *testing.T) {
+			in := newInstall(t, kind, vendorV)
+			if res := in.run(t1); res.Pushed != 5 {
+				t.Errorf("run 1 pushed %d, want 5", res.Pushed)
+			}
+			in.checkColdOnly(laneChangePushes)
+
+			in.receive(t1.Add(30*time.Minute), visitBody("demo", jonas, "kranlogistik.example", t1.Add(30*time.Minute)))
+			if res := in.run(t2); res.Pushed != 0 {
+				t.Errorf("run 2 pushed %d, want 0: Jonas already holds his cold push", res.Pushed)
+			}
+			in.checkColdOnly(laneChangePushes)
+			in.checkRankedRow("run 2", jonasHotV2)
+			if c, _ := in.apollo.ContactByEmail(jonas); len(c.Sequences) != 1 || c.Sequences["seq-fleet"] == "" {
+				t.Errorf("Jonas's sequences %v, want only Fleet ops intro", c.Sequences)
+			}
+			in.checkExportRow("run 2", inesExportV2)
+
+			in.receive(t2.Add(30*time.Minute), replyBody("unsubscribed", ines))
+			if res := in.run(t2.Add(time.Hour)); res.Pushed != 0 {
+				t.Errorf("run 3 pushed %d, want 0", res.Pushed)
+			}
+			in.checkColdOnly(laneChangePushes)
+			in.checkExportRow("run 3", inesExportV3)
+			r := in.rankedRow(ines)
+			if r["status"] != "unsubscribed" || r["lane"] != "" || !strings.Contains(r["reasons"], "unsubscribed") {
+				t.Errorf("Ines's Ranked row %v, want unsubscribed, no lane, and the block in the reasons", r)
+			}
+		})
+	}
+}
+
+// Safety (b): a lead only the receiver reported is never cold-pushed (and
+// raises no receiver_only_push, which run() would refuse).
+func TestReceiverOnlyLeadIsNeverColdPushed(t *testing.T) {
+	for _, kind := range stores {
+		t.Run(kind, func(t *testing.T) {
+			in := newInstall(t, kind, vendorV)
+			in.receive(t0, visitBody("demo", otto, "kranlogistik.example", t1.Add(-24*time.Hour)))
+			if res := in.run(t1); res.Pushed != 5 {
+				t.Errorf("run 1 pushed %d, want 5", res.Pushed)
+			}
+			in.checkColdOnly(receiverOnlyPushes)
+			in.checkRankedRow("run 1", ottoRanked)
+			in.checkExportRow("run 1", ottoExport)
+			if _, ok := in.apollo.ContactByEmail(otto); ok {
+				t.Error("Apollo holds a contact for a receiver-only lead")
+			}
+		})
+	}
+}
+
+// Safety (c): two leads at one company replying in one run open one deal,
+// and the deal blocks a colleague's cold push.
+func TestOneDealPerCompanyBlocksAColleague(t *testing.T) {
+	for _, kind := range stores {
+		t.Run(kind, func(t *testing.T) {
+			in := newInstall(t, kind, vendorV)
+			in.receive(t0, replyBody("replied_positive", anna), replyBody("replied_positive", jonas))
+			if res := in.run(t1); res.Pushed != 4 {
+				t.Errorf("run 1 pushed %d, want 4 (Anna, Jonas, Lea, Ines)", res.Pushed)
+			}
+			got := map[string]string{}
+			for _, r := range in.pushes() {
+				if r["called_at"] == "" {
+					continue // a step never called (Pia's, cancelled by the deal) holds nothing
+				}
+				if r["state"] != "done" {
+					t.Errorf("called ledger row %v not done", r)
+				}
+				got[r["email"]] = r["lane_id"]
+			}
+			if !mapsEqual(got, dealPushes) {
+				t.Errorf("called %v, want %v", got, dealPushes)
+			}
+			contacts, deals := in.hub.IDs("contacts"), in.hub.IDs("deals")
+			if len(contacts) != 2 || len(deals) != 1 {
+				t.Fatalf("HubSpot holds contacts %v and deals %v, want two and one", contacts, deals)
+			}
+			if n := in.hub.Prop("deals", deals[0], "dealname"); n != "kranlogistik.example" {
+				t.Errorf("the deal is %q", n)
+			}
+			if a := in.hub.Associated("deals", deals[0], "contacts"); len(a) != 2 {
+				t.Errorf("the deal's contacts %v, want Anna's and Jonas's", a)
+			}
+			for _, id := range contacts {
+				e := in.hub.Prop("contacts", id, "email")
+				for k, v := range dealContacts[e] {
+					if got := in.hub.Prop("contacts", id, k); got != v {
+						t.Errorf("%s's contact %s = %q, want %q", e, k, got, v)
+					}
+				}
+			}
+			if n := in.apollo.Count("contact"); n != len(dealApolloContacts) {
+				t.Errorf("Apollo created %d contacts, want %v", n, dealApolloContacts)
+			}
+			for _, e := range dealApolloContacts {
+				if _, ok := in.apollo.ContactByEmail(e); !ok {
+					t.Errorf("no Apollo contact for %s", e)
+				}
+			}
+
+			if res := in.run(t2); res.Pushed != 0 {
+				t.Errorf("run 2 pushed %d, want 0", res.Pushed)
+			}
+			for e, st := range dealStatusesRun2 {
+				if o := in.outcome(e); o["status"] != st {
+					t.Errorf("%s outcome %v, want %s", e, o, st)
+				}
+			}
+			if _, ok := in.apollo.ContactByEmail(pia); ok {
+				t.Error("Pia was cold-pushed although Kran has a deal")
+			}
+		})
+	}
+}
+
+// checkColdOnly: the ledger holds exactly these leads' cold pushes (lane by
+// email), every step done, and Apollo one contact and one enrollment each.
+func (in *install) checkColdOnly(want map[string]string) {
+	in.t.Helper()
+	got := map[string]string{}
+	rows := in.pushes()
+	for _, r := range rows {
+		if r["state"] != "done" {
+			in.t.Errorf("ledger row %v not done", r)
+		}
+		got[r["email"]] = r["lane_id"]
+	}
+	if !mapsEqual(got, want) || len(rows) != 2*len(want) {
+		in.t.Errorf("ledger %v (%d rows), want %v (two steps each)", got, len(rows), want)
+	}
+	if c, e := in.apollo.Count("contact"), in.apollo.Count("enroll"); c != len(want) || e != len(want) {
+		in.t.Errorf("Apollo made %d contacts and %d enrollments, want %d of each", c, e, len(want))
 	}
 }
 

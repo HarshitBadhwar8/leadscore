@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -48,6 +49,7 @@ var (
 )
 
 const (
+	runAccount     = "leadscore-run@e2e.iam.gserviceaccount.com"
 	apolloKey      = "e2e-apollo-key"
 	receiverSecret = "e2e-receiver-secret"
 	mailbox        = "mb-e2e"
@@ -99,7 +101,7 @@ type install struct {
 // examples/leads.csv as its leads.
 func newInstall(t *testing.T, kind string, v variant) *install {
 	t.Helper()
-	in := &install{t: t, v: v, kind: kind, dir: t.TempDir(), clock: &clock{now: t0}, client: &http.Client{Timeout: 30 * time.Second}}
+	in := &install{t: t, v: v, kind: kind, dir: t.TempDir(), clock: &clock{now: t0}, client: loopbackClient(t)}
 	in.leads = readCSV(t, filepath.Join("..", "..", "examples", "leads.csv"))
 
 	rubricSrc := filepath.Join("..", "..", "examples", "rubric.yml")
@@ -116,7 +118,8 @@ func newInstall(t *testing.T, kind string, v variant) *install {
 	in.write("rubric.yml", string(text))
 
 	var cfg strings.Builder
-	cfg.WriteString("version: 1\nrubric: rubric.yml\nexport: { dir: out }\n")
+	// schedule 1h: the runs here are an hour apart, so none counts as skipped.
+	cfg.WriteString("version: 1\nrubric: rubric.yml\nexport: { dir: out }\nschedule: 1h\n")
 	switch kind {
 	case "sqlite":
 		cfg.WriteString("store: { type: sqlite, path: leadscore.db }\nsources:\n  - { id: leads, type: csv, path: leads.csv }\n")
@@ -135,7 +138,17 @@ func newInstall(t *testing.T, kind string, v variant) *install {
 		fg.CreateBucket("lease")
 		srv := httptest.NewServer(gcs.Route(fg, in.fs))
 		t.Cleanup(srv.Close)
-		in.sheetID = in.fs.NewSpreadsheet("leadscore")
+		// Made the way `leadscore setup sheet` makes it (hourly recalculation,
+		// UTC, the template's tabs), so the sheets checks pass.
+		svc, err := sheets.Connect(t.Context(), api.Config{"base_url": srv.URL, "_http_client": srv.Client()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		in.sheetID, err = sheets.Create(t.Context(), svc, sheets.Template{Title: "leadscore", Accounts: sheets.Accounts{Run: runAccount, Receiver: runAccount}, Now: t0})
+		if err != nil {
+			t.Fatal(err)
+		}
+		in.fs.SetCaller(runAccount)
 		fmt.Fprintf(&cfg, "store: { type: sheets, spreadsheet: %q, lease_bucket: lease, base_url: %q }\n", in.sheetID, srv.URL)
 		fmt.Fprintf(&cfg, "sources:\n  - { id: leads, type: sheetsource, tabs: [Leads], base_url: %q }\n", srv.URL)
 		if !v.vendor {
@@ -173,7 +186,7 @@ func newInstall(t *testing.T, kind string, v variant) *install {
 		fmt.Fprintf(&cfg, "enrich: { type: apollo, base_url: %q }\n", asrv.URL)
 		fmt.Fprintf(&cfg, "sinks:\n  apollo: { base_url: %q, mailbox_id: %q }\n", asrv.URL, mailbox)
 		fmt.Fprintf(&cfg, "  hubspot: { base_url: %q, pipeline: %q, stage: %q }\n", hsrv.URL, fakehub.PipelineLabel, fakehub.StageOpenName)
-		in.recv = receiver.NewHandler(receiver.Options{Store: in.store, Events: in.events, Now: in.clock.Now,
+		in.recv = receiver.NewHandler(receiver.Options{Store: in.store, Events: in.events, Now: in.clock.Now, BatchWindow: time.Millisecond,
 			Getenv: func(k string) string {
 				if k == receiver.SecretVar {
 					return receiverSecret
@@ -252,31 +265,57 @@ func (in *install) addLead(line string) {
 	in.saveInputs()
 }
 
-// run is one run at the given time, through RunWith with DefaultHooks. It
-// fails the test on an error or on a problem no case here should raise.
-func (in *install) run(at time.Time) api.RunResult {
+// run is one run at the given time, through RunWith with DefaultHooks
+// (its summary line goes to the test log). The run must succeed, be healthy
+// and not skipped, and raise no problem except those whose key starts with
+// one of allowed (a case lists what it expects).
+func (in *install) run(at time.Time, allowed ...string) api.RunResult {
 	in.t.Helper()
 	in.clock.Set(at)
-	res, err := engine.RunWith(context.Background(), api.RunOptions{ConfigPath: filepath.Join(in.dir, "leadscore.yml")},
-		engine.DefaultHooks(), in.clock.Now, in.client)
+	var out bytes.Buffer
+	res, err := engine.RunWithOutput(context.Background(), api.RunOptions{ConfigPath: filepath.Join(in.dir, "leadscore.yml")},
+		engine.DefaultHooks(), in.clock.Now, in.client, &out)
+	in.t.Logf("run at %s: %s", at.Format(time.RFC3339), strings.TrimSpace(out.String()))
 	if err != nil {
 		in.t.Fatalf("run at %s: %v", at.Format(time.RFC3339), err)
 	}
+	if res.Skipped {
+		in.t.Fatalf("run at %s was skipped", at.Format(time.RFC3339))
+	}
 	for _, p := range res.Problems {
-		for _, bad := range []string{"run_failed", "step_failed", "source_failed", "sink_failed", "lookup_failed",
-			"lane_sink_unregistered", "rubric_unknown_field", "poll_failed", "enrich_failed", "commit_too_large",
-			"apollo-sequences", "hubspot", "deadline_passed"} {
-			if p == bad || strings.HasPrefix(p, bad+":") {
-				in.t.Errorf("run at %s raised %s (all problems: %v)", at.Format(time.RFC3339), p, res.Problems)
-			}
+		if !slices.ContainsFunc(allowed, func(a string) bool { return strings.HasPrefix(p, a) }) {
+			in.t.Errorf("run at %s raised %s (all problems: %v)", at.Format(time.RFC3339), p, res.Problems)
 		}
+	}
+	if !res.Healthy {
+		in.t.Errorf("run at %s is unhealthy: %v", at.Format(time.RFC3339), res.Problems)
 	}
 	return res
 }
 
+// loopbackClient is the runs' HTTP client: every fake listens on loopback,
+// so a dial anywhere else fails the test, naming the host.
+func loopbackClient(t *testing.T) *http.Client {
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	dial := tr.DialContext
+	tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, _, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, err
+		}
+		if ip := net.ParseIP(host); host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+			t.Errorf("a run dialled %s, which is not a fake", host)
+			return nil, fmt.Errorf("e2e: refusing to dial %s outside loopback", host)
+		}
+		return dial(ctx, network, addr)
+	}
+	return &http.Client{Transport: tr, Timeout: 30 * time.Second}
+}
+
 // receive posts Apollo workflow bodies to the in-process receiver at the
-// given time, all at once (the receiver gathers them into one append), and
-// requires each to be stored (2xx).
+// given time, all at once, and
+// requires each to be stored (2xx). Posts that arrive within the batch
+// window share an append.
 func (in *install) receive(at time.Time, bodies ...string) {
 	in.t.Helper()
 	in.clock.Set(at)
@@ -404,6 +443,45 @@ func (in *install) checkRanked(when string, want []ranked) {
 			in.t.Errorf("%s: Ranked row for %s\n got %+v\nwant %+v\nreasons: %s", when, w.email, g, w, r["reasons"])
 		}
 	}
+}
+
+// rankedRow returns a lead's Ranked row.
+func (in *install) rankedRow(email string) api.Row {
+	in.t.Helper()
+	for _, r := range in.rows(model.TableRanked) {
+		if r["email"] == email {
+			return r
+		}
+	}
+	in.t.Errorf("no Ranked row for %s", email)
+	return api.Row{}
+}
+
+// checkRankedRow compares one lead's Ranked row with a hand-derived one.
+func (in *install) checkRankedRow(when string, w ranked) {
+	in.t.Helper()
+	r := in.rankedRow(w.email)
+	g := ranked{r["email"], r["linkedin_url"], r["full_name"], r["company_domain"],
+		r["fit_signal"], r["tier"], r["priority"], r["hot"],
+		r["account_score"], r["contact_score"], r["score"], r["status"], r["lane"]}
+	if g != w {
+		in.t.Errorf("%s: Ranked row for %s\n got %+v\nwant %+v\nreasons: %s", when, w.email, g, w, r["reasons"])
+	}
+}
+
+// checkExportRow compares one lead's nurture row with a hand-derived one.
+func (in *install) checkExportRow(when string, w exported) {
+	in.t.Helper()
+	for _, r := range in.rows(model.ExportTable("nurture")) {
+		if r["email"] == w.email {
+			if r["score"] != w.score || r["status"] != w.status || r["do_not_contact"] != w.dnc {
+				in.t.Errorf("%s: nurture row for %s: score %q status %q do_not_contact %q, want %q %q %q",
+					when, w.email, r["score"], r["status"], r["do_not_contact"], w.score, w.status, w.dnc)
+			}
+			return
+		}
+	}
+	in.t.Errorf("%s: %s is not on the nurture list", when, w.email)
 }
 
 // checkExport compares the nurture export with a hand-derived list (score
