@@ -1,0 +1,26 @@
+{
+  "method": "POST",
+  "path": "/oauth/v2/private-apps/get/access-token-info",
+  "query": "",
+  "request_headers": [
+    "Authorization",
+    "Content-Type"
+  ],
+  "request_body": {
+    "tokenKey": "<the token>"
+  },
+  "status": 200,
+  "response_headers": {
+    "Content-Type": "application/json;charset=utf-8"
+  },
+  "response_body": {
+    "userId": 1,
+    "hubId": 1000,
+    "appId": 2000,
+    "scopes": [
+      "crm.objects.contacts.read",
+      "crm.objects.contacts.write"
+    ]
+  },
+  "provisional": true
+}

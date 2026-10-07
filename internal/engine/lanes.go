@@ -42,6 +42,13 @@ const (
 	maxAttempts  = 3  // counted attempts before a step is failed
 	batchLeads   = 25 // leads per pushing batch
 	lookupMargin = 10 // percent: extra new pushes looked up to replace leads a lookup removes
+	// dealSearchLag is how long after a deal step's latest call (with no
+	// deal id back) a lookup's "no deal" answer for its company is not
+	// trusted: HubSpot's search can lag a fresh create. S0 confirms the lag
+	// is seconds. The company stays held until a lookup at least 15 minutes
+	// after the step's last call; a step retried every run keeps it held
+	// until it settles.
+	dealSearchLag = 15 * time.Minute
 )
 
 // The sinks and destinations the engine's own rules name (RFC 6.10, 6.12):
@@ -465,6 +472,29 @@ func (v *view) dealWaits(id api.LeadID) bool {
 			continue
 		}
 		if !c.checked.After(p.CalledAt) {
+			return true
+		}
+	}
+	return false
+}
+
+// recentDealCall reports a deal step at the company whose latest call was
+// less than dealSearchLag ago and has no deal id: its deal may exist and not
+// yet show in HubSpot's search, so a lookup's deal_lost for the company is
+// not trusted (contracts section 8). called_at keeps the first call, so the
+// latest is read from updated_at, which every call's result write sets
+// (any later write only makes the hold longer: the safe direction).
+func (v *view) recentDealCall(domain string, now time.Time) bool {
+	for _, k := range v.company(domain).dealRows {
+		p := v.m.Pushes[k]
+		if p.VendorID != "" || p.CalledAt.IsZero() {
+			continue
+		}
+		last := p.CalledAt
+		if p.UpdatedAt.After(last) {
+			last = p.UpdatedAt
+		}
+		if now.Sub(last) < dealSearchLag {
 			return true
 		}
 	}

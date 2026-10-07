@@ -1,0 +1,66 @@
+{
+  "method": "GET",
+  "path": "/crm/v3/pipelines/deals",
+  "query": "",
+  "request_headers": [
+    "Authorization"
+  ],
+  "request_body": null,
+  "status": 200,
+  "response_headers": {
+    "Content-Type": "application/json;charset=utf-8"
+  },
+  "response_body": {
+    "results": [
+      {
+        "id": "default",
+        "label": "Sales Pipeline",
+        "displayOrder": 0,
+        "archived": false,
+        "stages": [
+          {
+            "id": "appointmentscheduled",
+            "label": "Appointment scheduled",
+            "displayOrder": 0,
+            "archived": false,
+            "metadata": {
+              "isClosed": "false",
+              "probability": "0.2"
+            }
+          },
+          {
+            "id": "qualifiedtobuy",
+            "label": "Qualified to buy",
+            "displayOrder": 1,
+            "archived": false,
+            "metadata": {
+              "isClosed": "false",
+              "probability": "0.4"
+            }
+          },
+          {
+            "id": "closedwon",
+            "label": "Closed won",
+            "displayOrder": 2,
+            "archived": false,
+            "metadata": {
+              "isClosed": "true",
+              "probability": "1.0"
+            }
+          },
+          {
+            "id": "closedlost",
+            "label": "Closed lost",
+            "displayOrder": 3,
+            "archived": false,
+            "metadata": {
+              "isClosed": "true",
+              "probability": "0.0"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "provisional": true
+}

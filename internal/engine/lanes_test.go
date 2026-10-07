@@ -78,8 +78,10 @@ func TestDealEarlierInRunBlocksColleaguesColdPush(t *testing.T) {
 		t.Fatal("Ben was cold-pushed while his company holds a deal")
 	}
 
-	// Run 3: the HubSpot lookup finds the company's deal closed-lost: the
-	// company is released, and Ben (now looked up) may be pushed.
+	// Run 3, past the search-lag window: the HubSpot lookup finds the
+	// company's deal closed-lost: the company is released, and Ben (now
+	// looked up) may be pushed.
+	w.clock = func() time.Time { return time.Now().Add(dealSearchLag + time.Minute) }
 	w.lookup("hubspot").SetDeal("acme.example", w.push("ana@acme.example", "warm", "deal")["vendor_id"], "lost")
 	w.mustRun()
 	if s := w.outcome("ben@acme.example")["status"]; s != statusNew {
