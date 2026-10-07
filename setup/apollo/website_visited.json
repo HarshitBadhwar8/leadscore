@@ -1,0 +1,18 @@
+{
+  "event": "website_visited_pricing",
+  "visited_at": "<Apollo's visit time variable>",
+  "contact": {
+    "id": "<Apollo's contact id variable>",
+    "email": "<Apollo's contact email variable>",
+    "linkedin_url": "<Apollo's contact LinkedIn URL variable>",
+    "first_name": "<Apollo's contact first name variable>",
+    "last_name": "<Apollo's contact last name variable>",
+    "title": "<Apollo's contact title variable>",
+    "company": "<Apollo's contact company name variable>"
+  },
+  "account": {
+    "domain": "<Apollo's account domain variable>",
+    "website_url": "<Apollo's account website variable>",
+    "name": "<Apollo's account name variable>"
+  }
+}

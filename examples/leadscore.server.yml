@@ -1,0 +1,34 @@
+# leadscore.yml for Docker on a server or VM with a domain (contracts section
+# 9.2). Copy it into the folder holding compose.yaml and your rubric, as
+# leadscore.yml, and enable the compose file's Caddy service for HTTPS.
+# Every key is in the contracts doc, section 3.
+version: 1
+
+# The rubric file, beside this one.
+rubric: rubric.yml
+
+# SQLite on the compose file's named volume.
+store: { type: sqlite, path: /data/leadscore.db }
+
+# Your lead files, in this folder (mounted at /config).
+sources:
+  - { id: leads, type: csv, path: leads.csv }
+
+# Replies, sends and opt-outs arrive as Apollo workflow webhooks.
+replies: receiver
+
+receiver:
+  # Where Apollo posts: your domain, served by the compose file's Caddy.
+  public_url: https://leads.example.com
+  # The visit workflows you created from setup/apollo/, as visit_<name>, so a
+  # silent workflow is noticed.
+  visit_events: [visit_pricing]
+
+# The export lists, in ./out on the server.
+export: { dir: /out }
+
+# Off until you have reviewed a dry run (`leadscore run --dry-run`).
+pushes_enabled: false
+
+# How often the container runs the loop (read when it starts).
+schedule: 15m
