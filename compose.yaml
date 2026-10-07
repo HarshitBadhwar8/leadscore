@@ -32,8 +32,9 @@ services:
       - ./:/config:ro
       # The SQLite store, on a named volume that outlives the container.
       - leadscore-data:/data
-      # The export lists. On a Linux host give the folder to the container's
-      # user first: `mkdir -p out && sudo chown 10001:10001 out`.
+      # The export lists (personal data): `mkdir -p out && chmod 700 out`
+      # first, and on a Linux host give the folder to the container's user:
+      # `sudo chown 10001:10001 out`.
       - ./out:/out
     ports:
       # The receiver listens on 8080 inside the container (leave
