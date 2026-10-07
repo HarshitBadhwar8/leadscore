@@ -58,10 +58,11 @@ func Time(e api.Event) time.Time {
 // length-prefixed, so two different events never flatten to one key.
 //
 //   - A polled `reply`: its message id plus label (apollo.PolledReplyKey).
-//     With no message id, the person key, label and time instead, so two
-//     people's replies never collapse into one.
+//     With no message id, the person key (contact id first), label and time
+//     (else received time) instead, so two people's replies never collapse.
 //   - A receiver visit: the person key (contact id, else email, else LinkedIn
-//     URL), the kind and the vendor's visit time. With no usable visit time,
+//     URL), the kind and the vendor's visit time as sent (before the clamp to
+//     the received time, so a retry keys the same). With no usable visit time,
 //     the person key, the page and the UTC day it was received, so a
 //     redelivery the same day is one event and a visit on another day is a new
 //     one. A company-only visit uses the employer domain in place of the
@@ -83,16 +84,25 @@ func Key(e api.Event) api.EventID {
 		if id := e.Attrs[apollo.AttrMessageID]; id != "" {
 			return apollo.PolledReplyKey(id, label)
 		}
-		return join("polled", "person", personKey(e), label, at)
+		return join("polled", "person", person(e), label, model.FormatTime(Time(e)))
 	case e.Origin == OriginReceiver && strings.HasPrefix(kind, "visit_"):
-		who := visitPerson(e)
+		who := person(e)
+		if strings.HasPrefix(who, "domain:") {
+			who = ""
+		}
 		if who == "" {
 			who = "domain:" + e.Domain
 		}
 		if e.Attrs[apollo.AttrNoVisitTime] != "" {
 			return join("visit", kind, "day", who, e.Attrs[apollo.AttrPage], e.ReceivedAt.UTC().Format(time.DateOnly))
 		}
-		return join("visit", kind, "at", who, at)
+		// The vendor's own visit time, before any clamp, so a retried
+		// delivery keys the same whenever it arrives.
+		visited := e.Attrs[apollo.AttrVisitedAt]
+		if visited == "" {
+			visited = at
+		}
+		return join("visit", kind, "at", who, visited)
 	case e.Origin == OriginReceiver:
 		subject := e.Attrs[apollo.AttrConversationLink]
 		if subject == "" {
@@ -105,19 +115,14 @@ func Key(e api.Event) api.EventID {
 	return join("source", e.Origin, personKey(e), kind, at)
 }
 
-// visitPerson is a receiver visit's person key: the vendor's contact id first,
-// since it survives the vendor correcting the person's email.
-func visitPerson(e api.Event) string {
+// person is a vendor event's person key: the vendor's contact id first, since
+// it survives the vendor correcting the person's email, then the email, the
+// LinkedIn URL and the domain.
+func person(e api.Event) string {
 	if id := strings.TrimSpace(e.Attrs[apollo.AttrContactID]); id != "" {
 		return "id:" + id
 	}
-	if e.Email != "" {
-		return "email:" + e.Email
-	}
-	if e.LinkedInURL != "" {
-		return "linkedin:" + e.LinkedInURL
-	}
-	return ""
+	return personKey(e)
 }
 
 func personKey(e api.Event) string {
@@ -296,12 +301,14 @@ func Apply(m *model.Model, lead api.LeadID, e api.Event, labels map[string]strin
 			applyOptOut(m, lead, at, origin, held)
 		}
 		for _, other := range holders(m, e) {
-			if other == lead {
+			if other == lead || !applyOptOut(m, other, at, origin, held) {
 				continue
 			}
-			applyOptOut(m, other, at, origin, held)
-			m.Put(model.TableLog, model.LogEntry{At: received, Level: "warn", LeadID: other, Kind: merge.LogKeyConflict,
-				Message: fmt.Sprintf("an opt-out resolved to lead %s carries an identity key of lead %s; the opt-out was applied to both", lead, other)})
+			msg := fmt.Sprintf("an opt-out that matched no lead carries an identity key of lead %s; the opt-out was applied to it", other)
+			if lead != "" {
+				msg = fmt.Sprintf("an opt-out resolved to lead %s carries an identity key of lead %s; the opt-out was applied to both", lead, other)
+			}
+			m.Put(model.TableLog, model.LogEntry{At: received, Level: "warn", LeadID: other, Kind: merge.LogKeyConflict, Message: msg})
 		}
 		return
 	}
@@ -336,7 +343,8 @@ func Apply(m *model.Model, lead api.LeadID, e api.Event, labels map[string]strin
 // applyOptOut records an opt-out on one live lead: the time kept at its
 // earliest, the origin always the automated one, even over `manual`
 // (contracts section 5.3). An Apollo opt-out also marks the lead Apollo-held.
-func applyOptOut(m *model.Model, lead api.LeadID, at time.Time, origin string, held bool) {
+// It reports whether the outcome changed.
+func applyOptOut(m *model.Model, lead api.LeadID, at time.Time, origin string, held bool) bool {
 	o := m.Outcomes[model.Key(lead)]
 	before := o
 	o.LeadID = lead
@@ -344,12 +352,14 @@ func applyOptOut(m *model.Model, lead api.LeadID, at time.Time, origin string, h
 		o.UnsubscribedAt = at
 	}
 	o.UnsubscribedOrigin = origin
-	if !reflect.DeepEqual(o, before) {
+	changed := !reflect.DeepEqual(o, before)
+	if changed {
 		m.Put(model.TableOutcomes, o)
 	}
 	if held {
 		markHeld(m, lead, at)
 	}
+	return changed
 }
 
 // holders are the live leads holding one of the event's identity keys: its

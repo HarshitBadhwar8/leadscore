@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -86,8 +87,11 @@ func RegisterSink(typ string, f func(Config) (Sink, error)) {
 	sinks.register(typ, f, f == nil)
 }
 
+// RegisterDetector stores the kind lowercased, as the rubric compares detector
+// kinds (contracts section 2): two kinds that differ only in case collide and
+// panic as a duplicate.
 func RegisterDetector(kind string, f func(params Config) (Detector, error)) {
-	detectors.register(kind, f, f == nil)
+	detectors.register(strings.ToLower(kind), f, f == nil)
 }
 
 func RegisterBackend(typ string, f func(Config) (Backend, EventLog, error)) {
@@ -109,7 +113,7 @@ func LookupFactory(typ string) (func(Config) (Lookup, error), bool) { return loo
 func SinkFactory(typ string) (func(Config) (Sink, error), bool) { return sinks.lookup(typ) }
 
 func DetectorFactory(kind string) (func(params Config) (Detector, error), bool) {
-	return detectors.lookup(kind)
+	return detectors.lookup(strings.ToLower(kind))
 }
 
 func BackendFactory(typ string) (func(Config) (Backend, EventLog, error), bool) {

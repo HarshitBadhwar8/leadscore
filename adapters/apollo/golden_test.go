@@ -66,14 +66,14 @@ var goldens = map[string]golden{
 	"apollo_visit_identified.json": {
 		events: []api.Event{{Kind: "visit_pricing", Email: "lee.park@example.net", LinkedInURL: "https://linkedin.example/in/lee-park-example/",
 			Domain: "example.net", At: time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC), ReceivedAt: goldenReceived, Origin: "receiver",
-			Attrs: map[string]string{"contact_id": "ct-2002", "full_name": "Lee Park", "title": "Head of Platform", "company": "Example Net"}}},
+			Attrs: map[string]string{"contact_id": "ct-2002", "full_name": "Lee Park", "title": "Head of Platform", "company": "Example Net", "visited_at": "2026-08-20T10:00:00.000Z"}}},
 		rows: []api.InputRow{row("contact_id", "ct-2002", "email", "lee.park@example.net",
 			"linkedin_url", "https://linkedin.example/in/lee-park-example/", "full_name", "Lee Park",
 			"title", "Head of Platform", "company.name", "Example Net", "company.domain", "example.net")},
 	},
 	"apollo_visit_company_only.json": {
 		events: []api.Event{{Kind: "visit_pricing", Domain: "example.org", At: time.Date(2026, 8, 21, 9, 30, 0, 0, time.UTC),
-			ReceivedAt: goldenReceived, Origin: "receiver", Attrs: map[string]string{"company": "Example Org"}}},
+			ReceivedAt: goldenReceived, Origin: "receiver", Attrs: map[string]string{"company": "Example Org", "visited_at": "2026-08-21T09:30:00.000Z"}}},
 	},
 	"apollo_visit_no_visited_at.json": {
 		events: []api.Event{{Kind: "visit_docs", Email: "lee.park@example.net", At: goldenReceived, ReceivedAt: goldenReceived,
@@ -83,7 +83,7 @@ var goldens = map[string]golden{
 	"apollo_visit_linkedin_only.json": {
 		events: []api.Event{{Kind: "visit_pricing", LinkedInURL: "https://linkedin.example/in/ada-example/", Domain: "example.com",
 			At: time.Date(2026, 8, 22, 8, 0, 0, 0, time.UTC), ReceivedAt: goldenReceived, Origin: "receiver",
-			Attrs: map[string]string{"full_name": "Ada"}}},
+			Attrs: map[string]string{"full_name": "Ada", "visited_at": "2026-08-22T08:00:00.000Z"}}},
 		rows: []api.InputRow{row("linkedin_url", "https://linkedin.example/in/ada-example/", "full_name", "Ada", "company.domain", "example.com")},
 	},
 	"apollo_visit_no_identity.json": {reject: "neither a contact nor a company"},

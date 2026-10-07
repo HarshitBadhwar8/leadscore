@@ -46,6 +46,9 @@ const (
 	// AttrNoVisitTime is "yes" on a visit with no usable visited_at: it is
 	// timed at receipt and keyed by person, page and received day (RFC 6.7).
 	AttrNoVisitTime = "no_visited_at"
+	// AttrVisitedAt is the vendor's visit time as sent (UTC), before it is
+	// clamped to the received time; the de-duplication key reads it.
+	AttrVisitedAt = "visited_at"
 	AttrLabel       = "label"      // polled replies
 	AttrMessageID   = "message_id" // polled replies
 )
@@ -147,6 +150,7 @@ func parseVisitRaw(raw api.RawEvent) ([]api.Event, []api.InputRow, error) {
 		// A visit cannot happen after we received it: a clock ahead of ours
 		// would otherwise park the visit in the future, outside every window.
 		e.At = t
+		e.Attrs[AttrVisitedAt] = t.Format("2006-01-02T15:04:05.000Z")
 		if t.After(received) {
 			e.At = received
 		}

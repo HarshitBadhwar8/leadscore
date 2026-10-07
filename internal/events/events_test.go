@@ -385,3 +385,54 @@ func TestDealDomainIsNormalized(t *testing.T) {
 		t.Errorf("%+v", outcome(m, "A"))
 	}
 }
+
+// The re-check probe: two polled unsubscribes with no message id and no At,
+// for contacts c1 and c2, never share a key (contact id first, received time
+// as the time).
+func TestPolledReplyWithoutMessageIDOrTimeKeysTheContact(t *testing.T) {
+	ev := func(cid string) api.Event {
+		return api.Event{Kind: "reply", Origin: OriginPolling, ReceivedAt: t0,
+			Attrs: map[string]string{"label": "unsubscribe", "contact_id": cid}}
+	}
+	if Key(ev("c1")) == Key(ev("c2")) {
+		t.Fatal("c2's opt-out shares c1's key and would be dropped")
+	}
+	later := ev("c1")
+	later.ReceivedAt = t0.Add(time.Hour)
+	if Key(later) == Key(ev("c1")) {
+		t.Error("with no At, the received time must be part of the key")
+	}
+}
+
+// A visit whose time is ahead of our clock is clamped for storage, but keyed
+// on the time the vendor sent, so a retry received later keys the same.
+func TestClampedVisitKeysOnTheSentTime(t *testing.T) {
+	body := `{"event":"website_visited_site","visited_at":"2026-08-20T10:30:00Z","contact":{"email":"ada@example.com"}}`
+	first := key(t, visitBody(body, t0))                  // received 10:00, clamped to 10:00
+	retry := key(t, visitBody(body, t0.Add(2*time.Hour))) // received 12:00, not clamped
+	if first != retry {
+		t.Error("a retried delivery of a clamped visit made a new key")
+	}
+}
+
+// Spreading an opt-out logs key_conflict only when it changed the holder,
+// and names the case where no lead matched.
+func TestOptOutSpreadLogsOnlyChanges(t *testing.T) {
+	m := model.New()
+	linkedInLead(m, "A", "linkedin.com/in/ana")
+	e := api.Event{Kind: "optout", LinkedInURL: "linkedin.com/in/ana", At: t0, Origin: OriginApolloLookup}
+	Apply(m, "", e, nil)
+	Apply(m, "", e, nil)
+	n := 0
+	for _, l := range m.Log {
+		if l.Kind == merge.LogKeyConflict {
+			n++
+			if strings.Contains(l.Message, "lead  ") || !strings.Contains(l.Message, "matched no lead") {
+				t.Errorf("message %q", l.Message)
+			}
+		}
+	}
+	if n != 1 || outcome(m, "A").UnsubscribedAt.IsZero() {
+		t.Errorf("%d key_conflict lines, want 1; A %+v", n, outcome(m, "A"))
+	}
+}

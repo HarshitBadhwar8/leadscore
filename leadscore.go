@@ -246,8 +246,9 @@ func RegisterLookup(typ string, f func(Config) (Lookup, error)) { api.RegisterLo
 func RegisterSink(typ string, f func(Config) (Sink, error)) { api.RegisterSink(typ, f) }
 
 // RegisterDetector registers a Detector factory under a rubric detector kind;
-// it receives the detector's `params:`. It panics on an empty kind, a nil
-// factory, or a kind already registered.
+// it receives the detector's `params:`. The kind is stored lowercased, since
+// rubric kinds compare lowercased. It panics on an empty kind, a nil factory,
+// or a kind already registered (two kinds differing only in case collide).
 func RegisterDetector(kind string, f func(params Config) (Detector, error)) {
 	api.RegisterDetector(kind, f)
 }

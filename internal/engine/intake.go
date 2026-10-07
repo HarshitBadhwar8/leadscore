@@ -435,6 +435,10 @@ func deleteProcessed(r *Run) error {
 		return r.Store.Commit(r.Ctx, writes)
 	}
 	err = try()
+	if errors.Is(err, api.ErrCommittedWithProblems) {
+		r.Problem("people_tab_check", err.Error(), "open the tab the message names and check its rows", true)
+		err = nil // every write landed
+	}
 	if err != nil && !errors.Is(err, api.ErrLeaseLost) && r.Ctx.Err() == nil {
 		err = try()
 	}

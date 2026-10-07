@@ -75,3 +75,18 @@ func TestFactoryLookupMissing(t *testing.T) {
 		t.Fatalf("RegisteredTypes(unknown kind) = %v, want nil", got)
 	}
 }
+
+// Detector kinds are stored lowercased, as the rubric compiler lowercases them,
+// and two that differ only in case collide.
+func TestDetectorKindsAreLowercased(t *testing.T) {
+	RegisterDetector("Mixed_Kind_Test", func(Config) (Detector, error) { return nil, nil })
+	if _, ok := DetectorFactory("mixed_kind_test"); !ok {
+		t.Error("a kind registered with capitals is not found by its lowercase name")
+	}
+	defer func() {
+		if recover() == nil {
+			t.Error("registering a kind differing only in case must panic")
+		}
+	}()
+	RegisterDetector("MIXED_KIND_TEST", func(Config) (Detector, error) { return nil, nil })
+}

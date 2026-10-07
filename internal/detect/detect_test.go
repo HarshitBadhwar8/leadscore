@@ -145,7 +145,9 @@ func (evenDetector) Evaluate(s api.Subject, evs []api.Event, now time.Time) (boo
 }
 
 func init() {
-	api.RegisterDetector("test_even_count", func(api.Config) (api.Detector, error) { return evenDetector{}, nil })
+	// Registered with capitals: the registry stores kinds lowercased, as the
+	// compiler gives them.
+	api.RegisterDetector("Test_Even_Count", func(api.Config) (api.Detector, error) { return evenDetector{}, nil })
 }
 
 // A registered kind receives the subject's window events; a missing one does

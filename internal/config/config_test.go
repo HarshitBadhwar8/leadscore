@@ -208,6 +208,7 @@ func TestRejects(t *testing.T) {
 		{"source id hubspot", minimal + "sources: [ { id: hubspot, type: csv } ]\n", "reserved"},
 		{"source id apollo_lookup", minimal + "sources: [ { id: apollo_lookup, type: csv } ]\n", "reserved"},
 		{"unsubscribe override in another case", minimal + "reply_labels: { Unsubscribe: none }\n", "unsubscribe"},
+		{"reply_labels colliding in case", minimal + "reply_labels: { Not_Interested: none, not_interested: replied_neutral }\n", "twice"},
 		{"bad replies", minimal + "replies: webhook\n", "replies"},
 		{"bad duration", minimal + "schedule: soon\n", "schedule"},
 		{"numeric duration", minimal + "deadline: 12\n", "deadline"},

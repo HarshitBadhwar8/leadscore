@@ -558,6 +558,10 @@ func (p *parser) replyLabels(c *Config, raw map[string]any) {
 	}
 	for raw, val := range m {
 		label := strings.ToLower(strings.TrimSpace(raw)) // polled labels compare lowercased
+		if _, dup := c.ReplyLabels[label]; dup {
+			p.fail("`reply_labels.%s` is given twice (labels compare ignoring case)", label)
+			return
+		}
 		if label == "unsubscribe" {
 			p.fail("`reply_labels.unsubscribe` cannot be overridden: an unsubscribe always opts the person out")
 			return
