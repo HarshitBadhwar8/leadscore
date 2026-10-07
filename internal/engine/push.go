@@ -355,6 +355,9 @@ func (p *pusher) record(it item, k model.Key, id string, err error) bool {
 	if row.CalledAt.IsZero() {
 		row.CalledAt = now // the call was made; never cleared
 	}
+	if v.idx.ReceiverOnly(it.lead) {
+		receiverOnlyPush(r, it.lead)
+	}
 	row.UpdatedAt = now
 	msg := ""
 	if err != nil {

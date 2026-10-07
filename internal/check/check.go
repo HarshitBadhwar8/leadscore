@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/config"
@@ -36,6 +37,17 @@ type Env struct {
 	// that one even if the file changed since the run read it. Nil in doctor,
 	// which compiles the file.
 	Rubric *rules.Rubric
+	// Now is the run's clock, so a check judging time (receiver-silence)
+	// agrees with the run's other times. Nil in doctor: the wall clock.
+	Now func() time.Time
+}
+
+// Clock returns the environment's clock: Now, else the wall clock.
+func (e Env) Clock() time.Time {
+	if e.Now != nil {
+		return e.Now()
+	}
+	return time.Now()
 }
 
 // Problem is written to Health under Key as given, and cleared when a later run

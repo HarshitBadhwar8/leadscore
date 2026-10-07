@@ -102,11 +102,14 @@ func (w *world) lookup(typ string) *fakesink.Vendor {
 	return v
 }
 
-// run executes one run with DefaultHooks (and the world's ReRead hook).
+// run executes one run with DefaultHooks (and the world's ReRead hook, when
+// a test sets one in place of the default).
 func (w *world) run(mod ...func(*api.RunOptions, *settings)) (api.RunResult, string, error) {
 	w.t.Helper()
 	hooks := DefaultHooks()
-	hooks.ReRead = w.reread
+	if w.reread != nil {
+		hooks.ReRead = w.reread
+	}
 	mods := append([]func(*api.RunOptions, *settings){func(_ *api.RunOptions, s *settings) {
 		if w.clock != nil {
 			s.now = w.clock

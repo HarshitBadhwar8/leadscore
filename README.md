@@ -186,6 +186,22 @@ body-secret requests but never header ones). The receiver answers 200 only once 
 missing secret gets 401, and a request it could not store within 10 seconds
 gets 503 so Apollo can send it again. A repeated event is counted once.
 
+An opt-out or reply the receiver stores while a run is pushing still counts:
+before each batch of 25 pushes the run reads the newly stored events, so the
+person is not pushed in the next batch. Every opt-out and reply is kept in
+`Outcomes`, so it holds long after the 90-day event window.
+
+**Silence.** Reachable is not delivering. When the receiver is set up
+(`receiver.public_url` is set), each run checks that every event kind it expects arrived within
+`silence_threshold` (3 days by default): `sent` with `replies: receiver`, and
+each `receiver.visit_events` kind. A silent kind shows in `Health` as
+`silent:<kind>` and makes the run unhealthy; check that Apollo workflow.
+
+**Receiver-only leads.** A lead known only from webhooks could be forged by
+anyone with the secret. When a lane pushes one, `Health` shows the warning
+`receiver_only_push:<lead>` until a source (a CSV or Sheet tab) reports that
+person too. Cold lanes should require `receiver_only` to be false.
+
 `/healthz` with the timer is 200 while the last run succeeded or none is due
 yet, and 503 when the last run failed or none succeeded in three intervals;
 without the timer (Google Cloud) it is 200 unless storing events fails.

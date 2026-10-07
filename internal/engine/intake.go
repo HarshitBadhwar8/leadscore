@@ -101,8 +101,14 @@ func intake(r *Run) error {
 		m.SetState(eventsCursorKey, string(next))
 	}
 	for kind, at := range in.received {
+		// A received time ahead of the run's clock is kept as now, and a
+		// stored one in the future is replaced, so silence detection never
+		// reads a time that cannot have passed yet.
+		if at.After(now) {
+			at = now
+		}
 		key := lastReceivedPrefix + kind
-		if old, err := model.ParseTime(m.StateValue(key)); err != nil || old.Before(at) {
+		if old, err := model.ParseTime(m.StateValue(key)); err != nil || old.Before(at) || old.After(now) {
 			m.SetState(key, model.FormatTime(at))
 		}
 	}
@@ -122,6 +128,21 @@ func suppressed(r *Run, es []api.Event) bool {
 		}
 	}
 	return false
+}
+
+// keyEvent is the rule Intake and the re-read share before an event may take
+// effect: the kind lowercased, a kind over apollo.MaxKindLen refused (the
+// reason is returned), and the de-duplication key set (events.Key), which
+// both then look up in Seen events. The event's keys must already be
+// normalized (merge.NormalizeEventKeys). With suppressed, it is the whole
+// filter for a stored receiver event.
+func keyEvent(e api.Event) (api.Event, string) {
+	e.Kind = strings.ToLower(e.Kind)
+	if len(e.Kind) > apollo.MaxKindLen {
+		return e, fmt.Sprintf("an event kind is longer than %d characters", apollo.MaxKindLen)
+	}
+	e.ID = events.Key(e)
+	return e, ""
 }
 
 // intaker takes the events of one Intake.
@@ -145,9 +166,9 @@ func (in *intaker) take(e api.Event, fromSource bool) {
 		in.reject(e, e.Attrs[events.AttrReject], fromSource)
 		return
 	}
-	e.Kind = strings.ToLower(e.Kind)
-	if len(e.Kind) > apollo.MaxKindLen {
-		in.reject(e, fmt.Sprintf("an event kind is longer than %d characters", apollo.MaxKindLen), fromSource)
+	e, why := keyEvent(e)
+	if why != "" {
+		in.reject(e, why, fromSource)
 		return
 	}
 	if fromSource && events.VendorOnly(e.Kind) {
@@ -160,7 +181,6 @@ func (in *intaker) take(e api.Event, fromSource bool) {
 		}
 	}
 
-	e.ID = events.Key(e)
 	if _, seen := m.SeenEvents[model.Key(e.ID)]; seen {
 		return // seen in an earlier run, or earlier in this one
 	}
