@@ -79,7 +79,8 @@ if it says the run account cannot read the secret, run
 install expects webhooks (`replies: receiver`, the default, or
 `receiver.visit_events`) and has no receiver secret, so every webhook is
 refused. A person generates one (`openssl rand -hex 32`), puts it in `.env`
-or Secret Manager and in each Apollo workflow. A CSV-only install still needs
+(Docker), Secret Manager (Google Cloud) or the shell profile (plain binary),
+and in each Apollo workflow. A CSV-only install still needs
 one set while `replies` is `receiver`. `secret_previous:...` (a warning): a
 rotation is not finished; once every workflow sends the new secret, remove
 `LEADSCORE_RECEIVER_SECRET_PREVIOUS`.

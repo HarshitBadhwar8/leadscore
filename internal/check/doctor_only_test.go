@@ -146,8 +146,12 @@ func TestReceiversCheck(t *testing.T) {
 	}
 	for _, tc := range cases {
 		status = tc.status
-		if got := keysOf(ck.Run(context.Background(), Env{Config: tc.cfg})); got != tc.want {
+		ps := ck.Run(context.Background(), Env{Config: tc.cfg})
+		if got := keysOf(ps); got != tc.want {
 			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
+		}
+		if tc.status == http.StatusMovedPermanently && (len(ps) != 1 || !strings.Contains(ps[0].Fix, "final https address")) {
+			t.Errorf("%s: the fix should point at the final https address: %+v", tc.name, ps)
 		}
 	}
 	if path != "/healthz" {

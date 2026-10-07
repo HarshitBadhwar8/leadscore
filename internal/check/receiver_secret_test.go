@@ -3,6 +3,7 @@ package check
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/config"
@@ -68,5 +69,30 @@ func TestReceiverSecretsAreMaskedInLogs(t *testing.T) {
 		if !masked[v] {
 			t.Errorf("%s is not in logredact.SecretVariables", v)
 		}
+	}
+}
+
+// The fix says where this install keeps the secret: the shell profile for the
+// plain binary, .env in a container, Secret Manager inside Cloud Run.
+func TestReceiverSecretFixNamesTheInstallsPlace(t *testing.T) {
+	c := load(t, "version: 1\nstore: { type: sqlite }\nreplies: receiver\n")
+	old := inContainer
+	t.Cleanup(func() { inContainer = old })
+	fixFor := func(container bool, vars map[string]string) string {
+		inContainer = func() bool { return container }
+		ps := ReceiverSecretProblems(c, env(vars))
+		if len(ps) != 1 {
+			t.Fatalf("problems %+v", ps)
+		}
+		return ps[0].Fix
+	}
+	if f := fixFor(false, nil); !strings.Contains(f, "shell profile") || strings.Contains(f, ".env") || strings.Contains(f, "Secret Manager") {
+		t.Errorf("plain binary: %q", f)
+	}
+	if f := fixFor(true, nil); !strings.Contains(f, ".env") || strings.Contains(f, "shell profile") {
+		t.Errorf("container: %q", f)
+	}
+	if f := fixFor(false, map[string]string{"CLOUD_RUN_JOB": "leadscore-run"}); !strings.Contains(f, "Secret Manager") {
+		t.Errorf("Cloud Run: %q", f)
 	}
 }

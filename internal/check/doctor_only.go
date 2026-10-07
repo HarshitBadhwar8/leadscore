@@ -123,6 +123,13 @@ func (c receivers) Run(ctx context.Context, env Env) []Problem {
 			Message: u.Redacted() + " answers, but reports unhealthy: the last run failed or none succeeded in three intervals",
 			Fix:     "`leadscore status` shows why"}}
 	}
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		// Apollo does not follow redirects; the usual cause is http that
+		// redirects to https.
+		return []Problem{{Key: "receivers:unreachable",
+			Message: fmt.Sprintf("%s answered %d, a redirect to %q, which Apollo would not follow", u.Redacted(), resp.StatusCode, resp.Header.Get("Location")),
+			Fix:     "set receiver.public_url to the final https address (where the redirect points), and use it in the Apollo workflows"}}
+	}
 	return []Problem{{Key: "receivers:unreachable",
 		Message: fmt.Sprintf("%s answered %d, not leadscore's /healthz", u.Redacted(), resp.StatusCode), Fix: fix}}
 }

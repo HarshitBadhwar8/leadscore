@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -108,8 +109,14 @@ func Open(path string) (*Store, error) {
 // WAL into it or rolls back a hot journal. A file that needs one of those
 // fails to open (or to read) instead of being changed.
 func OpenReadOnly(path string) (*Store, error) {
-	if path == "" || strings.ContainsAny(path, "?#") || strings.HasPrefix(strings.ToLower(path), "file:") {
-		return nil, fmt.Errorf("sqlite store: %q is not a plain file path (no \"?\", no \"#\", no \"file:\")", path)
+	if path == "" || strings.Contains(path, "?") || strings.HasPrefix(strings.ToLower(path), "file:") {
+		return nil, fmt.Errorf("sqlite store: %q is not a plain file path (no \"?\", no \"file:\")", path)
+	}
+	// A file: URI needs an absolute path: a relative one would read as the
+	// URI's authority. Path escaping handles "#" and spaces.
+	path, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite store: %w", err)
 	}
 	if _, err := os.Stat(path); err != nil {
 		return nil, fmt.Errorf("sqlite store %s: %w", path, err)

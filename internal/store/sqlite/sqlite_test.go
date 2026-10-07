@@ -384,3 +384,36 @@ func (otherBackend) Lease(context.Context, string, time.Duration) (api.RunLease,
 func (otherBackend) Commit(context.Context, []api.TableWrite) error {
 	panic("MarkOpenedBy must not write another store")
 }
+
+// OpenReadOnly takes a relative path (made absolute: a relative file: URI
+// would read as an authority) and a "#" in the name, as Open does.
+func TestOpenReadOnlyPaths(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	for _, name := range []string{"store.db", "team #2.db", filepath.Join("sub dir", "x#y.db")} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		w, err := Open(name)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if err := w.Commit(context.Background(), []api.TableWrite{{Table: model.TableState, Op: api.OpUpsert, Key: []string{"key"},
+			Rows: []api.Row{{"key": "schema_version", "value": "1.0"}}}}); err != nil {
+			t.Fatal(err)
+		}
+		w.Close()
+		r, err := OpenReadOnly(name)
+		if err != nil {
+			t.Fatalf("%s: OpenReadOnly: %v", name, err)
+		}
+		rows, err := r.ReadTable(context.Background(), model.TableState)
+		r.Close()
+		if err != nil || len(rows) != 1 || rows[0]["value"] != "1.0" {
+			t.Errorf("%s: rows %v, %v", name, rows, err)
+		}
+	}
+	if _, err := OpenReadOnly("missing.db"); err == nil {
+		t.Error("OpenReadOnly opened a file that does not exist")
+	}
+}

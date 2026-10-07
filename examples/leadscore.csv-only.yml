@@ -1,7 +1,7 @@
 # leadscore.yml for a first try, or a team that only wants lists: CSV files
 # in, scored lists out, no Apollo or HubSpot account needed. It runs on
 # Docker (the paths below are the compose file's mounts) or as a plain
-# binary (see the README, "Try it with CSV only"). Copy it as leadscore.yml,
+# binary (see the README, "Path 1: CSV only"). Copy it as leadscore.yml,
 # beside examples/rubric.csv-only.yml copied as rubric.yml.
 # Every key is in the contracts doc, section 3.
 version: 1
