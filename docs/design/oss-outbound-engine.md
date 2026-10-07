@@ -416,7 +416,7 @@ The Apollo company lookup (copied, with Retry-After handling) fills facts for do
 ### 6.9 Run order
 
 1. **Start.** Cloud Scheduler starts the Cloud Run job (Google Cloud), or the timer in `serve` starts a run (Docker). Read `leadscore.yml` and the rubric fresh: hosted, from one Secret Manager secret that holds both, so a run never pairs a new rubric with old settings; on Docker, from disk, so an edit applies on the next run with no restart (except `schedule`, which `serve` reads at start). A file that fails to load fails that run. Take the lease (owner run id, expiry the deadline plus the save budget plus a 30-second margin); an expired lease is taken over and logged; a live one means skip, logged; the next run that holds the lease flags repeated skips in `Health`.
-2. Load the tables; check the schema version; run the in-run `doctor` checks (contracts section 10).
+2. Load the tables; check the schema version. The in-run `doctor` checks (contracts section 10) run after step 5, once this run's rows are merged and folded, so the rubric check sees this run's columns; a rubric field no input carries fails the run before scoring.
 3. Fetch sources, merge input rows, and parse events above the saved cursors, up to what is present at start. With `replies: polling`, poll Apollo here when the last poll is older than the polling interval, so polled replies go through the same parse, de-duplication and phase 1 commit as every other event.
 4. Enrich within budget.
 5. Fold events and overrides into statuses (section 6.12).
