@@ -89,7 +89,7 @@ func TestAddOutcome(t *testing.T) {
 		{"nested under a reason key", map[string]any{"skips": map[string]any{"contacts_without_email": map[string]any{"ids": []any{id}}}}, "refused"},
 		{"listed but also skipped", map[string]any{"contacts": listedOnly, "skipped_contact_ids": map[string]any{id: "contacts_unsubscribed"}}, "refused"},
 		{"unrecognised reason", map[string]any{"skipped_contact_ids": map[string]any{id: "contacts_on_holiday"}}, "attempt"},
-		{"already in this sequence", map[string]any{"skipped_contact_ids": map[string]any{id: "already_in_campaign"}}, "done"},
+		{"already in this sequence", map[string]any{"skipped_contact_ids": map[string]any{id: "already_in_campaign"}}, "confirm"},
 		{"neither listed nor skipped", map[string]any{"contacts": []any{map[string]any{"id": "other"}}}, "attempt"},
 		{"empty reply", map[string]any{}, "attempt"},
 		{"another contact skipped", map[string]any{"contacts": listedOnly, "skipped_contact_ids": map[string]any{"c2": "contacts_unsubscribed"}}, "done"},
@@ -98,6 +98,8 @@ func TestAddOutcome(t *testing.T) {
 		err := addOutcome(c.reply, id)
 		got := map[bool]string{true: "done"}[err == nil]
 		switch {
+		case errors.Is(err, errSaysInSequence):
+			got = "confirm"
 		case errors.Is(err, api.ErrRefused):
 			got = "refused"
 		case countsAnAttempt(err):
@@ -126,13 +128,56 @@ func TestUnknownSkipReasonCountsAnAttempt(t *testing.T) {
 	}
 }
 
-// A 4xx saying the contact is already in this sequence is done.
-func TestAlreadyInSequenceErrorIsDone(t *testing.T) {
-	fake, cfg := outreachFake(t)
-	fake.FailNext(fakeapollo.CallAddToSequence, "already_in_sequence")
-	id, err := push(t, newTestSink(t, cfg), lead("lead-1", "a@acme-robotics.example"))
-	if err != nil || !strings.HasPrefix(id, testSeqID+":") {
-		t.Errorf("id %q err %v, want done", id, err)
+// "Already in this sequence", from a 4xx or a skip, is done only when a
+// second read of the contact shows this sequence; else one attempt.
+func TestAlreadyInSequenceIsConfirmed(t *testing.T) {
+	addReplies := map[string]struct {
+		status int
+		body   string
+	}{
+		"4xx":  {422, `{"error":"Contact is already in this sequence","error_code":"contact_already_exists_in_campaign"}`},
+		"skip": {200, `{"contacts":[],"skipped_contact_ids":{"c1":"already_in_campaign"}}`},
+	}
+	for name, add := range addReplies {
+		for _, seqOnReread := range []string{testSeqID, "seq-other"} {
+			t.Run(name+"/"+seqOnReread, func(t *testing.T) {
+				t.Setenv(KeyVariable, testKey)
+				reads := 0
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					switch {
+					case r.URL.Path == sequencesSearchPath:
+						_, _ = fmt.Fprintf(w, `{"emailer_campaigns":[{"id":%q,"name":%q}],"pagination":{"page":1,"total_pages":1}}`, testSeqID, testSeqName)
+					case r.URL.Path == contactsPath+"/c1":
+						reads++
+						statuses := `[]`
+						if reads > 1 {
+							statuses = fmt.Sprintf(`[{"emailer_campaign_id":%q,"status":"active"}]`, seqOnReread)
+						}
+						_, _ = fmt.Fprintf(w, `{"contact":{"id":"c1","email":"a@acme-robotics.example","contact_campaign_statuses":%s}}`, statuses)
+					case r.URL.Path == contactsSearchPath:
+						_, _ = w.Write([]byte(`{"contacts":[],"pagination":{"page":1,"total_pages":0}}`))
+					case strings.HasSuffix(r.URL.Path, "/add_contact_ids"):
+						w.WriteHeader(add.status)
+						_, _ = w.Write([]byte(add.body))
+					default:
+						w.WriteHeader(http.StatusNotFound)
+					}
+				}))
+				t.Cleanup(srv.Close)
+				s := newTestSink(t, api.Config{"base_url": srv.URL, "_http_client": srv.Client(), "mailbox_id": testMailbox})
+				id, err := s.Do(context.Background(), step(lead("lead-1", "a@acme-robotics.example"), StepEnroll, map[string]string{StepContact: "c1"}))
+				if seqOnReread == testSeqID {
+					if err != nil || id != testSeqID+":c1" {
+						t.Errorf("confirmed: id %q err %v, want done", id, err)
+					}
+				} else if !countsAnAttempt(err) {
+					t.Errorf("not confirmed: err %v, want one that counts an attempt", err)
+				}
+				if reads != 2 {
+					t.Errorf("%d contact reads, want 2 (before the add, and the confirmation)", reads)
+				}
+			})
+		}
 	}
 }
 

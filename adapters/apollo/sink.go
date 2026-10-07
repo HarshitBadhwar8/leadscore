@@ -280,19 +280,38 @@ func (s *Sink) enroll(ctx context.Context, name, contactID string, lead api.Lead
 	}
 	reply, err := s.c.addToSequence(ctx, seqID, contactID, s.mailbox)
 	var se *StatusError
-	if errors.As(err, &se) && se.Status >= 400 && se.Status < 500 && refusalOf(errorFields(se.Body())) == reasonInSequence {
-		return vendorID, nil
+	inSequence := errors.As(err, &se) && se.Status >= 400 && se.Status < 500 && refusalOf(errorFields(se.Body())) == reasonInSequence
+	if err != nil && !inSequence {
+		return "", classify(err)
 	}
+	if err == nil {
+		err = addOutcome(reply, contactID)
+		inSequence = errors.Is(err, errSaysInSequence)
+	}
+	if !inSequence {
+		return vendorID, err
+	}
+	// "Already in this sequence" may be about another sequence (the words
+	// are matched loosely): done only when the contact's record shows this
+	// one, else one attempt.
+	again, err := s.c.readContact(ctx, contactID)
 	if err != nil {
 		return "", classify(err)
 	}
-	return vendorID, addOutcome(reply, contactID)
+	if _, in := again.sequences[seqID]; in {
+		return vendorID, nil
+	}
+	return "", errors.New("apollo: Apollo said the contact is already in the sequence, but its record does not show it")
 }
+
+// errSaysInSequence is addOutcome's answer when the skip says the contact is
+// already in the sequence: enroll confirms it by reading the contact.
+var errSaysInSequence = errors.New("apollo: the add reply says the contact is already in the sequence")
 
 // addOutcome reads the add call's reply for one contact. The contact was
 // added only when the reply's contacts list holds it and no skip payload
 // mentions it. A skip for a recognised refusal is ErrRefused; "already in this
-// sequence" is done; any other skip, or a reply that shows neither, counts
+// sequence" is errSaysInSequence, for enroll to confirm; any other skip, or a reply that shows neither, counts
 // one attempt (a skip means nobody was added, so a retry cannot contact the
 // person twice; after three the step fails until a `retry`).
 //
@@ -319,7 +338,7 @@ func addOutcome(reply map[string]any, contactID string) error {
 	}
 	switch reason := refusalOf(strings.Join(reasons, " ")); reason {
 	case reasonInSequence:
-		return nil
+		return errSaysInSequence
 	case "":
 		return errors.New("apollo: the contact was skipped for an unrecognised reason")
 	default:

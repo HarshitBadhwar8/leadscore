@@ -30,6 +30,15 @@ func TestExampleRunFillsRanked(t *testing.T) {
 	}
 	in := newInstall(t, "rubric: "+filepath.Join(examples, "rubric.yml")+"\nsources:\n  - { id: leads, type: csv, path: "+
 		filepath.Join(examples, "leads.csv")+" }\n", "")
+	// Hide the hubspot sink, as a build without it would be.
+	old := sinkFactory
+	sinkFactory = func(typ string) (func(api.Config) (api.Sink, error), bool) {
+		if typ == "hubspot" {
+			return nil, false
+		}
+		return old(typ)
+	}
+	t.Cleanup(func() { sinkFactory = old })
 	res, out, err := in.run(DefaultHooks())
 	if err != nil {
 		t.Fatal(err)
@@ -46,18 +55,11 @@ func TestExampleRunFillsRanked(t *testing.T) {
 	if anna["tier"] != "1" || anna["priority"] != "A" || anna["score"] != "80" || anna["status"] != "new" || anna["lane"] != "fleet-ops" {
 		t.Errorf("Anna's row: %v", anna)
 	}
-	// A vendor lane whose sink this build does not have is reported; one
-	// whose sink it has is not, and an export lane needs no sink.
-	unregistered := false
-	for lane, sink := range map[string]string{"demo-followup": "hubspot", "fleet-ops": "apollo"} {
-		_, registered := api.SinkFactory(sink)
-		if hasKey(res.Problems, "lane_sink_unregistered:"+lane) == registered {
-			t.Errorf("lane %s (sink %s registered: %v): problems %v", lane, sink, registered, res.Problems)
-		}
-		unregistered = unregistered || !registered
-	}
-	if unregistered && res.Healthy {
-		t.Errorf("a lane with no sink in the build must make the run unhealthy: %+v", res)
+	// A vendor lane whose sink this build does not have is reported and
+	// makes the run unhealthy; one whose sink it has is not reported. The
+	// hubspot sink is hidden for this run (see below), apollo is real.
+	if res.Healthy || !hasKey(res.Problems, "lane_sink_unregistered:demo-followup") || hasKey(res.Problems, "lane_sink_unregistered:fleet-ops") {
+		t.Errorf("healthy %v, problems %v", res.Healthy, res.Problems)
 	}
 	if hasKey(res.Problems, "lane_sink_unregistered:nurture") {
 		t.Errorf("problems %v", res.Problems)
