@@ -20,14 +20,14 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 )
 
-// Default locations (section 3). Variables so tests can point them elsewhere.
+// Default locations. Variables so tests can point them elsewhere.
 var (
 	defaultBundlePath = "/config/bundle.yaml"
 	defaultConfigPath = "/config/leadscore.yml"
 	localConfigPath   = "leadscore.yml"
 )
 
-// Defaults, as section 3 and section 11 write them. Durations stay in their
+// Defaults for leadscore.yml and the engine. Durations stay in their
 // written form so `config get` prints what a person would type.
 const (
 	DefaultRubricFile      = "rubric.yml"
@@ -62,7 +62,7 @@ var (
 	HostingKeys = []string{"project", "region", "run_account", "receiver_account", "image"}
 	hostingKeys = set(HostingKeys...)
 	bundleKeys  = set("config", "rubric")
-	// Section 5.5: teams may map a label to a replied_* status or to none.
+	// Reply labels: teams may map a label to a replied_* status or to none.
 	replyLabelValues = set("replied_positive", "replied_negative", "replied_neutral", "replied_unlabelled", "none")
 )
 
@@ -71,7 +71,7 @@ var (
 type Config struct {
 	Path   string // the file read: leadscore.yml, or the hosted bundle
 	Dir    string // the folder relative paths resolve against
-	Bundle bool   // loaded from a hosted bundle (section 3)
+	Bundle bool   // loaded from a hosted bundle
 
 	Version int
 	// RubricPath is the resolved rubric file; empty for a bundle, which carries
@@ -87,7 +87,7 @@ type Config struct {
 	Receiver         Receiver
 	Sinks            map[string]api.Config // sinks.<type>, defaults applied; never nil
 	Export           Export
-	ReplyLabels      map[string]string // the team's per-label overrides only; the base map is section 5.5
+	ReplyLabels      map[string]string // the team's per-label overrides only; the base map is the built-in reply-label map
 	PushesEnabled    bool
 	Schedule         time.Duration
 	Deadline         time.Duration
@@ -151,7 +151,7 @@ type Hosting struct {
 // Hosted reports whether this is a Google Cloud install: hosting.project is set.
 func (c *Config) Hosted() bool { return c.Hosting != nil && c.Hosting.Project != "" }
 
-// Options says where to load from. Empty paths mean the section 3 defaults.
+// Options says where to load from. Empty paths mean the default locations.
 type Options struct {
 	ConfigPath string // --config
 	RubricPath string // --rubric; ignored for a bundle

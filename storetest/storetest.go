@@ -345,7 +345,8 @@ func event(i int, at time.Time) api.RawEvent {
 	return api.RawEvent{Kind: kind, ReceivedAt: at, Body: []byte(fmt.Sprintf(`{"n":%d,"text":"ünï, \"q\""}`, i))}
 }
 
-// now is the suite's "received now" time, to the millisecond (the stored time form).
+// now is the suite's "received now" time, to the millisecond (the stored time
+// form).
 func now() time.Time { return time.Now().UTC().Truncate(time.Millisecond) }
 
 func readAll(t *testing.T, l api.EventLog, cursor api.Cursor) ([]api.RawEvent, api.Cursor) {

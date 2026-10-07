@@ -51,10 +51,11 @@ import (
 // Variables: LEADSCORE_LIVE_CLOUDRUN=1; LEADSCORE_LIVE_PROJECT (a billed,
 // throwaway project, never one a real install uses);
 // LEADSCORE_LIVE_IMAGE (the image to deploy); optional LEADSCORE_LIVE_REGION
-// (asia-south1) and LEADSCORE_LIVE_ROWS (synthetic leads, 60000). Optional
-// LEADSCORE_LIVE_DENY_PROJECTS is a comma-separated list of project ids the
-// test refuses to touch: set it to your real projects so a mistyped
-// LEADSCORE_LIVE_PROJECT fails before anything is created.
+// (asia-south1) and LEADSCORE_LIVE_ROWS (synthetic leads, 60000).
+// LEADSCORE_LIVE_DENY_PROJECTS is required: a comma-separated list of project
+// ids the test refuses to touch. Set it to your real projects (for example
+// leadscore-dev) so a mistyped LEADSCORE_LIVE_PROJECT fails before anything
+// is created. The test does not run while it is empty.
 //
 // Before it: `gcloud auth login --enable-gdrive-access` as a person who owns
 // the project; the Cloud Run service agent of the project may pull the image
@@ -69,7 +70,11 @@ func TestLiveCloudRun(t *testing.T) {
 	if project == "" || image == "" {
 		t.Fatal("LEADSCORE_LIVE_PROJECT and LEADSCORE_LIVE_IMAGE are required")
 	}
-	if deniedProject(project, os.Getenv("LEADSCORE_LIVE_DENY_PROJECTS")) {
+	deny := os.Getenv("LEADSCORE_LIVE_DENY_PROJECTS")
+	if strings.TrimSpace(strings.ReplaceAll(deny, ",", "")) == "" {
+		t.Fatal("set LEADSCORE_LIVE_DENY_PROJECTS to the projects the live check must never touch (for example leadscore-dev)")
+	}
+	if deniedProject(project, deny) {
 		t.Fatalf("project %s is in LEADSCORE_LIVE_DENY_PROJECTS; run the live check in a throwaway project", project)
 	}
 	region := envOr("LEADSCORE_LIVE_REGION", "asia-south1")

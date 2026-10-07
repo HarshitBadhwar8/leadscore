@@ -1,7 +1,8 @@
 package leadscore_test
 
-// The public API's proof: a stub adapter of every kind compiles against the public API
-// and registers through it, exactly as an external adapter package would.
+// The public API's proof: a stub adapter of every kind compiles against the
+// public API and registers through it, exactly as an external adapter package
+// would.
 
 import (
 	"context"

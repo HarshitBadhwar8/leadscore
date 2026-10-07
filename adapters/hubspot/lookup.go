@@ -15,7 +15,8 @@ import (
 // confirms the name and that "true" is its set value).
 const optOutProperty = "hs_email_optout"
 
-// Lookup is the HubSpot Lookup, run just before a push. For the leads it is given it reports:
+// Lookup is the HubSpot Lookup, run just before a push. For the leads it is
+// given it reports:
 //
 //   - an `optout` for every email of a lead whose contact has opted out:
 //     each email of the lead's family is read by email, and the lead's own

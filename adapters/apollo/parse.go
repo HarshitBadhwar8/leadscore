@@ -20,7 +20,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/merge"
 )
 
-// RawEvent kinds: which receiver route stored the body (section 5.1).
+// RawEvent kinds: which receiver route stored the body.
 const (
 	KindVisit = "apollo_visit" // POST /apollo/visit
 	KindReply = "apollo_reply" // POST /apollo/reply
@@ -61,7 +61,7 @@ const (
 // is mistyped does not look like silence.
 var ErrIgnored = errors.New("ignored")
 
-// Receiver input row columns (section 5.1), in this order.
+// Receiver input row columns, in this order.
 const (
 	colContactID = "contact_id"
 	colEmail     = "email"
@@ -197,7 +197,7 @@ func attrs(kv ...string) map[string]string {
 }
 
 // receiverRow is the input row a body's person yields under source
-// `receiver`: only the columns the body carries, in section 5.1's order.
+// `receiver`: only the columns the body carries, in the order above.
 func receiverRow(contactID, email, linkedin, name, title, company, domain string) api.InputRow {
 	row := api.InputRow{SourceID: OriginReceiver, Columns: map[string]string{}}
 	for _, c := range [][2]string{

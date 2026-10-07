@@ -19,7 +19,7 @@ func in(source string, pairs ...string) api.InputRow {
 
 func TestNormalizeResolvesHeaders(t *testing.T) {
 	n := Normalize(in("leads",
-		"Work Email", "  Ada@ACME.example ",
+		"Work Email", "  Ada@ACME.EXAMPLE ",
 		"LinkedIn Profile", "https://www.LinkedIn.com/in/Ada/",
 		"Website", "https://www.Acme.example:443/about?x=1",
 		"Job Title", " CTO ",
@@ -136,7 +136,7 @@ func TestRowHash(t *testing.T) {
 
 func TestNormalizeEventKeys(t *testing.T) {
 	e := NormalizeEventKeys(api.Event{
-		Email: " Ada@ACME.example ", LinkedInURL: "HTTPS://www.linkedin.com/in/Ada/", Domain: "http://WWW.Acme.example:8080/pricing",
+		Email: " Ada@ACME.EXAMPLE ", LinkedInURL: "HTTPS://www.linkedin.com/in/Ada/", Domain: "http://WWW.Acme.EXAMPLE:8080/pricing",
 	})
 	if e.Email != "ada@acme.example" || e.LinkedInURL != "linkedin.com/in/ada" || e.Domain != "acme.example" {
 		t.Errorf("normalized = %q %q %q", e.Email, e.LinkedInURL, e.Domain)
@@ -146,7 +146,7 @@ func TestNormalizeEventKeys(t *testing.T) {
 func TestNormalizeDomain(t *testing.T) {
 	for in, want := range map[string]string{
 		"acme.example":                     "acme.example",
-		" ACME.example. ":                  "acme.example",
+		" ACME.EXAMPLE. ":                  "acme.example",
 		"www.acme.example":                 "acme.example",
 		"https://www.acme.example/":        "acme.example",
 		"http://acme.example:8080/a/b?c#d": "acme.example",

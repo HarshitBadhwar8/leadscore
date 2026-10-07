@@ -67,9 +67,10 @@ type Client struct {
 
 // NewClient builds a client from an adapter block (enrich, or sinks.apollo).
 // The key comes from APOLLO_API_KEY; the block's test keys base_url and
-// _http_client replace the API address and the HTTP client. A missing key is an error, so no call goes out unauthenticated, and
-// base_url without _http_client is refused: base_url is for tests only, and
-// one written into leadscore.yml would send the key to any address.
+// _http_client replace the API address and the HTTP client. A missing key is an
+// error, so no call goes out unauthenticated, and base_url without _http_client
+// is refused: base_url is for tests only, and one written into leadscore.yml
+// would send the key to any address.
 func NewClient(cfg api.Config) (*Client, error) {
 	return NewClientWithKey(cfg, os.Getenv(KeyVariable))
 }

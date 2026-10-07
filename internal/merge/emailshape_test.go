@@ -99,9 +99,9 @@ func TestDeriveCompanyDomain(t *testing.T) {
 		{name: "leading at", email: "@acme.example"},
 		{name: "empty", email: ""},
 		{name: "no dot in domain", email: "ada@localhost"},
-		{name: "embedded space", email: "ada@acme io.com"},
-		{name: "embedded tab", email: "ada@acme\tio.com"},
-		{name: "embedded newline", email: "ada@acme\nio.com"},
+		{name: "embedded space", email: "ada@acme co.example"},
+		{name: "embedded tab", email: "ada@acme\tco.example"},
+		{name: "embedded newline", email: "ada@acme\nco.example"},
 		{name: "two at signs takes the last", email: "a@b@acme.example", want: "acme.example", ok: true},
 	}
 	for _, tt := range tests {

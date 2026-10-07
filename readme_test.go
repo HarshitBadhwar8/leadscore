@@ -147,7 +147,8 @@ func TestExampleFiles(t *testing.T) {
 }
 
 // The Sheets-on-Docker section lists its own actions: the Google Cloud
-// runbook's step numbers are not the README's, and the Google Cloud script must not be run there.
+// runbook's step numbers are not the README's, and the Google Cloud script must
+// not be run there.
 func TestReadmeSheetsOnDockerListsItsSteps(t *testing.T) {
 	readme := readFile(t, "README.md")
 	sec := strings.Join(strings.Fields(section(t, readme, "### A Google Sheet on Docker")), " ")

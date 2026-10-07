@@ -35,12 +35,13 @@ func NewPoller(cfg api.Config) (api.Poller, error) {
 	return &Poller{c: c, now: time.Now}, nil
 }
 
-// Poll returns one `reply` event per replied email sent on or after since,
-// with the reply's label and the email's message id in Attrs, and the
-// contact id when Apollo gives one. It uses since as given: the window is the
-// engine's to choose, and Apollo's date filter is by day, so the poll starts at since's UTC day and may return a little more,
-// which the engine's keys de-duplicate. A label Apollo adds later is a new
-// event, since the key is the message id plus the label (events.Key).
+// Poll returns one `reply` event per replied email sent on or after since, with
+// the reply's label and the email's message id in Attrs, and the contact id
+// when Apollo gives one. It uses since as given: the window is the engine's to
+// choose, and Apollo's date filter is by day, so the poll starts at since's UTC
+// day and may return a little more, which the engine's keys de-duplicate. A
+// label Apollo adds later is a new event, since the key is the message id plus
+// the label (events.Key).
 //
 // Every page is read; any failure (a 429 included) fails the whole poll, so
 // the engine keeps last_poll_at and reads the same window next time.

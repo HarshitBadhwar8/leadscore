@@ -82,11 +82,12 @@ func TestHubSpotTwoLeadsOneCompanyOneDeal(t *testing.T) {
 	}
 }
 
-// The HubSpot deals proof: a deal a salesperson closed as lost releases its company. Ana's
-// deal holds Acme, so Ben stays out of the cold lane; once HubSpot shows the
-// deal closed-lost, the lookup (reading the stored deal by id, no search
-// involved) reports deal_lost, Ben is released and pushed; a later positive
-// reply at Acme opens a new deal rather than reusing the lost one.
+// The HubSpot deals proof: a deal a salesperson closed as lost releases its
+// company. Ana's deal holds Acme, so Ben stays out of the cold lane; once
+// HubSpot shows the deal closed-lost, the lookup (reading the stored deal by
+// id, no search involved) reports deal_lost, Ben is released and pushed; a
+// later positive reply at Acme opens a new deal rather than reusing the lost
+// one.
 func TestHubSpotClosedLostReleasesItsCompany(t *testing.T) {
 	w := newWorld(t,
 		"ana@acme.example,Ana A,Clerk,acme.example",

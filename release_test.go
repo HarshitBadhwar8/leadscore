@@ -1,6 +1,7 @@
 package leadscore_test
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
@@ -21,10 +22,12 @@ func TestReleaseWorkflowSettings(t *testing.T) {
 		On          map[string]map[string][]string `yaml:"on"`
 		Permissions map[string]string              `yaml:"permissions"`
 		Jobs        map[string]struct {
+			Needs       any               `yaml:"needs"`
 			Permissions map[string]string `yaml:"permissions"`
 			Steps       []struct {
-				Uses string `yaml:"uses"`
-				Run  string `yaml:"run"`
+				Uses string            `yaml:"uses"`
+				Run  string            `yaml:"run"`
+				With map[string]string `yaml:"with"`
 			} `yaml:"steps"`
 		} `yaml:"jobs"`
 	}
@@ -68,15 +71,38 @@ func TestReleaseWorkflowSettings(t *testing.T) {
 			if st.Uses != "" && !pinned.MatchString(st.Uses) {
 				t.Errorf("job %s: %q is not pinned to a commit SHA", name, st.Uses)
 			}
+			// No token left in .git for later steps, and no shared Go cache
+			// feeding a published build.
+			if strings.HasPrefix(st.Uses, "actions/checkout@") && st.With["persist-credentials"] != "false" {
+				t.Errorf("job %s: checkout must set persist-credentials: false", name)
+			}
+			if strings.HasPrefix(st.Uses, "actions/setup-go@") && st.With["cache"] != "false" {
+				t.Errorf("job %s: setup-go must set cache: false", name)
+			}
 			if strings.Contains(st.Run, "go build") && strings.Contains(st.Run, "./cmd/leadscore") {
 				built = true
-				for _, w := range []string{"darwin", "linux", "windows", "amd64", "arm64", "sha256sum"} {
+				for _, w := range []string{"darwin", "linux", "windows", "amd64", "arm64", "sha256sum", "-trimpath"} {
 					if !strings.Contains(st.Run, w) {
 						t.Errorf("the binaries step does not mention %s", w)
 					}
 				}
 			}
 		}
+	}
+	// Nothing is published unless the tagged commit passes its tests.
+	for _, name := range []string{"binaries", "image"} {
+		job, ok := wf.Jobs[name]
+		if !ok {
+			t.Errorf("no %s job", name)
+			continue
+		}
+		if needs := fmt.Sprint(job.Needs); needs != "test" && needs != "[test]" {
+			t.Errorf("job %s needs %v, want test", name, job.Needs)
+		}
+	}
+	// latest moves only for a final version, never for a v1.2.0-rc1 tag.
+	if !strings.Contains(string(data), `"$TAG" != *-*`) {
+		t.Error("the image job must tag latest only when the tag has no -")
 	}
 	if len(packageWriters) != 1 || packageWriters[0] != "image" {
 		t.Errorf("jobs with packages: write = %v, want only image", packageWriters)

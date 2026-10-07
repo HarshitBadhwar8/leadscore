@@ -29,7 +29,8 @@ func readRepo(t *testing.T, name string) []byte {
 	return b
 }
 
-// The image runs as the non-root user leadscore with its own HOME, with leadscore as the entrypoint.
+// The image runs as the non-root user leadscore with its own HOME, with
+// leadscore as the entrypoint.
 func TestDockerfileRunsAsLeadscore(t *testing.T) {
 	df := string(readRepo(t, "Dockerfile"))
 	for _, want := range []string{"USER leadscore", "ENV HOME=/home/leadscore", `ENTRYPOINT ["leadscore"]`, "-h /home/leadscore leadscore", "chmod 700 /data /out"} {

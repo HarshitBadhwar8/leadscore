@@ -8,8 +8,8 @@ import (
 
 // Engagement kinds the reply workflow sends. These are
 // our names, not the vendor's: the workflow body is typed by the team from our
-// templates, so the spelling is a contract we set. Each maps to an event kind
-// of section 5.3.
+// templates, so the spelling is a contract we set. Each maps to one of the
+// event kinds in internal/events.
 const (
 	kindEmailSent            = "email_sent"
 	kindEmailReplied         = "email_replied"
@@ -66,7 +66,7 @@ type notification struct {
 	// from it, falling back to the email.
 	ConversationLink string `json:"last_conversation_link"`
 
-	// The person and company fields the template adds (section 5.1); each is
+	// The person and company fields the reply template adds; each is
 	// optional, since a workflow may not be able to fill it.
 	ContactID   string `json:"contact_id"`
 	Name        string `json:"contact_name"`

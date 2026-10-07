@@ -390,7 +390,7 @@ func checkExportDir(r *Run) {
 // Ranked write too), never on a dry run, and reads each table back from the
 // store, so a file only ever shows committed rows. Each file is written to a
 // temporary file in export.dir and renamed over the old one, UTF-8, the
-// header row in the section 4 column order, every cell made safe with
+// header row in the store table's column order, every cell made safe with
 // csvsafe, mode 0600; the folder is synced after each rename. Temporary
 // files a crash left behind are removed first. The rewrite stops
 // csvLeaseMargin before the lease runs out and checks the lease before each

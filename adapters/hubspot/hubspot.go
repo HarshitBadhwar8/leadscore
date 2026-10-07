@@ -1,6 +1,7 @@
-// Package hubspot is the HubSpot adapter: the `hubspot` sink, which finds or creates contacts and one deal per
-// company; the HubSpot Lookup, which reads opt-outs and each company's deals
-// before pushing; `leadscore setup hubspot`; and the `hubspot` check.
+// Package hubspot is the HubSpot adapter: the `hubspot` sink, which finds or
+// creates contacts and one deal per company; the HubSpot Lookup, which reads
+// opt-outs and each company's deals before pushing; `leadscore setup hubspot`;
+// and the `hubspot` check.
 //
 // Configured under sinks.hubspot in leadscore.yml:
 //
@@ -13,7 +14,7 @@
 // Request and answer shapes are provisional: they come from HubSpot's public
 // API documentation and earlier working code, not from recorded calls. Every
 // behaviour that rests on an answer still to be checked is marked
-// "S0 confirms" (RFC 10).
+// "S0 confirms".
 package hubspot
 
 import (

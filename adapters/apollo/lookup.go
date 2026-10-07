@@ -12,9 +12,9 @@ import (
 )
 
 // The Apollo contact Lookup: just before a push, it finds each lead's Apollo
-// contacts by email and reports an `optout` for any that carries Apollo's opt-out flag. It catches a
-// person who clicked an unsubscribe link without replying, which neither
-// polling nor HubSpot may show.
+// contacts by email and reports an `optout` for any that carries Apollo's
+// opt-out flag. It catches a person who clicked an unsubscribe link without
+// replying, which neither polling nor HubSpot may show.
 //
 // It is registered only when ContactOptOutFlag is true (S0 found the flag):
 // without the flag it could only ever say "not opted out", which is no check

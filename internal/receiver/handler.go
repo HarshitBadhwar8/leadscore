@@ -74,8 +74,9 @@ type Options struct {
 // DefaultBatchWindow is the write queue's gathering time.
 const DefaultBatchWindow = 2 * time.Second
 
-// Handler is the receiver's HTTP handler. The end-to-end suite builds one in process with its
-// own clock; serve wraps it in an http.Server. Close drains it.
+// Handler is the receiver's HTTP handler. The end-to-end suite builds one in
+// process with its own clock; serve wraps it in an http.Server. Close drains
+// it.
 type Handler struct {
 	o       Options
 	secrets []string

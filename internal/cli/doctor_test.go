@@ -125,7 +125,7 @@ func TestDoctorCSVOnlyIsGreen(t *testing.T) {
 			t.Errorf("doctor output lacks %q:\n%s", want, out)
 		}
 	}
-	// Section 10's order: each check's first line comes after the one before.
+	// Doctor's order: each check's first line comes after the one before.
 	last := -1
 	for _, name := range DoctorOrder {
 		i := strings.Index(out, "  "+name+"\n")

@@ -5,8 +5,8 @@
 // It lives under internal/ so the engine can use these types without importing
 // the root package, which would be a cycle. The root package re-exports every
 // public name here as a type alias or a thin wrapper, with its own doc comment
-// repeating the contract. Section 1 is frozen at v0.1.0: these interfaces never
-// gain methods. The alias table stays internal (not re-exported).
+// repeating the contract. This public API is frozen at v0.1.0: these interfaces
+// never gain methods. The alias table stays internal (not re-exported).
 package api
 
 import (

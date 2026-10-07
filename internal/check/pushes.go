@@ -19,8 +19,8 @@ const pendingWarnAfter = 24 * time.Hour
 
 // pushesCheck is the `pushes` check: a failed step
 // (push_failed:<lead>:<lane>:<step>, until a `retry` row resets it) and steps
-// pending more than 24 hours (push_pending, with the count, a warning). Rows of a lead
-// merged into another are left out: no step is called for such a lead.
+// pending more than 24 hours (push_pending, with the count, a warning). Rows of
+// a lead merged into another are left out: no step is called for such a lead.
 // Messages name lead ids, never emails.
 type pushesCheck struct {
 	now func() time.Time

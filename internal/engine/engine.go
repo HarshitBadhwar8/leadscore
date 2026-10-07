@@ -108,7 +108,7 @@ var (
 )
 
 // RunWith is the test entry point: it adds _http_client to every vendor and
-// store block (section 3) when client is set, and uses the given clock. A test
+// store block when client is set, and uses the given clock. A test
 // pointing a block at a fake writes that block's base_url in its own YAML.
 // The dry-run report goes to stdout.
 func RunWith(ctx context.Context, opts api.RunOptions, hooks Hooks, now func() time.Time, client *http.Client) (api.RunResult, error) {

@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -24,7 +25,12 @@ func TestBuiltinAliasesNameNoPrivateField(t *testing.T) {
 	}
 	r, err := Compile(src)
 	if err != nil {
-		t.Fatalf("rubric.yml:\n%v", err)
+		// Only a count: the error text quotes the private rubric.
+		var errs LoadErrors
+		if errors.As(err, &errs) {
+			t.Fatalf("rubric.yml does not compile (%d errors)", len(errs))
+		}
+		t.Fatal("rubric.yml does not compile")
 	}
 	targets := map[string]bool{}
 	for _, field := range api.BuiltinAliases() {

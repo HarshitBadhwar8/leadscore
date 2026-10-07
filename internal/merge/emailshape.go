@@ -43,8 +43,8 @@ func ValidateEmailShape(email string) error {
 	parsed, err := mail.ParseAddress(email)
 	if err != nil {
 		// Inspected for its class, never wrapped: the standard library's error
-		// quotes its input, which on "ada@acme.example, evil@corp.example" would put a
-		// second person's address in the log.
+		// quotes its input, which on "ada@acme.example, evil@corp.example"
+		// would put a second person's address in the log.
 		if strings.Contains(err.Error(), "expected single address") {
 			return errors.New("email carries more than one address")
 		}

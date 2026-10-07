@@ -148,7 +148,7 @@ type SchedulerJob struct {
 }
 
 // Schedule reads the scheduler job (Cloud Scheduler API v1), in the Cloud Run
-// region (RFC 10: S0 confirms Cloud Scheduler is offered there).
+// region (S0 confirms Cloud Scheduler is offered there).
 func (c *Client) Schedule(ctx context.Context, project, region string) (*SchedulerJob, error) {
 	var out struct {
 		Schedule   string `json:"schedule"`
