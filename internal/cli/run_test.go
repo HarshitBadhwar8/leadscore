@@ -87,6 +87,20 @@ func TestRunStatusRankedExplain(t *testing.T) {
 	if code, _, errOut := cli("explain", "nobody@acme.example", "--config", cfg); code != 1 || !strings.Contains(errOut, "no lead matches") {
 		t.Errorf("explain an unknown person: %d %q", code, errOut)
 	}
+	if strings.Contains(out, "scored with rubric") {
+		t.Errorf("no note while the rubric is unchanged: %q", out)
+	}
+	// The local rubric changes: explain shows the stored verdict with a note.
+	rubric := filepath.Join(filepath.Dir(cfg), "rubric.yml")
+	text, _ := os.ReadFile(rubric)
+	if err := os.WriteFile(rubric, []byte(strings.Replace(string(text), "points: 5", "points: 6", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, out, _ = cli("explain", "ana@acme.example", "--config", cfg)
+	if !strings.Contains(out, "(scored with rubric r-") || !strings.Contains(out, "so this changes at the next run)") ||
+		!strings.Contains(out, "score: 5 (account 0, contact 5)") {
+		t.Errorf("explain after a rubric edit: %q", out)
+	}
 }
 
 // An unhealthy run exits 1, so a hosted job execution shows the failure.

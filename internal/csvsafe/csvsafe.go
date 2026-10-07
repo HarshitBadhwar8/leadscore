@@ -9,14 +9,23 @@ import (
 	"strings"
 )
 
-// Cell returns s, or s with a leading ' when it starts with =, +, -, @, a tab
-// or a carriage return. A cell that parses as a number (-5, +1.5) is left
-// alone: it cannot be a formula, and the quote would turn it into text.
+// Cell returns s, or s with a leading ' when it starts with a tab or a
+// carriage return, or its first non-space character is =, +, -, or @
+// (spreadsheets skip leading spaces: " =1+1" is a formula). A cell that
+// parses as a number (-5, +1.5) is left alone: it cannot be a formula, and
+// the quote would turn it into text.
 func Cell(s string) string {
-	if s == "" || !strings.ContainsRune("=+-@\t\r", rune(s[0])) {
+	if s == "" {
 		return s
 	}
-	if _, err := strconv.ParseFloat(s, 64); err == nil {
+	if s[0] == '\t' || s[0] == '\r' {
+		return "'" + s
+	}
+	t := strings.TrimLeft(s, " ")
+	if t == "" || !strings.ContainsRune("=+-@", rune(t[0])) {
+		return s
+	}
+	if _, err := strconv.ParseFloat(t, 64); err == nil {
 		return s
 	}
 	return "'" + s

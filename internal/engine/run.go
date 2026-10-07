@@ -387,7 +387,7 @@ func (x *exec) beforePhase1(chunk int) error {
 	// The in-run checks (contracts section 10) run here, after the merge and
 	// fold, so the rubric check sees this run's columns. A rubric field no
 	// input carries fails the run before scoring.
-	env := check.Env{Config: x.cfg, Model: r.Model, Store: x.store, Events: r.Events, Columns: x.columns}
+	env := check.Env{Config: x.cfg, Model: r.Model, Store: x.store, Events: r.Events, Columns: x.columns, Rubric: r.Rubric}
 	var unknown []string
 	for _, c := range check.InRun() {
 		for _, p := range c.Run(r.Ctx, env) {

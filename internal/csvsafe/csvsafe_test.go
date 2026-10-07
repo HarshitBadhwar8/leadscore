@@ -15,6 +15,10 @@ func TestCell(t *testing.T) {
 		"-5":                             "-5",
 		"+1.5":                           "+1.5",
 		"a=b":                            "a=b",
+		" =1+1":                          "' =1+1",
+		"   @x":                          "'   @x",
+		" -5":                            " -5",
+		"   ":                            "   ",
 	} {
 		if got := Cell(in); got != want {
 			t.Errorf("Cell(%q) = %q, want %q", in, got, want)

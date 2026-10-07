@@ -229,8 +229,10 @@ func runRanked(inv *invocation) int {
 	return exitOK
 }
 
-// runExplain prints a lead's verdict as the last run stored it in Ranked:
-// its row, every derived value, the score and its halves, and the reasons.
+// runExplain prints a lead's verdict as the last run stored it in Ranked, in
+// rubric.Explain's layout (contracts section 12.3): its row, every derived
+// value, the score and its halves, and the reasons, with a note when the
+// local rubric has changed since.
 func runExplain(inv *invocation) int {
 	c, b, closeStore, err := openStore(inv)
 	if err != nil {
@@ -262,6 +264,10 @@ func runExplain(inv *invocation) int {
 	seen := map[string]bool{}
 	if text, err := c.Rubric(); err == nil {
 		if r, err := rules.Compile(text); err == nil {
+			if row.RubricVersion != r.Version() {
+				fmt.Fprintf(w, "(scored with rubric %s; the local rubric is %s, so this changes at the next run)\n",
+					printable(row.RubricVersion), r.Version())
+			}
 			for _, n := range r.DerivedNames() {
 				if _, ok := row.Derived[n]; ok {
 					names, seen[n] = append(names, n), true

@@ -11,6 +11,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/config"
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
+	"github.com/HarshitBadhwar8/leadscore/internal/rules"
 )
 
 type Check interface {
@@ -31,6 +32,10 @@ type Env struct {
 	// rubric check counts a column every row leaves empty as loaded. Nil in
 	// doctor, which reads only the model.
 	Columns []string
+	// Rubric is the rubric the run is scoring with, so the rubric check judges
+	// that one even if the file changed since the run read it. Nil in doctor,
+	// which compiles the file.
+	Rubric *rules.Rubric
 }
 
 // Problem is written to Health under Key as given, and cleared when a later run

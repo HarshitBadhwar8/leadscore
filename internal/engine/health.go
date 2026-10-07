@@ -39,7 +39,9 @@ func (x *exec) putHealth(final bool) {
 	}
 	put(healthResult, "last_result", result)
 	put(healthResult, "last_run_at", model.FormatTime(x.startAt))
-	if healthy {
+	// A success is a healthy run that scored: a run stopped before scoring
+	// (run_stopped is only a warning) did not succeed.
+	if healthy && x.scored {
 		put(healthResult, "last_success_at", model.FormatTime(x.startAt))
 	}
 	put(healthResult, "run_id", r.ID)

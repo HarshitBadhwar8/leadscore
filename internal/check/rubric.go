@@ -28,10 +28,13 @@ func (rubric) Run(_ context.Context, env Env) []Problem {
 	if env.Config.Bundle {
 		where = "the rubric in " + env.Config.Path
 	}
-	text, err := env.Config.Rubric()
-	var r *rules.Rubric
-	if err == nil {
-		r, err = rules.Compile(text)
+	r := env.Rubric
+	var err error
+	if r == nil {
+		var text []byte
+		if text, err = env.Config.Rubric(); err == nil {
+			r, err = rules.Compile(text)
+		}
 	}
 	if err != nil {
 		return []Problem{{

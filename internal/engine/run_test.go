@@ -262,6 +262,9 @@ func TestStopIsGraceful(t *testing.T) {
 	if len(in.rows(model.TablePeople)) != 2 || len(in.rows(model.TableRanked)) != 0 {
 		t.Error("a stopped run saves what it merged and scores nothing more")
 	}
+	if h := in.health(); h["result:last_success_at"] != "" || h["result:last_run_at"] == "" {
+		t.Errorf("a run stopped before scoring is not a success: %v", h)
+	}
 }
 
 // Closing Stop starts the save budget: the hard stop comes that long after,

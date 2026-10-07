@@ -349,3 +349,15 @@ func (in *install) problemSince(key string) string {
 	}
 	return ""
 }
+
+// The in-run rubric check judges the rubric the run is scoring with, not the
+// file as edited mid-run.
+func TestRubricCheckUsesTheRunsRubric(t *testing.T) {
+	in := basicInstall(t)
+	hooks := DefaultHooks()
+	hooks.Intake = func(*Run) error { in.write("rubric.yml", "version: 1\nlanes: [ { kind: cold } ]\n"); return nil }
+	res, _, err := in.run(hooks)
+	if err != nil || !res.Healthy || hasKey(res.Problems, "rubric_invalid:compile") {
+		t.Errorf("%+v %v", res, err)
+	}
+}
