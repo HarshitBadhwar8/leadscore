@@ -1,8 +1,16 @@
 package engine
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
+
+	"github.com/HarshitBadhwar8/leadscore/internal/api"
+	"github.com/HarshitBadhwar8/leadscore/internal/logredact"
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
 	"github.com/HarshitBadhwar8/leadscore/internal/store/codec"
 )
@@ -44,10 +52,16 @@ func (x *exec) putHealth(final bool) {
 	if healthy && x.scored {
 		put(healthResult, "last_success_at", model.FormatTime(x.startAt))
 	}
-	put(healthResult, "run_id", r.ID)
-	put(healthResult, "rubric_version", r.Rubric.Version())
-	if s, err := x.cfg.Get("schedule"); err == nil {
-		put(healthResult, "schedule", s)
+	if r.ID != "" {
+		put(healthResult, "run_id", r.ID)
+	}
+	if r.Rubric != nil {
+		put(healthResult, "rubric_version", r.Rubric.Version())
+	}
+	if x.cfg != nil {
+		if s, err := x.cfg.Get("schedule"); err == nil {
+			put(healthResult, "schedule", s)
+		}
 	}
 
 	x.mu.Lock()
@@ -107,4 +121,74 @@ func (x *exec) lateProblem(key, message, fix string) {
 	}
 	x.putHealth(true)
 	_ = x.commit("Health", codec.Encode(x.run.Model, model.TableHealth), false)
+}
+
+// crashLeaseTTL bounds the lease RecordCrash takes for its one write.
+const crashLeaseTTL = 2 * time.Minute
+
+// RecordCrash writes Health for a run that crashed before it could write it
+// itself (a panic that escaped the run, recovered by serve's timer): the
+// result unhealthy, last_run_at startAt, and run_failed naming err, keeping
+// every other open problem, as a failed run does (contracts section 5.1). It
+// writes under the run lease, taken for this write only. When another run
+// holds the lease it writes nothing and returns an error wrapping
+// api.ErrLeaseHeld: that run writes Health itself.
+//
+// It reads only State's schema_version and the Health table, never the
+// whole store, so it still writes when loading the store is what failed (a
+// table that cannot be read), and it recovers a panic of its own into its
+// error, so the receiver calling it stays up. A store from a newer major
+// schema version gets no write (an error wrapping codec.ErrNewerSchema): this
+// binary never writes old-shaped rows into it.
+func RecordCrash(ctx context.Context, store api.Backend, startAt time.Time, err error) (rerr error) {
+	defer func() {
+		if p := recover(); p != nil {
+			rerr = fmt.Errorf("recording the crash panicked: %v", p)
+		}
+	}()
+	id, uerr := uuid.NewV7()
+	if uerr != nil {
+		return uerr
+	}
+	lease, lerr := store.Lease(ctx, id.String(), crashLeaseTTL)
+	if lerr != nil {
+		return fmt.Errorf("taking the run lease to record the crash: %w", lerr)
+	}
+	defer func() {
+		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		_ = lease.Release(rctx)
+	}()
+	// Never write old-shaped rows into a store a newer major version wrote.
+	state, lerr := store.ReadTable(ctx, model.TableState)
+	if lerr != nil {
+		return fmt.Errorf("reading State to record the crash: %w", lerr)
+	}
+	for _, row := range state {
+		if row["key"] != "schema_version" {
+			continue
+		}
+		if _, verr := codec.CheckVersion(row["value"]); errors.Is(verr, codec.ErrNewerSchema) {
+			return fmt.Errorf("not recording the crash: %w", verr)
+		}
+	}
+	rows, lerr := store.ReadTable(ctx, model.TableHealth)
+	if lerr != nil {
+		return fmt.Errorf("reading Health to record the crash: %w", lerr)
+	}
+	m := model.New()
+	if lerr := m.Load(model.TableHealth, rows); lerr != nil {
+		return fmt.Errorf("reading Health to record the crash: %w", lerr)
+	}
+	x := &exec{
+		store: store, startAt: startAt.UTC(), problems: map[string]problem{}, failed: true,
+		run: &Run{Ctx: ctx, Model: m, Lease: lease, Now: func() time.Time { return time.Now().UTC() }},
+	}
+	msg := "the run crashed"
+	if err != nil {
+		msg = "the run stopped: " + logredact.Redact(err.Error())
+	}
+	x.problem("run_failed", msg, "fix the cause in the message; the next run tries again", false)
+	x.putHealth(false)
+	return x.commit("Health", codec.Encode(m, model.TableHealth), false)
 }

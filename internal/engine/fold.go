@@ -39,7 +39,8 @@ const (
 // cancelled. It then
 // applies each new `retry` and `resubscribe` Overrides row once (Applied
 // overrides), and folds every live lead's status (contracts section 7).
-// Everything it changes is saved in phase 1.
+// Everything it changes is saved in phase 1. Last, it keeps open the
+// receiver_only_push problems whose lead is still known only from webhooks.
 func foldHook(r *Run) error {
 	r.invalidate()
 	r.pushing = nil
@@ -49,6 +50,7 @@ func foldHook(r *Run) error {
 	applyResubscribes(r, v)
 	foldStatuses(r, v)
 	r.invalidate()
+	keepReceiverOnlyPushes(r)
 	return nil
 }
 
@@ -161,7 +163,8 @@ func applyResubscribes(r *Run, v *view) {
 		if o.Action != merge.ActionStatus || o.Value != merge.Resubscribe || o.Invalid != "" || o.Lead == "" || applied(m, o.Hash) {
 			continue
 		}
-		cleared, kept := 0, 0
+		// Counted per person, not per lead of the family holding a copy.
+		cleared, kept := false, false
 		stays := v.ov.Status[o.Lead] == statusUnsubscribed
 		for _, f := range v.family(o.Lead) {
 			if stays {
@@ -172,17 +175,20 @@ func applyResubscribes(r *Run, v *view) {
 				continue
 			}
 			if out.UnsubscribedOrigin != unsubManual {
-				kept++
+				kept = true
 				continue
 			}
 			out.UnsubscribedAt, out.UnsubscribedOrigin = time.Time{}, ""
 			m.Put(model.TableOutcomes, out)
-			cleared++
+			cleared = true
 		}
 		markApplied(r, o.Hash)
-		msg := fmt.Sprintf("Overrides row %d (resubscribe) cleared %d manual opt-out(s)", o.Row, cleared)
-		if kept > 0 {
-			msg += fmt.Sprintf("; %d opt-out(s) from an event or lookup stay, since automation's opt-outs are never undone", kept)
+		msg := fmt.Sprintf("Overrides row %d (resubscribe) cleared no manual opt-out", o.Row)
+		if cleared {
+			msg = fmt.Sprintf("Overrides row %d (resubscribe) cleared the person's manual opt-out", o.Row)
+		}
+		if kept {
+			msg += "; an opt-out from an event or lookup stays, since automation's opt-outs are never undone"
 		}
 		if stays {
 			msg = fmt.Sprintf("Overrides row %d (resubscribe) did nothing: an unsubscribed row in Overrides still names the lead, so it stays unsubscribed", o.Row)

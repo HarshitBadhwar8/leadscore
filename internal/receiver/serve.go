@@ -17,7 +17,6 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/config"
 	"github.com/HarshitBadhwar8/leadscore/internal/engine"
 	"github.com/HarshitBadhwar8/leadscore/internal/logredact"
-	"github.com/HarshitBadhwar8/leadscore/internal/model"
 	"github.com/HarshitBadhwar8/leadscore/internal/store/sqlite"
 )
 
@@ -252,34 +251,22 @@ func (t *timer) safeRun(stop <-chan struct{}) (res api.RunResult, err error) {
 }
 
 // writePanic records a recovered panic in Health, as the run could not:
-// last_result unhealthy, last_run_at, and the run_failed problem.
+// last_result unhealthy, last_run_at and run_failed, under the run lease
+// (engine.RecordCrash). It never takes the receiver down: a panic while
+// writing is recovered and logged.
 func (t *timer) writePanic(startAt time.Time, p *panicked) {
+	defer func() {
+		if v := recover(); v != nil {
+			t.log("writing the panicked run to Health panicked: %v", v)
+		}
+	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	first := map[string]string{}
-	if rows, err := t.store.ReadTable(ctx, model.TableHealth); err == nil {
-		for _, r := range rows {
-			first[r["kind"]+"\x00"+r["key"]] = r["first_seen_at"]
-		}
-	}
-	now := model.FormatTime(t.now().UTC())
-	row := func(kind, key, value string) api.Row {
-		fs := first[kind+"\x00"+key]
-		if fs == "" {
-			fs = now
-		}
-		return api.Row{"kind": kind, "key": key, "value": value, "first_seen_at": fs, "updated_at": now}
-	}
-	def, _ := model.Def(model.TableHealth)
-	err := t.store.Commit(ctx, []api.TableWrite{{
-		Table: model.TableHealth, Op: api.OpUpsert, Key: def.Key,
-		Rows: []api.Row{
-			row("result", "last_result", "unhealthy"),
-			row("result", "last_run_at", model.FormatTime(startAt)),
-			row("problem", "run_failed", logredact.Redact("the run stopped: "+p.Error())+". Fix: fix the cause in the message; the next run tries again."),
-		},
-	}})
-	if err != nil {
+	err := engine.RecordCrash(ctx, t.store, startAt, p)
+	switch {
+	case errors.Is(err, api.ErrLeaseHeld):
+		t.log("the panicked run is not written to Health: another run holds the lease and writes Health itself")
+	case err != nil:
 		t.log("writing the panicked run to Health: %v", err)
 	}
 }
