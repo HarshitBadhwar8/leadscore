@@ -20,6 +20,10 @@ reads it. Create one workflow per file you need.
   send a custom header, add the secret to the body instead as a top-level
   field, `"leadscore_secret": "<your receiver secret>"`. The receiver removes
   it before storing. Never put the secret in the URL: URLs are logged.
+  Prefer the header: a body secret is only known once the body is read, so
+  the receiver reads such bodies a few at a time, and a flood of slow
+  senders can delay them (Apollo then retries); header requests are never
+  delayed this way.
 - **Body:** the template, with each `<...>` value replaced by the Apollo
   variable it names, picked in Apollo's workflow editor. Keep the JSON keys
   and the `event` value exactly as written: the event value is what tells

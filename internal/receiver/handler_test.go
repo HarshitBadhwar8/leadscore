@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -775,5 +776,38 @@ func TestRefusalsAndOversizeAreLogged(t *testing.T) {
 	}
 	if !strings.Contains(log.String(), "/apollo/reply: its body is over") {
 		t.Errorf("the 413 is not logged: %q", log.String())
+	}
+}
+
+// Slow senders that never finish their bodies cannot lock out body-secret
+// requests: each unauthenticated read has a short deadline of its own, so
+// the slots come free and a valid request gets through.
+func TestSlowSendersDoNotLockOutBodySecrets(t *testing.T) {
+	fastQueue(t, 5*time.Millisecond)
+	oldRead, oldWait := unauthReadTime, unauthWait
+	unauthReadTime, unauthWait = 200*time.Millisecond, 3*time.Second
+	t.Cleanup(func() { unauthReadTime, unauthWait = oldRead, oldWait })
+	h := newTestHandler(t, sqliteStore(t), nil)
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	addr := strings.TrimPrefix(srv.URL, "http://")
+	for range 2 * cap(h.unauth) {
+		c, err := net.Dial("tcp", addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { c.Close() })
+		// Headers and part of a body, then nothing.
+		io.WriteString(c, "POST /apollo/reply HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 1000\r\n\r\n{\"event\":")
+	}
+	waitFor(t, func() bool { return len(h.unauth) == cap(h.unauth) }) // every slot held
+	body := `{"event":"email_sent","contact_email":"a@example.com","leadscore_secret":"` + testSecret + `"}`
+	resp, err := http.Post(srv.URL+"/apollo/reply", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Errorf("a body-secret request behind slow senders: %d, want 200", resp.StatusCode)
 	}
 }

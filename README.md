@@ -147,7 +147,8 @@ Without `--config`, commands read `/config/bundle.yaml`, else
 bodies from the templates in `setup/apollo/`. Each request carries the
 receiver secret in the `X-Leadscore-Secret` header (or, when Apollo cannot set
 headers, in a top-level `leadscore_secret` body field, which is removed before
-storing). The receiver answers 200 only once the event is stored; a wrong or
+storing; prefer the header, since a flood of slow senders can delay
+body-secret requests but never header ones). The receiver answers 200 only once the event is stored; a wrong or
 missing secret gets 401, and a request it could not store within 10 seconds
 gets 503 so Apollo can send it again. A repeated event is counted once.
 

@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/HarshitBadhwar8/leadscore/adapters/apollo"
@@ -32,6 +34,8 @@ const (
 	// maxListedCuts bounds __truncated_fields, which a body with a long array
 	// of long strings could otherwise make as big as the body.
 	maxListedCuts = 50
+	// maxCutPathRunes caps each listed path: a key can be long too.
+	maxCutPathRunes = 128
 )
 
 // Marker fields the receiver adds to a body it had to change.
@@ -53,61 +57,68 @@ const secretField = "leadscore_secret"
 // 2 the value.
 var rawSecretField = regexp.MustCompile(`(?i)("leadscore_secret"\s*:\s*")((?:[^"\\]|\\.)*)`)
 
-// scanSecret returns the top-level leadscore_secret of a body without
-// decoding anything else: it walks only the first level of the object,
-// skipping each other value as raw bytes. This runs before the request is
-// authenticated, so it must cost no more than the body itself.
+// maxCandidates bounds how many presented secrets one body may carry, so a
+// body cannot make the check hash without limit.
+const maxCandidates = 16
+
+// scanSecret returns every top-level leadscore_secret value of a body,
+// without decoding anything else: it walks only the first level of the
+// object, skipping each other value as raw bytes. This runs before the
+// request is authenticated, so it must cost no more than the body itself.
+// Every copy is returned, and the request is accepted when any one matches:
+// a copy someone smuggled into another field (a prospect's name, say) cannot
+// hide the real one.
 //
-// When the body is not valid JSON, the field is looked for in the text, so a
-// body Apollo built with an unescaped quote in some value still
-// authenticates (and is stored marked as not JSON, the secret masked).
+// When the body is not valid JSON, or has anything after the object, the
+// field is also looked for in the text, so a body Apollo built with an
+// unescaped quote in some value still authenticates (and is stored marked as
+// not JSON, its secrets masked).
 //
 // S0 confirms: whether Apollo escapes quotes in the variable values it puts
 // into a workflow body. If it does not, such bodies are not JSON, and a body
 // secret is found by the text match here.
-func scanSecret(raw []byte) string {
+func scanSecret(raw []byte) []string {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
-		return textSecret(raw)
+		return textSecrets(raw)
 	}
 	var skip json.RawMessage // reused: no value is decoded into Go values
-	found := ""
+	var found []string
 	for dec.More() {
 		t, err := dec.Token()
 		if err != nil {
-			return textSecret(raw)
+			return append(found, textSecrets(raw)...)
 		}
 		key, _ := t.(string)
-		if key == secretField {
-			var s any
-			if err := dec.Decode(&skip); err != nil {
-				return textSecret(raw)
-			}
-			if json.Unmarshal(skip, &s) == nil {
-				if str, ok := s.(string); ok {
-					found = str
-				}
-			}
-			continue
-		}
 		if err := dec.Decode(&skip); err != nil {
-			return textSecret(raw)
+			return append(found, textSecrets(raw)...)
 		}
+		var str string
+		if key == secretField && json.Unmarshal(skip, &str) == nil && len(found) < maxCandidates {
+			found = append(found, str)
+		}
+	}
+	if _, err := dec.Token(); err != nil { // the closing brace
+		return append(found, textSecrets(raw)...)
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return append(found, textSecrets(raw)...) // something after the object
 	}
 	return found
 }
 
-// textSecret is the exact-name leadscore_secret value found in body text.
-func textSecret(raw []byte) string {
-	for _, m := range rawSecretField.FindAllSubmatch(raw, -1) {
+// textSecrets are the exact-name leadscore_secret values found in body text.
+func textSecrets(raw []byte) []string {
+	var out []string
+	for _, m := range rawSecretField.FindAllSubmatch(raw, maxCandidates) {
 		if bytes.Contains(m[1], []byte(`"`+secretField+`"`)) {
 			var s string
 			if json.Unmarshal(append(append([]byte{'"'}, m[2]...), '"'), &s) == nil {
-				return s
+				out = append(out, s)
 			}
 		}
 	}
-	return ""
+	return out
 }
 
 // incoming is one authenticated request body, read as JSON when it is a JSON
@@ -135,15 +146,14 @@ func readBody(raw []byte, secrets []string) incoming {
 	if err := dec.Decode(&v); err != nil {
 		return in
 	}
-	if _, err := dec.Token(); err == nil {
-		return in // more than one JSON value: not a JSON body
+	if _, err := dec.Token(); err != io.EOF {
+		return in // anything after the value: not a JSON body
 	}
 	obj, ok := v.(map[string]any)
 	if !ok {
 		return in
 	}
-	in.obj = obj
-	in.scrub(obj)
+	in.obj = in.scrub(obj).(map[string]any)
 	return in
 }
 
@@ -159,15 +169,16 @@ func (in *incoming) scrub(v any) any {
 		}
 		return x
 	case map[string]any:
+		out := make(map[string]any, len(x))
 		for k, e := range x {
 			if strings.EqualFold(k, secretField) {
-				delete(x, k)
 				in.changed = true
 				continue
 			}
-			x[k] = in.scrub(e)
+			masked := in.scrub(k).(string) // a secret pasted into a key
+			out[masked] = in.scrub(e)
 		}
-		return x
+		return out
 	case []any:
 		for i, e := range x {
 			x[i] = in.scrub(e)
@@ -185,21 +196,47 @@ func (in *incoming) scrub(v any) any {
 // {"__not_json": true, "raw": "<first 16KB>"}, its secrets masked. The result
 // always fits one cell.
 func storedBody(in incoming) []byte {
+	out, _ := storeBody(in)
+	return out
+}
+
+// Which of storedBody's steps produced the body (for tests).
+const (
+	stageVerbatim  = "verbatim"
+	stageNotJSON   = "not JSON"
+	stageCapped    = "strings capped"
+	stageKept      = "parser fields kept"
+	stageKeptShort = "parser fields shortened"
+	stageNonString = "non-strings shortened"
+	stageReason    = "reason only"
+)
+
+func storeBody(in incoming) ([]byte, string) {
 	if in.obj == nil {
-		return notJSONBody(in.raw, in.secrets)
+		return notJSONBody(in.raw, in.secrets), stageNotJSON
 	}
 	if !in.changed && utf8.RuneCount(in.raw) <= maxBodyChars && !hasLongString(in.obj) {
 		// Retained byte for byte: nothing needed changing.
-		return in.raw
+		return in.raw, stageVerbatim
 	}
 	var cut []string
 	obj := capStrings(in.obj, "", maxStringBytes, &cut).(map[string]any)
-	if len(cut) > 0 {
-		obj[truncatedFieldsKey] = listCuts(cut)
+	// tryWith encodes m with the list of shortened paths, then without it:
+	// the list is dropped before any field is.
+	tryWith := func(m map[string]any) ([]byte, bool) {
+		if len(cut) > 0 {
+			m[truncatedFieldsKey] = listCuts(cut)
+			if out := encode(m); fits(out) {
+				return out, true
+			}
+			delete(m, truncatedFieldsKey)
+		}
+		out := encode(m)
+		return out, fits(out)
 	}
-	out := encode(obj)
-	if fits(out) {
-		return out
+	out, ok := tryWith(obj)
+	if ok {
+		return out, stageCapped
 	}
 	// Still too big for one cell: keep only what the parsers read, so the
 	// event and its receiver row survive, and say why the rest went.
@@ -207,30 +244,24 @@ func storedBody(in incoming) []byte {
 		utf8.RuneCount(out), maxBodyChars)
 	kept := keepPaths(obj, apollo.RequiredPaths())
 	kept[droppedReasonKey] = reason
-	if len(cut) > 0 {
-		kept[truncatedFieldsKey] = listCuts(cut)
-	}
-	if out = encode(kept); fits(out) {
-		return out
+	if out, ok = tryWith(kept); ok {
+		return out, stageKept
 	}
 	// The kept fields alone are too long (each can be 16KB, an array can hold
 	// many): shorten them further. Keys, emails and ids are far shorter.
-	kept = keepPaths(obj, apollo.RequiredPaths())
-	kept = capRunes(kept, keptStringRunes, "", &cut).(map[string]any)
+	kept = capRunes(keepPaths(obj, apollo.RequiredPaths()), keptStringRunes, "", &cut).(map[string]any)
 	kept[droppedReasonKey] = reason
-	kept[truncatedFieldsKey] = listCuts(cut)
-	if out = encode(kept); fits(out) {
-		return out
+	if out, ok = tryWith(kept); ok {
+		return out, stageKeptShort
 	}
 	// A kept value that is not a string (a huge number, a long array) is
 	// still too long: make every such value a short string.
 	kept = shortenNonStrings(kept, "", &cut).(map[string]any)
 	kept[droppedReasonKey] = reason
-	kept[truncatedFieldsKey] = listCuts(cut)
-	if out = encode(kept); fits(out) {
-		return out
+	if out, ok = tryWith(kept); ok {
+		return out, stageNonString
 	}
-	return encode(map[string]any{droppedReasonKey: reason + "; even those did not fit, so none were kept"})
+	return encode(map[string]any{droppedReasonKey: reason + "; even those did not fit, so none were kept"}), stageReason
 }
 
 func fits(b []byte) bool { return utf8.RuneCount(b) <= maxBodyChars }
@@ -246,6 +277,11 @@ func listCuts(cut []string) []string {
 		}
 		out = append(out, c)
 	}
+	for i, c := range out {
+		if utf8.RuneCountInString(c) > maxCutPathRunes {
+			out[i] = runePrefix(c, maxCutPathRunes-utf8.RuneCountInString(truncatedMarker)) + truncatedMarker
+		}
+	}
 	if len(out) > maxListedCuts {
 		out = append(out[:maxListedCuts], fmt.Sprintf("and %d more", len(out)-maxListedCuts))
 	}
@@ -256,9 +292,27 @@ func listCuts(cut []string) []string {
 // leadscore_secret field, in text that is not JSON.
 func maskText(raw []byte, secrets []string) []byte {
 	for _, s := range secrets {
-		raw = bytes.ReplaceAll(raw, []byte(s), []byte(redacted))
+		for _, form := range secretForms(s) {
+			raw = bytes.ReplaceAll(raw, []byte(form), []byte(redacted))
+		}
 	}
 	return rawSecretField.ReplaceAll(raw, []byte("${1}"+redacted))
+}
+
+// secretForms are the ways a secret can be spelled in JSON text: as is,
+// as JSON escapes it, and with every character as a \uXXXX escape (lower and
+// upper case hex), which a decoder reads back as the secret.
+func secretForms(s string) []string {
+	forms := []string{s}
+	if b, err := json.Marshal(s); err == nil {
+		forms = append(forms, string(b[1:len(b)-1]))
+	}
+	var lower, upper strings.Builder
+	for _, u := range utf16.Encode([]rune(s)) {
+		fmt.Fprintf(&lower, `\u%04x`, u)
+		fmt.Fprintf(&upper, `\u%04X`, u)
+	}
+	return append(forms, lower.String(), upper.String())
 }
 
 // notJSONBody keeps the first 16KB of a body that is not a JSON object, its

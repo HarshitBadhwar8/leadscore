@@ -154,7 +154,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // known once the body is read). Variables so tests can shrink them.
 var (
 	// unauthReads is how many such bodies may be read at once.
-	unauthReads = 4
+	unauthReads = 16
+	// unauthReadTime is how long one such body may take to arrive.
+	unauthReadTime = 3 * time.Second
 	// unauthWait is how long a request waits for a free read before 503.
 	unauthWait = 5 * time.Second
 	// refusalLogEvery is the most often a refusal is logged; the refusals in
@@ -196,17 +198,27 @@ func (h *Handler) receive(w http.ResponseWriter, r *http.Request, kind string) {
 			t.Stop()
 			return
 		}
+		// A slow sender must not hold a slot for the server's whole read
+		// timeout: an unauthenticated body gets a short deadline of its own.
+		// (Not supported by a test recorder; the slot cap still holds.)
+		_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(unauthReadTime))
 		var ok bool
 		raw, ok = h.read(w, r)
-		var presented string
+		var presented []string
 		if ok {
-			presented = strings.TrimSpace(scanSecret(raw))
+			presented = scanSecret(raw)
 		}
 		<-h.unauth
 		if !ok {
 			return
 		}
-		if auth.VerifyAny(h.secrets, presented) != nil {
+		accepted := false
+		for _, p := range presented {
+			if auth.VerifyAny(h.secrets, strings.TrimSpace(p)) == nil {
+				accepted = true
+			}
+		}
+		if !accepted {
 			h.refuse(w, r)
 			return
 		}
