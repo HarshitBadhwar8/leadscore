@@ -260,6 +260,7 @@ func (x *exec) main() error {
 		}
 		// A second ErrTooLarge: nothing of steps 3 to 6 is saved this run.
 		r.Model.Discard()
+		keepEnrichment(r) // its calls were made: phase 2 saves their facts and count
 		x.scored, x.merged = false, 0
 		r.Input, r.Result = rules.Input{}, rules.Result{}
 		x.phase1Failed, x.cutShort = true, true

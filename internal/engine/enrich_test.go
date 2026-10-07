@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
@@ -326,5 +327,225 @@ func TestEnrichBadKeyFailsTheStep(t *testing.T) {
 	}
 	if len(in.rows(model.TableRanked)) != 2 {
 		t.Error("the run did not score after enrichment failed")
+	}
+}
+
+func setTooLarge(t *testing.T, n int) {
+	flaky.Lock()
+	flaky.tooLarge = n
+	flaky.Unlock()
+	t.Cleanup(func() { flaky.Lock(); flaky.tooLarge = 0; flaky.Unlock() })
+}
+
+func logKinds(in *install) map[string]int {
+	out := map[string]int{}
+	for _, r := range in.rows(model.TableLog) {
+		out[r["kind"]]++
+	}
+	return out
+}
+
+// A failed Enrich survives the ErrTooLarge redo: the redo returns the same
+// error, so step_failed:enrich stays and the lanes count as judged on
+// partial inputs.
+func TestEnrichFailureSurvivesTooLargeRedo(t *testing.T) {
+	in, fake, client := enrichInstallOn(t, "store: { type: flaky, path: leadscore.db }\n", "", "a.example", "b.example")
+	t.Setenv("APOLLO_API_KEY", "wrong")
+	setTooLarge(t, 1)
+	res, out, err := in.run(DefaultHooks(), client)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if !hasKey(res.Problems, "step_failed:enrich") {
+		t.Errorf("the enrich failure vanished on the redo: %v", res.Problems)
+	}
+	if n := len(fake.EnrichCalls()); n != 1 {
+		t.Errorf("%d calls, want 1", n)
+	}
+	if got := in.state("enrich_count:" + time.Now().UTC().Format(time.DateOnly)); got != "1" {
+		t.Errorf("enrich_count = %q, want 1", got)
+	}
+}
+
+// A rate limit's log line, and the summary line, survive the redo.
+func TestEnrichRateLimitLogSurvivesTooLargeRedo(t *testing.T) {
+	in, fake, client := enrichInstallOn(t, "store: { type: flaky, path: leadscore.db }\n", "", "a.example", "b.example")
+	fake.AddOrg("a.example", fakeapollo.Org{Name: "A Co"})
+	fake.RateLimitAfter(1, 1000)
+	setTooLarge(t, 1)
+	res, out, err := in.run(DefaultHooks(), client)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if hasKey(res.Problems, "step_failed:enrich") {
+		t.Errorf("a rate limit failed the step: %v", res.Problems)
+	}
+	k := logKinds(in)
+	if k[logEnrichRateLimited] != 1 || k[logEnriched] != 1 {
+		t.Errorf("log kinds after the redo: %v", k)
+	}
+	if n := len(fake.EnrichCalls()); n != 4 {
+		t.Errorf("%d calls, want 4 (one answer, three rate-limited attempts)", n)
+	}
+}
+
+// Phase 1 too large twice: the model is discarded, but the calls were made,
+// so phase 2 saves their count and facts.
+func TestEnrichCountSurvivesDiscard(t *testing.T) {
+	in, fake, client := enrichInstallOn(t, "store: { type: flaky, path: leadscore.db }\n", "", "a.example", "b.example")
+	fake.AddOrg("a.example", fakeapollo.Org{Name: "A Co"})
+	fake.AddOrg("b.example", fakeapollo.Org{Name: "B Co"})
+	setTooLarge(t, 2)
+	res, out, err := in.run(DefaultHooks(), client)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if !hasKey(res.Problems, "commit_too_large") {
+		t.Fatalf("phase 1 was not too large twice: %v", res.Problems)
+	}
+	if got := in.state("enrich_count:" + time.Now().UTC().Format(time.DateOnly)); got != "2" {
+		t.Errorf("enrich_count = %q after %d calls", got, len(fake.EnrichCalls()))
+	}
+	if cf := companyFacts(in); cf["a.example"]["enriched_at"] == "" || cf["b.example"]["enriched_at"] == "" {
+		t.Errorf("facts bought were not saved: %v", cf)
+	}
+}
+
+// The reviewer's probe: domains that always fail no longer starve the
+// budget. A failure waits a day, and three in a row stop the run.
+func TestEnrichFailingDomainsDoNotStarveTheBudget(t *testing.T) {
+	in, fake, client := enrichInstall(t, ", max_lookups_per_run: 2", "bad1.example", "bad2.example", "good.example")
+	fake.Serve("bad1.example", "server_error")
+	fake.Serve("bad2.example", "server_error")
+	fake.AddOrg("good.example", fakeapollo.Org{Name: "Good"})
+	day := time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC)
+
+	res, _, err := in.run(DefaultHooks(), client, at(day))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasKey(res.Problems, "enrich_failed") || hasKey(res.Problems, "step_failed:enrich") {
+		t.Errorf("problems after two failures: %v", res.Problems)
+	}
+	cf := companyFacts(in)
+	if cf["bad1.example"]["enrich_failed_at"] == "" || cf["bad2.example"]["enrich_failed_at"] == "" {
+		t.Errorf("failures not stamped: %v", cf)
+	}
+	for i := 1; i <= 3; i++ {
+		if _, _, err := in.run(DefaultHooks(), client, at(day.Add(time.Duration(i)*time.Hour))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	calls := fake.EnrichCalls()
+	if len(calls) != 3 || calls[2] != "good.example" {
+		t.Fatalf("calls over four runs = %v, want the two bad ones once, then good.example", calls)
+	}
+	// A day later the failed domains are tried again, after never-tried ones.
+	if _, _, err := in.run(DefaultHooks(), client, at(day.Add(25*time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	if calls := fake.EnrichCalls(); len(calls) != 5 {
+		t.Errorf("a day later: calls %v", calls)
+	}
+}
+
+func TestEnrichStopsAfterThreeFailuresInARow(t *testing.T) {
+	in, fake, client := enrichInstall(t, "", "bad1.example", "bad2.example", "bad3.example", "good.example")
+	for _, d := range []string{"bad1.example", "bad2.example", "bad3.example"} {
+		fake.Serve(d, "server_error")
+	}
+	fake.AddOrg("good.example", fakeapollo.Org{Name: "Good"})
+	res, _, err := in.run(DefaultHooks(), client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls := fake.EnrichCalls(); len(calls) != 3 {
+		t.Errorf("calls %v: enrichment did not stop after three failures in a row", calls)
+	}
+	h := in.health()
+	if !hasKey(res.Problems, "enrich_failed") || !strings.Contains(h["problem:enrich_failed"], "in a row") {
+		t.Errorf("problems %v, Health %v", res.Problems, h["problem:enrich_failed"])
+	}
+}
+
+// An unknown funding label clears the stored stage (it moves to previous);
+// a label Apollo leaves out keeps it.
+func TestEnrichUnknownFundingLabelClearsTheStage(t *testing.T) {
+	in, fake, client := enrichInstall(t, ", max_age: 1d", "acme.example")
+	fake.AddOrg("acme.example", fakeapollo.Org{Name: "Acme", FundingStage: "Series A"})
+	t0 := time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC)
+	if _, _, err := in.run(DefaultHooks(), client, at(t0)); err != nil {
+		t.Fatal(err)
+	}
+	fake.AddOrg("acme.example", fakeapollo.Org{Name: "Acme"})
+	if _, _, err := in.run(DefaultHooks(), client, at(t0.Add(48*time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	if f := factsOf(t, companyFacts(in)["acme.example"], "facts"); f["funding_stage"].Value != "series_a" {
+		t.Errorf("a missing label dropped the stage: %v", f)
+	}
+	fake.AddOrg("acme.example", fakeapollo.Org{Name: "Acme", FundingStage: "Private Equity"})
+	if _, _, err := in.run(DefaultHooks(), client, at(t0.Add(96*time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	row := companyFacts(in)["acme.example"]
+	if f, p := factsOf(t, row, "facts"), factsOf(t, row, "previous"); f["funding_stage"].Value != "" || p["funding_stage"].Value != "series_a" {
+		t.Errorf("an unknown label kept a stale stage: facts %v previous %v", f, p)
+	}
+}
+
+// An unreadable stored count is the whole day spent: no call.
+func TestEnrichUnreadableCountSpendsTheDay(t *testing.T) {
+	in, fake, client := enrichInstall(t, "", "a.example")
+	fake.AddOrg("a.example", fakeapollo.Org{Name: "A"})
+	day := time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC)
+	err := in.store().Commit(context.Background(), []api.TableWrite{{Table: model.TableState, Op: api.OpUpsert, Key: []string{"key"},
+		Rows: []api.Row{{"key": "enrich_count:2026-10-07", "value": "lots"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := in.run(DefaultHooks(), client, at(day)); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(fake.EnrichCalls()); n != 0 {
+		t.Errorf("%d calls on a day whose count cannot be read", n)
+	}
+}
+
+// Personal mail providers and names with no dot are never looked up; the
+// failure wait and the order hold.
+func TestDueDomains(t *testing.T) {
+	now := time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC)
+	m := model.New()
+	put := func(d string, enriched, failed time.Time) {
+		m.Put(model.TableCompanyFacts, model.CompanyFact{Domain: d, EnrichedAt: enriched, EnrichFailedAt: failed})
+	}
+	put("gmail.com", time.Time{}, time.Time{})
+	put("localhost", time.Time{}, time.Time{})
+	put("fresh.example", now.Add(-time.Hour), time.Time{})
+	put("stale.example", now.Add(-40*24*time.Hour), time.Time{})
+	put("failed-today.example", time.Time{}, now.Add(-time.Hour))
+	put("failed-long-ago.example", time.Time{}, now.Add(-48*time.Hour))
+	put("new.example", time.Time{}, time.Time{})
+	got := dueDomains(m, now, 30*24*time.Hour)
+	want := []string{"new.example", "stale.example", "failed-long-ago.example"}
+	if !slices.Equal(got, want) {
+		t.Errorf("due = %v, want %v", got, want)
+	}
+}
+
+// Extra keys: company.<name> wins over <name>; an empty value clears.
+func TestWriteFactsExtraOrder(t *testing.T) {
+	m := model.New()
+	m.Put(model.TableCompanyFacts, model.CompanyFact{Domain: "a.example",
+		Facts: map[string]model.Fact{"old": {Value: "x", Origin: "input"}}})
+	writeFacts(m, "a.example", api.CompanyFacts{Extra: map[string]string{
+		"company.size": "big", "size": "small", "old": ""}}, time.Unix(10, 0).UTC())
+	cf := m.CompanyFacts[model.Key("a.example")]
+	if cf.Facts["size"].Value != "big" {
+		t.Errorf("size = %v, want the company. key's value", cf.Facts["size"])
+	}
+	if _, has := cf.Facts["old"]; has || cf.Previous["old"].Value != "x" {
+		t.Errorf("an empty Extra value did not clear: %v / %v", cf.Facts, cf.Previous)
 	}
 }

@@ -1,10 +1,10 @@
 {
   "provisional": true,
-  "note": "S0 confirms: 401 (or 403) for a bad key, sent in the X-Api-Key header",
+  "note": "S0 confirms: does Apollo answer 404 for an unknown domain? Until then a 404 is a per-domain failure",
   "method": "GET",
   "path": "/api/v1/organizations/enrich",
   "query": {
-    "domain": "acme-robotics.example"
+    "domain": "ghost-co.example"
   },
   "request_headers": [
     "Accept",
@@ -12,12 +12,9 @@
     "X-Api-Key"
   ],
   "request_body": null,
-  "status": 401,
+  "status": 404,
   "response_headers": {
     "Content-Type": "application/json; charset=utf-8"
   },
-  "response_body": {
-    "error": "Invalid access credentials.",
-    "error_code": "INVALID_API_KEY"
-  }
+  "response_body": {}
 }

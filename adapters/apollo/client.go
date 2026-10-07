@@ -67,7 +67,9 @@ type Client struct {
 // NewClient builds a client from an adapter block (enrich, or sinks.apollo).
 // The key comes from APOLLO_API_KEY; the block's test keys base_url and
 // _http_client (contracts section 3) replace the API address and the HTTP
-// client. A missing key is an error, so no call goes out unauthenticated.
+// client. A missing key is an error, so no call goes out unauthenticated, and
+// base_url without _http_client is refused: base_url is for tests only, and
+// one written into leadscore.yml would send the key to any address.
 func NewClient(cfg api.Config) (*Client, error) {
 	return NewClientWithKey(cfg, os.Getenv(KeyVariable))
 }
@@ -79,20 +81,28 @@ func NewClientWithKey(cfg api.Config, key string) (*Client, error) {
 	if key == "" {
 		return nil, fmt.Errorf("apollo: %s is not set", KeyVariable)
 	}
-	c := &Client{key: key, baseURL: DefaultBaseURL, http: &http.Client{Timeout: CallTimeout}}
+	hc := &http.Client{Timeout: CallTimeout}
+	if v, ok := cfg["_http_client"]; ok && v != nil {
+		given, isClient := v.(*http.Client)
+		if !isClient {
+			return nil, errors.New("apollo: `_http_client` must be an *http.Client")
+		}
+		copied := *given // a copy, so the redirect rule below leaves the caller's client alone
+		hc = &copied
+	}
+	// The key header must never follow a redirect to another host: a 3xx is
+	// returned as the reply, which is then a StatusError.
+	hc.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	c := &Client{key: key, baseURL: DefaultBaseURL, http: hc}
 	if v, ok := cfg["base_url"]; ok && v != nil {
 		s, isStr := v.(string)
 		if !isStr || s == "" {
 			return nil, errors.New("apollo: `base_url` must be a URL")
 		}
-		c.baseURL = strings.TrimRight(s, "/")
-	}
-	if v, ok := cfg["_http_client"]; ok && v != nil {
-		hc, isClient := v.(*http.Client)
-		if !isClient {
-			return nil, errors.New("apollo: `_http_client` must be an *http.Client")
+		if _, test := cfg["_http_client"].(*http.Client); !test {
+			return nil, errors.New("apollo: `base_url` is for tests only and needs a test HTTP client; remove it from leadscore.yml")
 		}
-		c.http = hc
+		c.baseURL = strings.TrimRight(s, "/")
 	}
 	return c, nil
 }
@@ -112,7 +122,12 @@ type Request struct {
 type StatusError struct {
 	Status int
 	Detail string
+	body   []byte
 }
+
+// Body is the reply's raw body (at most 4 MB), for telling refusal reasons
+// apart. Never log it: it may hold a person's email.
+func (e *StatusError) Body() []byte { return e.body }
 
 func (e *StatusError) Error() string {
 	if e.Detail == "" {
@@ -169,6 +184,9 @@ func (c *Client) DoRetrying(ctx context.Context, req Request, out any) error {
 		case <-ctx.Done():
 			t.Stop()
 			return fmt.Errorf("apollo: waiting to retry a rate-limited call: %w", ctx.Err())
+		case <-waitStop(ctx):
+			t.Stop()
+			return fmt.Errorf("apollo: %w (429; the run stopped new calls while waiting to retry)", api.ErrRateLimited)
 		case <-t.C:
 		}
 	}
@@ -195,7 +213,7 @@ func (c *Client) attempt(ctx context.Context, req Request) (*http.Response, erro
 	if err != nil {
 		return nil, fmt.Errorf("apollo: building the request: %w", err)
 	}
-	hr.Header.Set("X-Api-Key", c.key)
+	hr.Header.Set("X-Api-Key", c.key) // S0 confirms: the key goes in this header
 	hr.Header.Set("Accept", "application/json")
 	hr.Header.Set("Cache-Control", "no-cache")
 	if body != nil {
@@ -203,6 +221,12 @@ func (c *Client) attempt(ctx context.Context, req Request) (*http.Response, erro
 	}
 	resp, err := c.http.Do(hr) //nolint:gosec // the URL is the configured base plus a fixed path
 	if err != nil {
+		// A *url.Error's text holds the whole URL, query included, and a
+		// query may carry an email; report only its operation and cause.
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			err = fmt.Errorf("%s: %w", ue.Op, ue.Err)
+		}
 		return nil, fmt.Errorf("apollo: %s %s: %w", req.Method, req.Path, err)
 	}
 	// Read the whole reply now, while the attempt's context is live.
@@ -226,7 +250,7 @@ func (c *Client) finish(resp *http.Response, out any) error {
 	case resp.StatusCode == http.StatusTooManyRequests:
 		return fmt.Errorf("apollo: %w (429)", api.ErrRateLimited)
 	case resp.StatusCode < 200 || resp.StatusCode > 299:
-		return &StatusError{Status: resp.StatusCode, Detail: logredact.VendorErrorDetail(raw)}
+		return &StatusError{Status: resp.StatusCode, Detail: logredact.VendorErrorDetail(raw), body: raw}
 	}
 	if out == nil || len(bytes.TrimSpace(raw)) == 0 {
 		return nil
@@ -243,16 +267,30 @@ func (c *Client) finish(resp *http.Response, out any) error {
 // date in Retry-After is not parsed and falls back to the backoff.
 func retryWait(retryAfter string, attempt int) time.Duration {
 	if secs, err := strconv.Atoi(strings.TrimSpace(retryAfter)); err == nil && secs >= 0 {
-		return min(time.Duration(secs)*time.Second, retryMaxWait)
+		if secs >= int(retryMaxWait/time.Second) {
+			return retryMaxWait // capped before multiplying, so a huge value cannot overflow
+		}
+		return time.Duration(secs) * time.Second
 	}
 	return min(retryBaseWait<<attempt, retryMaxWait)
+}
+
+// ErrKeyRefused is AuthHealth's answer when the call worked but the key does
+// not sign in (is_logged_in false).
+var ErrKeyRefused = errors.New("apollo: the key does not sign in (is_logged_in is false)")
+
+// KeyRefused reports whether err says the key itself is bad: a 401 or 403,
+// or ErrKeyRefused. S0 confirms which of 401 and 403 Apollo uses for a bad
+// key; both count.
+func KeyRefused(err error) bool {
+	return errors.Is(err, ErrKeyRefused) || IsStatus(err, http.StatusUnauthorized, http.StatusForbidden)
 }
 
 // AuthHealth calls Apollo's free auth-health endpoint and reports whether the
 // key signs in. It never spends a credit (S0 confirms), which is why the
 // apollo-key check uses it rather than an enrichment call. S0 confirms the
 // reply shape: a bad key may come back as 401, or as 200 with is_logged_in
-// false; both read as not signed in.
+// false (ErrKeyRefused); both read as not signed in.
 func (c *Client) AuthHealth(ctx context.Context) error {
 	var reply struct {
 		IsLoggedIn *bool `json:"is_logged_in"`
@@ -262,7 +300,7 @@ func (c *Client) AuthHealth(ctx context.Context) error {
 		return err
 	}
 	if reply.IsLoggedIn != nil && !*reply.IsLoggedIn {
-		return errors.New("apollo: the key does not sign in (is_logged_in is false)")
+		return ErrKeyRefused
 	}
 	return nil
 }
@@ -273,3 +311,21 @@ func (c *Client) AuthHealth(ctx context.Context) error {
 // the apollo-key check warns teams that send only through Apollo that a
 // person who clicked an unsubscribe link without replying is not seen.
 const ContactOptOutFlag = false
+
+type waitStopKey struct{}
+
+// WithWaitStop returns ctx carrying stop: DoRetrying gives up waiting for a
+// retry when stop is done, returning ErrRateLimited, while a call already in
+// flight still runs under ctx. The engine passes the run's push context
+// (done at Stop or the deadline), which ends new calls but not open ones.
+func WithWaitStop(ctx, stop context.Context) context.Context {
+	return context.WithValue(ctx, waitStopKey{}, stop)
+}
+
+// waitStop is the stop channel set by WithWaitStop, or nil (never ready).
+func waitStop(ctx context.Context) <-chan struct{} {
+	if stop, ok := ctx.Value(waitStopKey{}).(context.Context); ok {
+		return stop.Done()
+	}
+	return nil
+}

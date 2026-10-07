@@ -77,7 +77,10 @@ type CompanyFact struct {
 	FirstSeen  map[string]time.Time
 	EnrichedAt time.Time
 	NotFoundAt time.Time
-	Extra      map[string]string
+	// EnrichFailedAt is when the last lookup failed (no answer at all); the
+	// domain waits a day before it is tried again.
+	EnrichFailedAt time.Time
+	Extra          map[string]string
 }
 
 // Fact is one company fact: its value, origin and when it was set.
@@ -263,13 +266,14 @@ func (r Identity) encode() api.Row {
 
 func (r CompanyFact) encode() api.Row {
 	return withExtra(api.Row{
-		"domain":       r.Domain,
-		"facts":        factsJSON(r.Facts),
-		"previous":     factsJSON(r.Previous),
-		"rollups":      objectJSON(r.Rollups),
-		"first_seen":   timesJSON(r.FirstSeen),
-		"enriched_at":  FormatTime(r.EnrichedAt),
-		"not_found_at": FormatTime(r.NotFoundAt),
+		"domain":           r.Domain,
+		"facts":            factsJSON(r.Facts),
+		"previous":         factsJSON(r.Previous),
+		"rollups":          objectJSON(r.Rollups),
+		"first_seen":       timesJSON(r.FirstSeen),
+		"enriched_at":      FormatTime(r.EnrichedAt),
+		"not_found_at":     FormatTime(r.NotFoundAt),
+		"enrich_failed_at": FormatTime(r.EnrichFailedAt),
 	}, r.Extra)
 }
 
@@ -383,7 +387,7 @@ func decode(def TableDef, r api.Row) (Row, error) {
 	case TableCompanyFacts:
 		c := CompanyFact{Domain: d.s("domain"), Facts: d.facts("facts"), Previous: d.facts("previous"),
 			FirstSeen: d.times("first_seen"), EnrichedAt: d.t("enriched_at"), NotFoundAt: d.t("not_found_at"),
-			Extra: extra(def, r)}
+			EnrichFailedAt: d.t("enrich_failed_at"), Extra: extra(def, r)}
 		d.json("rollups", &c.Rollups)
 		out = c
 	case TableWindowEvents:

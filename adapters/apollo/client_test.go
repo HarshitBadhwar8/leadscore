@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,8 +66,13 @@ func TestNewClient(t *testing.T) {
 	if c.key != "k" || c.baseURL != DefaultBaseURL || c.http.Timeout != CallTimeout {
 		t.Errorf("defaults: key %q base %q timeout %v", c.key, c.baseURL, c.http.Timeout)
 	}
-	if _, err := NewClient(api.Config{"base_url": 5}); err == nil {
+	if _, err := NewClient(api.Config{"base_url": 5, "_http_client": http.DefaultClient}); err == nil {
 		t.Error("a base_url that is not text was accepted")
+	}
+	// base_url is for tests only: from leadscore.yml alone it would send the
+	// key to any address.
+	if _, err := NewClient(api.Config{"base_url": "https://collector.example"}); err == nil || !strings.Contains(err.Error(), "for tests only") {
+		t.Errorf("base_url without a test client: err = %v", err)
 	}
 	if _, err := NewClient(api.Config{"_http_client": "x"}); err == nil {
 		t.Error("an _http_client that is not a client was accepted")
@@ -103,9 +109,15 @@ func TestEnrichOrganizationLeavesAnAbsentHeadcountNil(t *testing.T) {
 	}
 }
 
-// Both of Apollo's ways of saying "no such company" land on ErrNotFound.
+// A 200 with no organization is ErrNotFound; a 404 is an ordinary failure
+// until S0 confirms Apollo uses it for an unknown domain.
 func TestEnrichOrganizationNotFound(t *testing.T) {
-	for _, cs := range []string{"not_found", "not_found_empty"} {
+	c, fake := fakeClient(t)
+	fake.Serve("ghost-co.example", "status_404")
+	if _, err := c.EnrichOrganization(context.Background(), "ghost-co.example"); errors.Is(err, ErrNotFound) || !IsStatus(err, 404) {
+		t.Errorf("a 404: err = %v, want a failure, not ErrNotFound", err)
+	}
+	for _, cs := range []string{"not_found", "not_found_null"} {
 		t.Run(cs, func(t *testing.T) {
 			c, fake := fakeClient(t)
 			fake.Serve("ghost-co.example", cs)
@@ -175,6 +187,7 @@ func TestRetryWait(t *testing.T) {
 		{"", 10, retryMaxWait},
 		{"Wed, 21 Oct 2026 07:28:00 GMT", 0, retryBaseWait}, // a date falls back to the curve
 		{"-1", 0, retryBaseWait},
+		{"9223372036", 0, retryMaxWait}, // capped before multiplying: no overflow
 	}
 	for _, c := range cases {
 		if got := retryWait(c.header, c.attempt); got != c.want {
@@ -245,6 +258,69 @@ func TestStatusErrorIsRedacted(t *testing.T) {
 	}
 }
 
+// A retry wait ends when the run stops new calls (WithWaitStop), though the
+// call's own context is still live.
+func TestRetryWaitEndsOnWaitStop(t *testing.T) {
+	c, fake := fakeClient(t)
+	fake.SetRetryAfter("30")
+	fake.RateLimitNext(100)
+	stop, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(50*time.Millisecond, cancel)
+	start := time.Now()
+	_, err := c.EnrichOrganization(WithWaitStop(context.Background(), stop), "slow.example")
+	if !errors.Is(err, api.ErrRateLimited) || time.Since(start) > 5*time.Second {
+		t.Errorf("err %v after %v, want ErrRateLimited at once", err, time.Since(start))
+	}
+}
+
+// A transport error never carries the URL's query, which may hold an email.
+func TestTransportErrorHidesTheQuery(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	base := srv.URL
+	srv.Close()
+	c, err := NewClientWithKey(api.Config{"base_url": base, "_http_client": &http.Client{}}, testKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = c.Do(context.Background(), Request{Method: http.MethodGet, Path: "/v1/contacts/search",
+		Query: url.Values{"q_keywords": {"ada.lovelace@example.org"}}}, nil)
+	if err == nil {
+		t.Fatal("a closed server answered")
+	}
+	for _, leak := range []string{"ada", "%40", "example.org", "q_keywords"} {
+		if strings.Contains(err.Error(), leak) {
+			t.Errorf("the error %q holds %q", err, leak)
+		}
+	}
+}
+
+// The key never follows a redirect: a 3xx is the reply.
+func TestRedirectIsNotFollowed(t *testing.T) {
+	var hit atomic.Bool
+	other := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hit.Store(true) }))
+	defer other.Close()
+	c := handlerClient(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/steal", http.StatusFound)
+	})
+	err := c.Do(context.Background(), Request{Method: http.MethodGet, Path: "/v1/auth/health"}, nil)
+	if !IsStatus(err, http.StatusFound) || hit.Load() {
+		t.Errorf("err %v, redirect followed %v", err, hit.Load())
+	}
+}
+
+// StatusError keeps the raw body for callers that tell refusals apart.
+func TestStatusErrorBody(t *testing.T) {
+	c := handlerClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"error":"Contact is already in an active sequence"}`))
+	})
+	err := c.Do(context.Background(), Request{Method: http.MethodPost, Path: "/v1/x"}, nil)
+	var se *StatusError
+	if !errors.As(err, &se) || !strings.Contains(string(se.Body()), "active sequence") {
+		t.Errorf("err %v", err)
+	}
+}
+
 func TestAuthHealth(t *testing.T) {
 	c, fake := fakeClient(t)
 	if err := c.AuthHealth(context.Background()); err != nil {
@@ -262,11 +338,9 @@ func TestAuthHealth(t *testing.T) {
 			t.Errorf("the auth check called %s", call.Path)
 		}
 	}
-	notIn := handlerClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"healthy":true,"is_logged_in":false}`))
-	})
-	if err := notIn.AuthHealth(context.Background()); err == nil {
-		t.Error("is_logged_in false passed")
+	fake.ServeAuth("not_logged_in")
+	if err := c.AuthHealth(context.Background()); !errors.Is(err, ErrKeyRefused) || !KeyRefused(err) {
+		t.Errorf("is_logged_in false: err = %v", err)
 	}
 }
 
@@ -335,6 +409,36 @@ func TestEnricherSkipsAFailureAndStopsOnABadKey(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Name != "OK" || n.Load() != 3 {
 		t.Errorf("got %+v after %d calls", got, n.Load())
+	}
+}
+
+// Three failures in a row stop the call: every later domain would likely
+// fail too.
+func TestEnricherStopsAfterFailuresInARow(t *testing.T) {
+	c, fake := fakeClient(t)
+	for _, d := range []string{"bad1.example", "bad2.example", "bad3.example"} {
+		fake.Serve(d, "server_error")
+	}
+	fake.AddOrg("good.example", fakeapollo.Org{Name: "Good"})
+	e := &Enricher{c: c, now: time.Now}
+	got, err := e.Enrich(context.Background(), []string{"bad1.example", "bad2.example", "bad3.example", "good.example"}, 10)
+	if err == nil || len(got) != 0 || len(fake.Calls()) != MaxFailuresInARow {
+		t.Errorf("got %v, err %v after %d calls", got, err, len(fake.Calls()))
+	}
+}
+
+// An unknown funding label clears the stored stage; a missing one keeps it.
+func TestUnknownFundingLabelClears(t *testing.T) {
+	f := CompanyFromOrganization("a.example", &Organization{FundingStage: "Angel", FundingDate: "soon"}, time.Now())
+	if v, ok := f.Extra[FactFundingStage]; !ok || v != "" || f.FundingStage != "" {
+		t.Errorf("unknown label: %+v", f)
+	}
+	if v, ok := f.Extra[FactLatestFundingAt]; !ok || v != "" {
+		t.Errorf("unreadable date: %+v", f)
+	}
+	f = CompanyFromOrganization("a.example", &Organization{}, time.Now())
+	if _, ok := f.Extra[FactFundingStage]; ok {
+		t.Errorf("a missing label clears: %+v", f)
 	}
 }
 

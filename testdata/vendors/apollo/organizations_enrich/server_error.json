@@ -1,21 +1,23 @@
 {
   "provisional": true,
-  "note": "S0 confirms: 401 (or 403) for a bad key, sent in the X-Api-Key header",
+  "documented": true,
+  "note": "a 5xx: a per-domain failure",
   "method": "GET",
-  "path": "/v1/auth/health",
-  "query": {},
+  "path": "/api/v1/organizations/enrich",
+  "query": {
+    "domain": "acme-robotics.example"
+  },
   "request_headers": [
     "Accept",
     "Cache-Control",
     "X-Api-Key"
   ],
   "request_body": null,
-  "status": 401,
+  "status": 500,
   "response_headers": {
     "Content-Type": "application/json; charset=utf-8"
   },
   "response_body": {
-    "error": "Invalid access credentials.",
-    "error_code": "INVALID_API_KEY"
+    "error": "Internal Server Error"
   }
 }

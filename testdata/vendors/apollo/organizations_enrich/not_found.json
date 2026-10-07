@@ -1,11 +1,20 @@
 {
   "provisional": true,
+  "note": "S0 confirms: Apollo's reply for a domain it does not know (assumed a 200 with no organization)",
   "method": "GET",
   "path": "/api/v1/organizations/enrich",
-  "query": {"domain": "ghost-co.example"},
-  "request_headers": ["Accept", "Cache-Control", "X-Api-Key"],
+  "query": {
+    "domain": "ghost-co.example"
+  },
+  "request_headers": [
+    "Accept",
+    "Cache-Control",
+    "X-Api-Key"
+  ],
   "request_body": null,
-  "status": 404,
-  "response_headers": {"Content-Type": "application/json; charset=utf-8"},
+  "status": 200,
+  "response_headers": {
+    "Content-Type": "application/json; charset=utf-8"
+  },
   "response_body": {}
 }

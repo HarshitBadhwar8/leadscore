@@ -2,6 +2,7 @@ package check
 
 import (
 	"context"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -23,6 +24,10 @@ func TestApolloKey(t *testing.T) {
 		if hubspot {
 			c.Sinks["hubspot"] = api.Config{}
 		}
+		return c
+	}
+	receiving := func(c *config.Config) *config.Config {
+		c.Replies, c.Receiver.PublicURL = "receiver", "https://receiver.example"
 		return c
 	}
 	keys := func(ps []Problem) map[string]bool {
@@ -47,6 +52,7 @@ func TestApolloKey(t *testing.T) {
 		// safe default warns teams that send only through Apollo.
 		{"Apollo-only team", apolloSink(false), "good-key", map[string]bool{"apollo-key:no_optout_flag": true}},
 		{"Apollo with HubSpot", apolloSink(true), "good-key", map[string]bool{}},
+		{"Apollo-only team with the receiver's unsubscribe workflow", receiving(apolloSink(false)), "good-key", map[string]bool{}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -76,5 +82,36 @@ func TestApolloKey(t *testing.T) {
 	}
 	if n := len(fake.EnrichCalls()); n != 0 {
 		t.Errorf("the check made %d enrichment calls", n)
+	}
+}
+
+// Only a refused key is apollo-key:auth; a call that got no answer (429, 5xx,
+// network) is a warning under its own key, and is_logged_in false is a
+// refusal.
+func TestApolloKeyTellsRefusalFromOutage(t *testing.T) {
+	fake := fakeapollo.New("good-key")
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	cfg := &config.Config{Enrich: &config.Enrich{Type: "apollo",
+		Block: api.Config{"base_url": srv.URL, "_http_client": srv.Client()}}, Sinks: map[string]api.Config{}}
+	c := apolloKey{getenv: func(string) string { return "good-key" }}
+
+	fake.ServeAuth("not_logged_in")
+	if ps := c.Run(context.Background(), Env{Config: cfg}); len(ps) != 1 || ps[0].Key != "apollo-key:auth" || ps[0].Warning {
+		t.Errorf("is_logged_in false: %+v", ps)
+	}
+
+	srv.Close() // no answer at all
+	ps := c.Run(context.Background(), Env{Config: cfg})
+	if len(ps) != 1 || ps[0].Key != "apollo-key:unreachable" || !ps[0].Warning {
+		t.Errorf("unreachable: %+v", ps)
+	}
+	five := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer five.Close()
+	cfg.Enrich.Block = api.Config{"base_url": five.URL, "_http_client": five.Client()}
+	if ps := c.Run(context.Background(), Env{Config: cfg}); len(ps) != 1 || ps[0].Key != "apollo-key:unreachable" {
+		t.Errorf("a 502: %+v", ps)
 	}
 }

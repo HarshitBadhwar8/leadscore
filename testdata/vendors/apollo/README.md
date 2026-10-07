@@ -16,5 +16,11 @@ depends on an S0 answer says "S0 confirms" next to it.
 
 | Call | Cases |
 |---|---|
-| `auth_health` (`GET /v1/auth/health`, the `apollo-key` check) | `ok`, `bad_key` |
-| `organizations_enrich` (`GET /api/v1/organizations/enrich`, the enricher) | `found`, `found_sparse`, `not_found`, `not_found_empty`, `rate_limited`, `bad_key` |
+| `auth_health` (`GET /v1/auth/health`, the `apollo-key` check) | `ok`, `not_logged_in`, `bad_key` |
+| `organizations_enrich` (`GET /api/v1/organizations/enrich`, the enricher) | `found`, `found_sparse`, `not_found`, `not_found_null`, `status_404`, `server_error`, `rate_limited`, `bad_key` |
+
+A `note` field says what S0 must confirm about a file. Assumptions taken from
+Apollo's docs rather than seen: the `X-Api-Key` header, 401 (or 403) for a bad
+key, the organization field names, and what an unknown domain gets back (a 200
+with no organization is not-found; a 404 is treated as a failure until S0 says
+otherwise).

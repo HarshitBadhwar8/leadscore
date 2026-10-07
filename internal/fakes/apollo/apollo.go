@@ -32,6 +32,7 @@ type Fixture struct {
 	ResponseBody    json.RawMessage   `json:"response_body"`
 	Provisional     bool              `json:"provisional"`
 	Documented      bool              `json:"documented"`
+	Note            string            `json:"note"` // what S0 must confirm about this file
 }
 
 // Call is one request the fake answered.
@@ -62,12 +63,13 @@ type Server struct {
 	limitSkip  int               // enrich calls answered normally before rateLimit applies
 	rateLimit  int               // then this many enrich calls are answered 429
 	retryAfter *string           // overrides the rate_limited fixture's Retry-After
+	authCase   string            // the auth_health case a good key gets; "ok" by default
 	calls      []Call
 }
 
 // New returns a fake that accepts key, knowing no companies.
 func New(key string) *Server {
-	return &Server{key: key, fixtures: loadFixtures(), orgs: map[string]Org{}, cases: map[string]string{}}
+	return &Server{key: key, fixtures: loadFixtures(), orgs: map[string]Org{}, cases: map[string]string{}, authCase: "ok"}
 }
 
 // Dir is the folder holding the Apollo fixtures.
@@ -95,9 +97,10 @@ func Load(name string) (Fixture, error) {
 func loadFixtures() map[string]Fixture {
 	out := map[string]Fixture{}
 	for _, name := range []string{
-		"auth_health/ok", "auth_health/bad_key",
+		"auth_health/ok", "auth_health/not_logged_in", "auth_health/bad_key",
 		"organizations_enrich/found", "organizations_enrich/found_sparse",
-		"organizations_enrich/not_found", "organizations_enrich/not_found_empty",
+		"organizations_enrich/not_found", "organizations_enrich/not_found_null",
+		"organizations_enrich/status_404", "organizations_enrich/server_error",
 		"organizations_enrich/rate_limited", "organizations_enrich/bad_key",
 	} {
 		f, err := Load(name)
@@ -120,7 +123,8 @@ func (s *Server) AddOrg(domain string, o Org) {
 }
 
 // Serve makes the enrich call for domain answer an organizations_enrich case
-// exactly as saved, for example "found_sparse" or "not_found_empty".
+// exactly as saved, for example "found_sparse", "not_found_null" or
+// "server_error". A domain the fake does not know answers "not_found".
 func (s *Server) Serve(domain, enrichCase string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -130,6 +134,17 @@ func (s *Server) Serve(domain, enrichCase string) {
 	d := strings.ToLower(domain)
 	s.cases[d] = enrichCase
 	delete(s.orgs, d)
+}
+
+// ServeAuth makes auth health answer a case even for the right key, for
+// example "not_logged_in".
+func (s *Server) ServeAuth(authCase string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.fixtures["auth_health/"+authCase]; !ok {
+		panic("fakes/apollo: no auth_health case " + authCase)
+	}
+	s.authCase = authCase
 }
 
 // RateLimitNext makes the next n enrich calls answer the rate_limited case.
@@ -204,7 +219,7 @@ func (s *Server) answer(r *http.Request) (Call, Fixture, []byte) {
 		return call, f, f.ResponseBody
 	}
 	if callName == "auth_health" {
-		f := s.fixtures["auth_health/ok"]
+		f := s.fixtures["auth_health/"+s.authCase]
 		return call, f, f.ResponseBody
 	}
 	if s.limitSkip > 0 {

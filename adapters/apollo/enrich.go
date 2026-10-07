@@ -3,6 +3,7 @@ package apollo
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -21,9 +22,13 @@ const organizationEnrichPath = "/api/v1/organizations/enrich"
 // latest funding round, as YYYY-MM-DD.
 const FactLatestFundingAt = "latest_funding_at"
 
-// ErrNotFound means Apollo has no organization for the domain. It is not a
-// failure: plenty of small companies are not in its index. The enricher
-// reports it as CompanyFacts.NotFound, so the domain waits for the max age.
+// FactFundingStage is the funding stage fact's name.
+const FactFundingStage = "funding_stage"
+
+// ErrNotFound means Apollo has no organization for the domain: a 200 whose
+// organization is null or missing. It is not a failure: plenty of small
+// companies are not in its index. The enricher reports it as
+// CompanyFacts.NotFound, so the domain waits for the max age.
 var ErrNotFound = errors.New("apollo: no organization for that domain")
 
 // Organization is the part of Apollo's company record the facts come from.
@@ -40,8 +45,12 @@ type Organization struct {
 }
 
 // EnrichOrganization looks one company up by domain, with the retrying call.
-// A 404, or a 200 carrying no organization, is ErrNotFound: Apollo's two ways
-// of saying it has no record, which must not overwrite good facts with blanks.
+// A 200 carrying no organization is ErrNotFound, which must not overwrite good
+// facts with blanks. S0 confirms: does Apollo also answer 404 for an unknown
+// domain? Until then a 404 is an ordinary failure (the path could be wrong),
+// so it never marks a company not-found for a whole max age.
+//
+// S0 confirms the field names below, taken from Apollo's public docs.
 func (c *Client) EnrichOrganization(ctx context.Context, domain string) (*Organization, error) {
 	domain = strings.ToLower(strings.TrimSpace(domain))
 	if domain == "" {
@@ -59,8 +68,6 @@ func (c *Client) EnrichOrganization(ctx context.Context, domain string) (*Organi
 	err := c.DoRetrying(ctx, Request{Method: http.MethodGet, Path: organizationEnrichPath,
 		Query: url.Values{"domain": {domain}}}, &reply)
 	switch {
-	case IsStatus(err, http.StatusNotFound):
-		return nil, ErrNotFound
 	case err != nil:
 		return nil, err
 	case reply.Organization == nil:
@@ -94,14 +101,16 @@ func NewEnricher(cfg api.Config) (api.Enricher, error) {
 
 // Enrich looks up domains in order, at most budget of them. A domain Apollo
 // does not know comes back with NotFound set. A failure on one domain (a 5xx,
-// a timeout, a reply it cannot read) is skipped: that company keeps its
-// stored facts and is tried again next run. A rate limit that outlasts the
-// retries stops the call and returns the facts so far with ErrRateLimited.
+// a 404, a timeout, a reply it cannot read) is skipped: that company keeps
+// its stored facts. A rate limit that outlasts the retries stops the call and
+// returns the facts so far with ErrRateLimited.
 //
-// Two errors also stop it, since every later domain would fail the same way:
-// the key refused (401 or 403), and ctx done.
+// Three more stop it, since every later domain would likely fail the same
+// way: the key refused (401 or 403), ctx done, and MaxFailuresInARow
+// failures in a row. The engine calls it one domain at a time.
 func (e *Enricher) Enrich(ctx context.Context, domains []string, budget int) ([]api.CompanyFacts, error) {
 	var out []api.CompanyFacts
+	failures := 0
 	for i, d := range domains {
 		if i >= budget {
 			break
@@ -113,24 +122,31 @@ func (e *Enricher) Enrich(ctx context.Context, domains []string, budget int) ([]
 		switch {
 		case errors.Is(err, ErrNotFound):
 			out = append(out, api.CompanyFacts{Domain: d, FetchedAt: e.now().UTC(), NotFound: true})
-		case errors.Is(err, api.ErrRateLimited), IsStatus(err, http.StatusUnauthorized, http.StatusForbidden):
+		case errors.Is(err, api.ErrRateLimited), KeyRefused(err):
 			return out, err
 		case err != nil:
-			if ctx.Err() != nil {
-				return out, err
+			if failures++; ctx.Err() != nil || failures >= MaxFailuresInARow {
+				return out, fmt.Errorf("apollo: enrichment stopped after %d failures in a row: %w", failures, err)
 			}
 			continue
 		default:
 			out = append(out, CompanyFromOrganization(d, org, e.now().UTC()))
 		}
+		failures = 0
 	}
 	return out, nil
 }
 
+// MaxFailuresInARow is how many lookups in a row may fail (no answer at all)
+// before enrichment stops for the run (contracts section 1).
+const MaxFailuresInARow = 3
+
 // CompanyFromOrganization maps Apollo's record onto company facts. Both
-// mappings fail soft: an unknown funding label leaves the stage empty, and an
-// unreadable funding date leaves latest_funding_at out, rather than losing
-// the whole company over one field.
+// funding mappings fail soft rather than losing the whole company over one
+// field. A field Apollo left out stays empty, which keeps the stored fact. A
+// funding label or date it sent that cannot be mapped is put in Extra with an
+// empty value, which clears the stored fact (contracts section 4), so a stale
+// stage does not outlive the vendor's change.
 func CompanyFromOrganization(domain string, o *Organization, fetched time.Time) api.CompanyFacts {
 	f := api.CompanyFacts{
 		Domain:       strings.ToLower(strings.TrimSpace(domain)),
@@ -144,8 +160,13 @@ func CompanyFromOrganization(domain string, o *Organization, fetched time.Time) 
 		n := *o.Employees
 		f.Employees = &n
 	}
+	if strings.TrimSpace(o.FundingStage) != "" && f.FundingStage == "" {
+		f.Extra[FactFundingStage] = "" // a label we do not map: clear the stored stage
+	}
 	if d := fundingDate(o.FundingDate); d != "" {
 		f.Extra[FactLatestFundingAt] = d
+	} else if strings.TrimSpace(o.FundingDate) != "" {
+		f.Extra[FactLatestFundingAt] = "" // a date we cannot read: clear the stored one
 	}
 	return f
 }

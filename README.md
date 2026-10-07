@@ -97,8 +97,17 @@ budgets, so a large first import spreads over several days instead of
 spending a month of credits at once. Your `Companies` tab always wins over
 Apollo; Apollo's value wins over a value from a lead sheet. When a value
 changes, the old one is kept in `Company facts` as `previous`. A dry run makes
-no lookups. The `apollo-key` check signs in with Apollo's free auth-health call
-on every run, so a bad key shows in `Health` without spending a credit.
+no lookups. A lookup that gets no answer waits a day, and three in a row stop
+enrichment for that run (the warning `enrich_failed`). The `apollo-key` check
+signs in with Apollo's free auth-health call on every run, so a bad key shows
+in `Health` without spending a credit.
+
+**If you send only through Apollo:** leadscore does not yet know whether
+Apollo's contacts carry an opt-out flag it can read. Until that is confirmed, a
+person who clicked an unsubscribe link without replying is not seen before a
+push, unless the receiver takes Apollo's reply workflow (whose `unsubscribed`
+event reports it) or HubSpot is also a sink. The `apollo-key` check warns
+(`apollo-key:no_optout_flag`) in that case.
 
 ## Export lists
 
