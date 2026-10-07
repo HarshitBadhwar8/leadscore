@@ -1,5 +1,5 @@
 // Package auth verifies that an inbound webhook came from the holder of the
-// receiver's secret (contracts section 5.1).
+// receiver's secret.
 //
 // Adapted, with its tests, from a webhook verifier by its authors.
 //

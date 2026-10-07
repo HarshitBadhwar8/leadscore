@@ -1,6 +1,6 @@
-// Package sheets is the built-in Google Sheets store (RFC 6.6, "Sheets
-// specifics"): a Backend and EventLog over one spreadsheet, one tab per
-// table, and a run lease held as a file in a Cloud Storage bucket.
+// Package sheets is the built-in Google Sheets store: a Backend and EventLog
+// over one spreadsheet, one tab per table, and a run lease held as a file in a
+// Cloud Storage bucket.
 //
 //   - Every Commit is one spreadsheets.batchUpdate, which Sheets applies
 //     all-or-nothing. Rows are changed in place (rewritten tabs keep their
@@ -13,7 +13,7 @@
 //     writes Health.
 //   - Tool tabs are written as raw text and read unformatted, so a value that
 //     starts with "=" stays text; people-owned tabs (Overrides, Companies,
-//     Leads) are read formatted (contracts section 4).
+//     Leads) are read formatted.
 //   - Raw receiver events go to one tab per UTC month of their received time
 //     ("Events 2026-10"). An event's sequence is its (tab, row); a cursor
 //     holds a position for every tab.

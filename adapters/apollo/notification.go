@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Engagement kinds the reply workflow sends (contracts section 5.1). These are
+// Engagement kinds the reply workflow sends. These are
 // our names, not the vendor's: the workflow body is typed by the team from our
 // templates, so the spelling is a contract we set. Each maps to an event kind
 // of section 5.3.

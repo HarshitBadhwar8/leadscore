@@ -129,7 +129,7 @@ func TestContactFoundByLeadIDAfterAnEmailCorrection(t *testing.T) {
 	}
 }
 
-// Error mapping (contracts section 6): an invalid email is a refusal; a
+// Error mapping: an invalid email is a refusal; a
 // 401 or 403 stops the sink for the run with no attempt counted (reported as
 // a rate limit: no lead is at fault); vendor messages never reach the error
 // text.

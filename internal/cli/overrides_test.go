@@ -33,7 +33,7 @@ func sqliteInstall(t *testing.T) (string, *sqlite.Store) {
 	var rows []merge.Normalized
 	for _, r := range []api.InputRow{
 		{SourceID: "leads", Headers: []string{"Email", "LinkedIn"},
-			Columns: map[string]string{"Email": "ada@acme.io", "LinkedIn": "linkedin.com/in/ada"}},
+			Columns: map[string]string{"Email": "ada@acme.example", "LinkedIn": "linkedin.com/in/ada"}},
 		{SourceID: "leads", Headers: []string{"LinkedIn"}, Columns: map[string]string{"LinkedIn": "linkedin.com/in/bo"}},
 	} {
 		n := merge.Normalize(r, nil)
@@ -65,11 +65,11 @@ func TestOverridesWriters(t *testing.T) {
 		args []string
 		want string // stdout contains
 	}{
-		{[]string{"set-status", "https://www.LinkedIn.com/in/ada/", "unsubscribed"}, "status unsubscribed for ada@acme.io"},
-		{[]string{"set-status", "ADA@acme.io", "unsubscribed"}, "nothing to change"},
-		{[]string{"set-status", "ada@acme.io", "resubscribe"}, "status resubscribe for ada@acme.io"},
-		{[]string{"merge", "linkedin.com/in/bo", "ADA@acme.io"}, "linkedin.com/in/bo same_as ada@acme.io; the next run merges them for good"},
-		{[]string{"mark-distinct", "ada@acme.io", "dee@acme.io"}, "ada@acme.io distinct from dee@acme.io (no lead matches yet"},
+		{[]string{"set-status", "https://www.LinkedIn.com/in/ada/", "unsubscribed"}, "status unsubscribed for ada@acme.example"},
+		{[]string{"set-status", "ADA@acme.example", "unsubscribed"}, "nothing to change"},
+		{[]string{"set-status", "ada@acme.example", "resubscribe"}, "status resubscribe for ada@acme.example"},
+		{[]string{"merge", "linkedin.com/in/bo", "ADA@acme.example"}, "linkedin.com/in/bo same_as ada@acme.example; the next run merges them for good"},
+		{[]string{"mark-distinct", "ada@acme.example", "dee@acme.example"}, "ada@acme.example distinct from dee@acme.example (no lead matches yet"},
 		{[]string{"retry", "--lane", "warm"}, "retry warm for every lead"},
 		{[]string{"retry", "linkedin.com/in/bo"}, "retry every lane for linkedin.com/in/bo"},
 	}
@@ -82,9 +82,9 @@ func TestOverridesWriters(t *testing.T) {
 
 	got := overrideRows(t, s)
 	want := []model.Override{
-		{Person: "ada@acme.io", Action: "status", Value: "resubscribe", Note: "2026-10-07T12:00:00.000Z"},
-		{Person: "linkedin.com/in/bo", Action: "same_as", Value: "ada@acme.io"},
-		{Person: "ada@acme.io", Action: "distinct", Value: "dee@acme.io"},
+		{Person: "ada@acme.example", Action: "status", Value: "resubscribe", Note: "2026-10-07T12:00:00.000Z"},
+		{Person: "linkedin.com/in/bo", Action: "same_as", Value: "ada@acme.example"},
+		{Person: "ada@acme.example", Action: "distinct", Value: "dee@acme.example"},
 		{Person: "*", Action: "retry", Value: "warm", Note: "2026-10-07T12:00:00.000Z"},
 		{Person: "linkedin.com/in/bo", Action: "retry", Value: "", Note: "2026-10-07T12:00:00.000Z"},
 	}
@@ -102,11 +102,11 @@ func TestOverridesWriters(t *testing.T) {
 func TestOverridesWritersRefuse(t *testing.T) {
 	cfg, s := sqliteInstall(t)
 	for _, args := range [][]string{
-		{"set-status", "ada@acme.io", "deal"},
+		{"set-status", "ada@acme.example", "deal"},
 		{"set-status", "not-a-lead", "unsubscribed"},
-		{"merge", "ada@acme.io", "linkedin.com/in/ada"},
-		{"merge", "ada@acme.io", "dee@acme.io"}, // a merge names two known leads
-		{"merge", "ada@acme.io", "N/A"},
+		{"merge", "ada@acme.example", "linkedin.com/in/ada"},
+		{"merge", "ada@acme.example", "dee@acme.example"}, // a merge names two known leads
+		{"merge", "ada@acme.example", "N/A"},
 		{"retry", "{{contact.email}}"},
 	} {
 		code, _, errOut := run(append(args, "--config", cfg)...)

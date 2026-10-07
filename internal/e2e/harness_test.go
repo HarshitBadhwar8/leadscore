@@ -1,4 +1,4 @@
-// Package e2e is the end-to-end suite (RFC 8.1, contracts 12.6): the
+// Package e2e is the end-to-end suite: the
 // assembled loop through engine.RunWith with DefaultHooks, a fake clock and
 // an HTTP client pointed at internal/fakes, plus the receiver's in-process
 // handler on the same clock, on both stores. It needs no keys and no network.

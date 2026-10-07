@@ -88,7 +88,7 @@ func RegisterSink(typ string, f func(Config) (Sink, error)) {
 }
 
 // RegisterDetector stores the kind lowercased, as the rubric compares detector
-// kinds (contracts section 2): two kinds that differ only in case collide and
+// kinds: two kinds that differ only in case collide and
 // panic as a duplicate.
 func RegisterDetector(kind string, f func(params Config) (Detector, error)) {
 	detectors.register(strings.ToLower(kind), f, f == nil)

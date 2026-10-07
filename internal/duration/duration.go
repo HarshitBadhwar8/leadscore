@@ -14,7 +14,7 @@ var daysPrefix = regexp.MustCompile(`^(\d+)d(.*)$`)
 // longer, and the bound keeps days*24h far from overflowing.
 const maxDuration = 100 * 365 * 24 * time.Hour
 
-// Parse reads a Go duration plus `d` for days (contracts "Formats"):
+// Parse reads a Go duration plus `d` for days:
 // "90d", "1d12h", "15m". Negative values and anything over 100 years are
 // refused: every duration in leadscore.yml is a length of time.
 func Parse(s string) (time.Duration, error) {

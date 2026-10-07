@@ -10,13 +10,13 @@ import (
 
 func init() { Register(receiverSecret{getenv: os.Getenv}) }
 
-// The receiver's secret variables (RFC 6.13); internal/receiver reads them.
+// The receiver's secret variables; internal/receiver reads them.
 const (
 	ReceiverSecretVar         = "LEADSCORE_RECEIVER_SECRET"
 	ReceiverSecretPreviousVar = "LEADSCORE_RECEIVER_SECRET_PREVIOUS"
 )
 
-// receiverSecret is the receiver-secret check (contracts section 10): it runs
+// receiverSecret is the receiver-secret check: it runs
 // when `serve` starts and in doctor, never inside runs.
 type receiverSecret struct{ getenv func(string) string }
 
@@ -28,7 +28,7 @@ func (c receiverSecret) Run(_ context.Context, env Env) []Problem {
 }
 
 // ReceiverConfigured reports whether the install expects webhooks: replies
-// come from the receiver, or workflows send visit events (contracts 5.1).
+// come from the receiver, or workflows send visit events.
 func ReceiverConfigured(c *config.Config) bool {
 	return c.Replies == "receiver" || len(c.Receiver.VisitEvents) > 0
 }
@@ -62,7 +62,7 @@ func ReceiverSecretProblems(c *config.Config, getenv func(string) string) []Prob
 		getenv = os.Getenv
 	}
 	// A local command on a hosted install keeps the secret in Secret Manager,
-	// not in its environment; S14b extends this check there, as it does
+	// not in its environment; the hosted path extends this check there, as it does
 	// `secrets`. Inside Cloud Run the variables are filled from Secret
 	// Manager and are checked as usual.
 	inCloudRun := getenv("K_SERVICE") != "" || getenv("CLOUD_RUN_JOB") != ""

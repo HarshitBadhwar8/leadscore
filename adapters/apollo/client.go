@@ -19,7 +19,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/vendorhttp"
 )
 
-// The client (contracts sections 6 and 12.1). Everything this package sends
+// The client. Everything this package sends
 // to Apollo goes through a Client: the enricher here, and the sinks, the
 // contact Lookup and the reply Poller. It has two call modes:
 //
@@ -37,7 +37,7 @@ const KeyVariable = "APOLLO_API_KEY"
 // DefaultBaseURL is Apollo's API; a block's base_url replaces it in tests.
 const DefaultBaseURL = "https://api.apollo.io"
 
-// CallTimeout bounds one attempt of one call (contracts section 11).
+// CallTimeout bounds one attempt of one call.
 const CallTimeout = 30 * time.Second
 
 // Paths of the calls this file makes. S0 confirms: the auth-health path and
@@ -67,8 +67,7 @@ type Client struct {
 
 // NewClient builds a client from an adapter block (enrich, or sinks.apollo).
 // The key comes from APOLLO_API_KEY; the block's test keys base_url and
-// _http_client (contracts section 3) replace the API address and the HTTP
-// client. A missing key is an error, so no call goes out unauthenticated, and
+// _http_client replace the API address and the HTTP client. A missing key is an error, so no call goes out unauthenticated, and
 // base_url without _http_client is refused: base_url is for tests only, and
 // one written into leadscore.yml would send the key to any address.
 func NewClient(cfg api.Config) (*Client, error) {
@@ -281,8 +280,8 @@ func (c *Client) AuthHealth(ctx context.Context) error {
 }
 
 // ContactOptOutFlag says whether Apollo's contact record carries an opt-out
-// flag that a lookup by email can read without spending credits (contracts
-// section 6). S0 confirms: until it does, this is false, the safe default:
+// flag that a lookup by email can read without spending credits.
+// S0 confirms: until it does, this is false, the safe default:
 // the apollo-key check warns teams that send only through Apollo that a
 // person who clicked an unsubscribe link without replying is not seen.
 const ContactOptOutFlag = false

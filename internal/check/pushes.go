@@ -14,10 +14,10 @@ func init() {
 }
 
 // pendingWarnAfter is how long a step may stay pending before the `pushes`
-// check reports it (contracts section 11).
+// check reports it.
 const pendingWarnAfter = 24 * time.Hour
 
-// pushesCheck is the `pushes` check (contracts section 10): a failed step
+// pushesCheck is the `pushes` check: a failed step
 // (push_failed:<lead>:<lane>:<step>, until a `retry` row resets it) and steps
 // pending more than 24 hours (push_pending, with the count, a warning). Rows of a lead
 // merged into another are left out: no step is called for such a lead.
@@ -70,7 +70,7 @@ func (c pushesCheck) Run(_ context.Context, env Env) []Problem {
 			Message: fmt.Sprintf("%d step(s) have been pending for more than 24 hours, the oldest since %s",
 				pending, model.FormatTime(oldest)),
 			Fix:     "check Health for what blocks pushing (pushes_enabled, a backlog, a lookup or sink problem) and the Pushes rows' last_error",
-			Warning: true, // contracts section 11: the pending-push warning
+			Warning: true, // the pending-push warning
 		})
 	}
 	return out

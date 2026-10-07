@@ -16,7 +16,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/duration"
 )
 
-// rankedColumns are the Ranked table's fixed columns (contracts section 4); a
+// rankedColumns are the Ranked table's fixed columns; a
 // derived name becomes a column beside them, so it may not take one.
 var rankedColumns = map[string]bool{
 	"lead_id": true, "email": true, "linkedin_url": true, "full_name": true, "company_domain": true,

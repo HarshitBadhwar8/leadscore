@@ -17,14 +17,14 @@ import (
 // liveSize is how much the live check saves.
 type liveSize struct{ leads, days, perDay int }
 
-// The RFC's 20,000-lead target and a year of events at 1,000 a day
-// (contracts section 4, "Sheets cell budget"), loaded within a minute.
+// The 20,000-lead target and a year of events at 1,000 a day (the Sheets
+// cell budget), loaded within a minute.
 var (
 	liveFull      = liveSize{leads: 20_000, days: 365, perDay: 1_000}
 	liveLoadLimit = time.Minute
 )
 
-// TestLiveSheets is S5's measurement proof (RFC 8.4, LEADSCORE_LIVE_SHEETS):
+// TestLiveSheets is the Sheets store's live measurement (LEADSCORE_LIVE_SHEETS):
 // it creates a scratch spreadsheet in real Google Sheets, saves 20,000 leads
 // and a year of synthetic events, and checks a run's load of them takes
 // under a minute. It builds the spreadsheet from the setup template, checks

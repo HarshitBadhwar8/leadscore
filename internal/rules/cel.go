@@ -14,7 +14,7 @@ import (
 	"github.com/google/cel-go/common/types/traits"
 )
 
-// The CEL environments (contracts section 2, "CEL variables"). A lead-level
+// The CEL environments (the rubric's CEL variables). A lead-level
 // condition sees every variable; a company-level one (company derive blocks
 // and account score rules) sees no `lead` and no `status`, so a raw
 // expression reading them fails to compile instead of reading nothing.
@@ -147,7 +147,7 @@ func celList(vs []any) string {
 // costLimit bounds what one condition may cost for one lead, in CEL's cost
 // units (about one per operation). Compile refuses a condition whose estimated
 // worst case is over it, and evaluation stops one that reaches it, so a rubric
-// can never stall a run (contracts section 2).
+// can never stall a run.
 const costLimit = 1_000_000
 
 // runCostLimit is the limit compiled into each program: costLimit, lowered

@@ -1,12 +1,12 @@
 // Package apollo is the Apollo adapter. This part holds the parsers for the
-// bodies the receiver stores from Apollo workflows (contracts section 5.1):
-// they turn one stored request into events (section 5.3) and the receiver
+// bodies the receiver stores from Apollo workflows: they turn one stored
+// request into events and the receiver
 // input row its person yields. Parsing is pure; the engine keys, resolves and
 // applies what comes back (internal/events).
 //
-// The body shapes are built from our workflow templates and contracts section
-// 5.1; which fields Apollo's workflow variables can actually fill is marked
-// "S0 confirms" where it matters.
+// The body shapes are built from our workflow templates; which fields
+// Apollo's workflow variables can actually fill is marked "S0 confirms"
+// where it matters.
 package apollo
 
 import (
@@ -44,7 +44,7 @@ const (
 	AttrCompany          = "company"
 	AttrPage             = "page" // the visited page, when a body carries one (S0 confirms)
 	// AttrNoVisitTime is "yes" on a visit with no usable visited_at: it is
-	// timed at receipt and keyed by person, page and received day (RFC 6.7).
+	// timed at receipt and keyed by person, page and received day.
 	AttrNoVisitTime = "no_visited_at"
 	// AttrVisitedAt is the vendor's visit time as sent (UTC), before it is
 	// clamped to the received time; the de-duplication key reads it.
@@ -214,7 +214,7 @@ func receiverRow(contactID, email, linkedin, name, title, company, domain string
 
 // PolledReplyKey is the de-duplication key of a polled reply: its message id
 // plus its label (lowercased), so a label the team changes later is a new
-// fact (RFC 6.7). Both parts are length-prefixed, so no two pairs can flatten
+// fact. Both parts are length-prefixed, so no two pairs can flatten
 // to one key. A reply with no message id is keyed by events.Key instead.
 func PolledReplyKey(messageID, label string) api.EventID {
 	label = strings.ToLower(strings.TrimSpace(label))
@@ -222,7 +222,7 @@ func PolledReplyKey(messageID, label string) api.EventID {
 }
 
 // RequiredPaths are the body fields the parsers read, as dotted JSON paths at
-// their original places (contracts section 5.4). A receiver cutting an
+// their original places (the oversized-body rule). A receiver cutting an
 // oversized body down keeps exactly these: the keys, the times and the
 // person and company fields that make the receiver row.
 func RequiredPaths() []string {

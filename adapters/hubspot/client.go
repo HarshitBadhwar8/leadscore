@@ -20,7 +20,7 @@ import (
 
 // client is one HubSpot API connection: the private-app token, the base URL
 // and a single-shot call that maps HubSpot's answers to the engine's errors
-// (contracts section 6, "Errors"). It never retries: a sink's 429 stops the
+// (the HubSpot error rules). It never retries: a sink's 429 stops the
 // sink for the run, and a lookup's failure makes its leads wait.
 type client struct {
 	base  string

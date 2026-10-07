@@ -1,6 +1,6 @@
 // Package api defines the public surface of leadscore: its types, interfaces,
-// errors and adapter registry (contracts section 1), plus the built-in header
-// alias table (contracts section 2).
+// errors and adapter registry, plus the built-in header
+// alias table.
 //
 // It lives under internal/ so the engine can use these types without importing
 // the root package, which would be a cycle. The root package re-exports every
@@ -17,7 +17,7 @@ import (
 
 // Identifiers.
 type LeadID string  // UUIDv7, minted when a person is first seen
-type EventID string // an event's de-duplication key (key rules: section 12.7)
+type EventID string // an event's de-duplication key (key rules: package events)
 type Cursor string  // opaque progress marker; each source or store encodes its own
 
 type StepKey struct {
@@ -31,12 +31,12 @@ type InputRow struct {
 	SourceID string            // the source's stable id: from leadscore.yml
 	Headers  []string          // headers in file order, as written
 	Columns  map[string]string // every column as raw text, keyed by header as written
-	// The engine, not the source, applies aliases and computes the per-row id (section 12.5).
+	// The engine, not the source, applies aliases and computes the per-row id.
 }
 
 type Event struct {
-	ID          EventID // empty from sources; the engine sets it (section 12.7)
-	Kind        string  // section 5.3; empty with Attrs["reject"] set for a rejected source row
+	ID          EventID // empty from sources; the engine sets it
+	Kind        string  // an event kind; empty with Attrs["reject"] set for a rejected source row
 	Email       string  // person keys; both empty for a company-only event
 	LinkedInURL string
 	Domain      string    // the person's employer domain, or the company for a company-only event
@@ -51,7 +51,7 @@ type RawEvent struct {
 	// complete resume cursor: reading from it returns exactly the events after
 	// this one, across every partition the store keeps.
 	Seq        Cursor
-	Kind       string // "apollo_visit" or "apollo_reply" (section 5.1)
+	Kind       string // "apollo_visit" or "apollo_reply"
 	ReceivedAt time.Time
 	Body       []byte // the request body, secret already removed
 }
@@ -60,9 +60,9 @@ type CompanyFacts struct {
 	Domain       string
 	Name         string
 	Region       string            // the vendor's country, trimmed; no bucketing
-	FundingStage string            // one of the values in section 6, or empty
+	FundingStage string            // one of the vendor funding stages, or empty
 	Employees    *int              // nil when unknown
-	Extra        map[string]string // other facts (the Apollo enricher writes latest_funding_at); an empty value clears that fact (section 4)
+	Extra        map[string]string // other facts (the Apollo enricher writes latest_funding_at); an empty value clears that fact
 	FetchedAt    time.Time
 	NotFound     bool // vendor had no record; retried after max age
 }
@@ -70,15 +70,15 @@ type CompanyFacts struct {
 // What engines and adapters see of a lead.
 type LeadRef struct {
 	ID             LeadID
-	Emails         []string // every email in Identities for the lead and every lead merged into it, primary first (section 4)
+	Emails         []string // every email in Identities for the lead and every lead merged into it, primary first
 	LinkedInURLs   []string
 	FullName       string
 	Title          string
 	Domain         string            // company domain; empty when the lead has none
-	Status         string            // folded status (section 7)
-	Fields         map[string]string // merged fields, by resolved name (section 2)
+	Status         string            // folded status
+	Fields         map[string]string // merged fields, by resolved name
 	FirstSeenAt    time.Time         // People.created_at
-	SourcesSeen    int               // distinct channels (section 3, sources[].channel)
+	SourcesSeen    int               // distinct channels (leadscore.yml's sources[].channel)
 	ReceiverOnly   bool
 	ConflictFields []string // fields whose sources disagreed (People.conflicts)
 	CompanyDealID  string   // the stored open or won deal at the lead's company, if any
@@ -158,7 +158,7 @@ type StepRequest struct {
 
 // Classify with errors.Is. Any other error counts one attempt toward `failed`.
 // None of these says the vendor did nothing; the ledger records whether the call
-// went out (section 8).
+// went out.
 var (
 	ErrRateLimited = errors.New("rate limited") // stays pending, no attempt counted, stop this sink for the run
 	ErrTransient   = errors.New("transient")    // stays pending, no attempt counted
@@ -178,21 +178,21 @@ type Detector interface {
 	Evaluate(s Subject, events []Event, now time.Time) (fired bool, evidence []EventID)
 }
 
-// Table-level storage. The codec maps the in-memory model to tables (section 4).
+// Table-level storage. The codec maps the in-memory model to tables.
 type Row = map[string]string
 
 type WriteOp int
 
 const (
 	OpReplace WriteOp = iota // rewrite the whole table
-	OpAppend                 // add rows; on a keyed section 4 table, a key the table already holds fails the commit
+	OpAppend                 // add rows; on a keyed table, a key the table already holds fails the commit
 	OpUpsert                 // insert or update by Key columns
 	OpDelete                 // delete rows matching Key columns
 	OpTrim                   // delete rows whose Column is before Before
 )
 
 type TableWrite struct {
-	Table  string // the section 4 table name exactly
+	Table  string // the store table name exactly
 	Op     WriteOp
 	Key    []string // columns for OpUpsert and OpDelete; required for both
 	Rows   []Row
@@ -201,7 +201,7 @@ type TableWrite struct {
 }
 
 var (
-	ErrTooLarge     = errors.New("commit too large") // engine handling: section 12.6
+	ErrTooLarge     = errors.New("commit too large") // the engine retries with fewer rows
 	ErrLeaseHeld    = errors.New("lease held")
 	ErrLeaseLost    = errors.New("lease lost")
 	ErrEventsShrank = errors.New("event log shrank below a saved cursor") // engine scores but does not push
@@ -228,7 +228,7 @@ type Backend interface {
 	Lease(ctx context.Context, owner string, ttl time.Duration) (RunLease, error)
 	// Commit applies every write all-or-nothing (one Sheets batchUpdate, one SQL
 	// transaction). It rejects an OpUpsert or OpDelete with no Key before applying
-	// anything. An OpAppend to a keyed section 4 table of a key the table already
+	// anything. An OpAppend to a keyed table of a key the table already
 	// holds (or that the same commit already wrote) fails the whole commit. It
 	// creates a missing table, and appends a missing column, the first
 	// time a write names it. It returns ErrTooLarge rather than splitting.
@@ -258,11 +258,11 @@ type EventLog interface {
 	DeleteProcessed(ctx context.Context, committed Cursor, olderThan time.Time) (Cursor, error)
 }
 
-type Config = map[string]any // an adapter's block from leadscore.yml (which block: section 3)
+type Config = map[string]any // an adapter's block from leadscore.yml (which block: see the leadscore.yml reference)
 
 type RunOptions struct {
-	// ConfigPath is leadscore.yml, or a hosted bundle (section 3); with a bundle,
-	// RubricPath is ignored. Empty means the defaults in section 3.
+	// ConfigPath is leadscore.yml, or a hosted bundle; with a bundle,
+	// RubricPath is ignored. Empty means the leadscore.yml defaults.
 	ConfigPath, RubricPath string
 	DryRun                 bool
 	// Stop, when closed, stops new vendor calls; the run then saves within its

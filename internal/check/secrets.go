@@ -12,9 +12,9 @@ import (
 
 func init() { Register(secrets{getenv: os.Getenv}) }
 
-// secrets fails when a configured adapter's key variable is missing (section
-// 10). On a hosted install, outside Cloud Run, an empty variable is read from
-// Secret Manager instead (contracts section 3), so there the check fails only
+// secrets fails when a configured adapter's key variable is missing. On a
+// hosted install, outside Cloud Run, an empty variable is read from Secret
+// Manager instead, so there the check fails only
 // when that read fails.
 type secrets struct {
 	getenv  func(string) string

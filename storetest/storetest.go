@@ -1,5 +1,5 @@
 // Package storetest is the conformance suite a plug-in store runs against
-// itself (contracts section 1). The built-in SQLite and Sheets stores run it
+// itself. The built-in SQLite and Sheets stores run it
 // too.
 //
 // The signatures use internal/api's names, which are the same types as
@@ -23,13 +23,13 @@ import (
 )
 
 type Table struct {
-	Name         string   // section 4 name; for a pattern, the prefix ("Events ", "Export ")
+	Name         string   // the table's name; for a pattern, the prefix ("Events ", "Export ")
 	Columns      []string // fixed columns in order
 	Pattern      bool     // Events YYYY-MM and Export <lane id>
 	DynamicAfter string   // Ranked: derived-name columns go after this column
 }
 
-// Schema is every section 4 tool table, in section 4 order.
+// Schema is every tool table, in the store's table order.
 var Schema = func() []Table {
 	out := make([]Table, len(model.Tables))
 	for i, d := range model.Tables {
@@ -293,7 +293,7 @@ func commitAllOrNothing(t *testing.T, open func(t *testing.T) (api.Backend, api.
 
 // commitRollsBack fails a commit in its last write, at apply time rather than
 // in validation: an OpAppend to a keyed table of a key the store already
-// holds, or one the same commit already wrote (contracts section 1, OpAppend).
+// holds, or one the same commit already wrote (see OpAppend).
 // Nothing from that commit may remain.
 func commitRollsBack(t *testing.T, open func(t *testing.T) (api.Backend, api.EventLog)) {
 	b, _ := open(t)
@@ -345,7 +345,7 @@ func event(i int, at time.Time) api.RawEvent {
 	return api.RawEvent{Kind: kind, ReceivedAt: at, Body: []byte(fmt.Sprintf(`{"n":%d,"text":"ünï, \"q\""}`, i))}
 }
 
-// now is the suite's "received now" time, to the millisecond (the C4 time form).
+// now is the suite's "received now" time, to the millisecond (the stored time form).
 func now() time.Time { return time.Now().UTC().Truncate(time.Millisecond) }
 
 func readAll(t *testing.T, l api.EventLog, cursor api.Cursor) ([]api.RawEvent, api.Cursor) {

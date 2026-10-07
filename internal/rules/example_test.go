@@ -12,7 +12,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 )
 
-// exampleInput reads examples/leads.csv into an Input the way merge will (S6):
+// exampleInput reads examples/leads.csv into an Input the way merge does:
 // headers resolved with the rubric's aliases, then the built-in table, then the
 // squashed header; one lead per row, first seen in row order; company facts
 // from the built-in company columns, first non-empty value wins. It is a
@@ -136,7 +136,8 @@ func TestExampleICP(t *testing.T) {
 		}
 	}
 	// A lead known only from webhooks never matches a cold lane, even when it
-	// otherwise would (RFC 7): Anna again, with a demo visit, from the receiver.
+	// otherwise would (a forged webhook must not start cold outreach): Anna
+	// again, with a demo visit, from the receiver.
 	anna := ids["anna.weber@kranlogistik.example"]
 	in.Detectors.Leads[anna] = map[string]bool{"demo_visit": true}
 	if got := r.Evaluate(in).Lanes[anna]; !reflect.DeepEqual(got, []string{"hot-visitors", "fleet-ops", "nurture"}) {

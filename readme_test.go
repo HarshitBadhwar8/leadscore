@@ -35,33 +35,33 @@ func section(t *testing.T, doc, heading string) string {
 	return rest
 }
 
-// The README carries every duty the design gives it (RFC 6.11, 6.12, 6.13,
-// 7; contracts sections 4, 5.1 and 9; S0's answers), so a later edit cannot
-// drop one unnoticed.
+// The README carries every duty the design gives it (sinks, receivers, the
+// CLI, security and cost, export lists, the receiver, the setup runbooks and
+// S0's answers), so a later edit cannot drop one unnoticed.
 func TestReadmeDuties(t *testing.T) {
 	readme := readFile(t, "README.md")
 	flat := strings.Join(strings.Fields(readme), " ")
 	duties := map[string]string{
-		"Google Cloud is for non-technical teams, said up front":           "**Google Cloud** | non-technical teams",
-		"steps marked as agent or person":                                  "**[person]**",
-		"no alerting in v1 (RFC 6.13)":                                     "There is no alerting in v1, on any path.",
-		"filter on do_not_contact (RFC 6.11)":                              "Filter on `do_not_contact` before every send.",
-		"export opt-outs come only from receiver, polling, Overrides (C4)": "Opt-outs reach the lists from the receiver, polling and `Overrides`",
-		"export-row limit per run (C4)":                                    "A run adds at most `ingest_chunk_rows` (2,000) new rows across all lists",
-		"laptop: poll or tunnel (RFC 6.12)":                                "A Cloudflare Tunnel",
-		"laptop sleep warning (RFC 6.12)":                                  "A tunnel only works while the laptop is awake",
-		"monthly cost (RFC 7)":                                             "### Run time and monthly cost",
-		"event-rate advice (C4)":                                           "Above about 1,500 events a day, use SQLite",
-		"Workspace exception (C9.1 step 6)":                                "ask your Workspace admin to allow sharing this file with the service accounts",
-		"receiver secret warning (C5.1)":                                   "works like a password: anyone who has it can send fake events",
-		"Apollo-only opt-out warning (S0, RFC 10)":                         "apollo-key:no_optout_flag",
-		"owner edits protected tabs without warning (S5)":                  "edit the tabs leadscore protects (`Ranked`, `Health`, `Pushes`, ...) **with no warning**",
-		"CSV formula injection (csvsafe)":                                  "never runs a formula a lead's data carried",
-		"pre-release CLI install with the gcloud mount (C9.1 step 2)":      "-v ~/.config/gcloud:/home/leadscore/.config/gcloud:ro",
-		"plug-in stores get no CSV files (S16 decision)":                   "A plug-in store (for example Postgres, `docs/postgres-store.md`) keeps its lists as tables in that store.",
-		"cold lanes claim leads with no sink (S13)":                        "A cold lane claims its leads even before its sink is set up",
-		"receiver-silence needs public_url (S15)":                          "Without `receiver.public_url`, silence is not watched",
-		"upgrade and roll back (C9.3)":                                     "Rolling back is the previous tag.",
+		"Google Cloud is for non-technical teams, said up front":      "**Google Cloud** | non-technical teams",
+		"steps marked as agent or person":                             "**[person]**",
+		"no alerting in v1":                                           "There is no alerting in v1, on any path.",
+		"filter on do_not_contact":                                    "Filter on `do_not_contact` before every send.",
+		"export opt-outs come only from receiver, polling, Overrides": "Opt-outs reach the lists from the receiver, polling and `Overrides`",
+		"export-row limit per run":                                    "A run adds at most `ingest_chunk_rows` (2,000) new rows across all lists",
+		"laptop: poll or tunnel":                                      "A Cloudflare Tunnel",
+		"laptop sleep warning":                                        "A tunnel only works while the laptop is awake",
+		"monthly cost":                                                "### Run time and monthly cost",
+		"event-rate advice":                                           "Above about 1,500 events a day, use SQLite",
+		"Workspace exception when sharing the Sheet":                  "ask your Workspace admin to allow sharing this file with the service accounts",
+		"receiver secret warning":                                     "works like a password: anyone who has it can send fake events",
+		"Apollo-only opt-out warning (S0)":                            "apollo-key:no_optout_flag",
+		"owner edits protected tabs without warning":                  "edit the tabs leadscore protects (`Ranked`, `Health`, `Pushes`, ...) **with no warning**",
+		"CSV formula injection (csvsafe)":                             "never runs a formula a lead's data carried",
+		"pre-release CLI install with the gcloud mount":               "-v ~/.config/gcloud:/home/leadscore/.config/gcloud:ro",
+		"plug-in stores get no CSV files":                             "A plug-in store (for example Postgres, `docs/postgres-store.md`) keeps its lists as tables in that store.",
+		"cold lanes claim leads with no sink":                         "A cold lane claims its leads even before its sink is set up",
+		"receiver-silence needs public_url":                           "Without `receiver.public_url`, silence is not watched",
+		"upgrade and roll back":                                       "Rolling back is the previous tag.",
 	}
 	for duty, phrase := range duties {
 		if !strings.Contains(flat, strings.Join(strings.Fields(phrase), " ")) {
@@ -69,10 +69,10 @@ func TestReadmeDuties(t *testing.T) {
 		}
 	}
 	if !strings.Contains(readFile(t, "setup/apollo/README.md"), "Keep the receiver secret private") {
-		t.Error("setup/apollo/README.md must warn to keep the receiver secret private (C5.1)")
+		t.Error("setup/apollo/README.md must warn to keep the receiver secret private")
 	}
 
-	// The Google Cloud steps in C9.1's order.
+	// The Google Cloud steps in the runbook's order.
 	gcp := section(t, readme, "## Path 2: Google Cloud")
 	order := []string{"setup/gcp.sh accounts", "setup/gcp.sh bucket", "leadscore setup sheet", "setup/gcp.sh secrets",
 		"leadscore config push", "setup/gcp.sh deploy <image>", "setup/apollo/", "setup/gcp.sh schedule",
@@ -81,12 +81,12 @@ func TestReadmeDuties(t *testing.T) {
 	for _, step := range order {
 		i := strings.Index(gcp[at:], step)
 		if i < 0 {
-			t.Errorf("Path 2 has %q out of C9.1's order (or not at all)", step)
+			t.Errorf("Path 2 has %q out of the runbook's order (or not at all)", step)
 			continue
 		}
 		at += i
 	}
-	// The Docker steps in C9.2's order.
+	// The Docker steps in the runbook's order.
 	docker := section(t, readme, "## Path 3: Docker (a laptop or a server)")
 	order = []string{"compose.yaml", ".env", "rules check", "Caddy", "docker compose up -d", "setup hubspot",
 		"leadscore doctor", "ranked --csv", "run --dry-run", "pushes_enabled: true"}
@@ -94,7 +94,7 @@ func TestReadmeDuties(t *testing.T) {
 	for _, step := range order {
 		i := strings.Index(docker[at:], step)
 		if i < 0 {
-			t.Errorf("Path 3 has %q out of C9.2's order (or not at all)", step)
+			t.Errorf("Path 3 has %q out of the runbook's order (or not at all)", step)
 			continue
 		}
 		at += i
@@ -146,8 +146,8 @@ func TestExampleFiles(t *testing.T) {
 	}
 }
 
-// The Sheets-on-Docker section lists its own actions: C9.1's step numbers
-// are not the README's, and the Google Cloud script must not be run there.
+// The Sheets-on-Docker section lists its own actions: the Google Cloud
+// runbook's step numbers are not the README's, and the Google Cloud script must not be run there.
 func TestReadmeSheetsOnDockerListsItsSteps(t *testing.T) {
 	readme := readFile(t, "README.md")
 	sec := strings.Join(strings.Fields(section(t, readme, "### A Google Sheet on Docker")), " ")

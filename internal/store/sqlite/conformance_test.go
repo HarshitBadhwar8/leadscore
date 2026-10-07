@@ -9,7 +9,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/storetest"
 )
 
-// The S4 proof: the public conformance suite, green on SQLite.
+// The SQLite store's proof: the public conformance suite, green on SQLite.
 func TestStoretest(t *testing.T) {
 	storetest.Run(t, func(t *testing.T) (api.Backend, api.EventLog) {
 		s, err := sqlite.Open(filepath.Join(t.TempDir(), "leadscore.db"))

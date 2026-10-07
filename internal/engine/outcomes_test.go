@@ -1,9 +1,9 @@
 package engine
 
-// The S15 outcome suite: every way we learn about a reply or an opt-out
+// The outcome suite: every way we learn about a reply or an opt-out
 // (the receiver, polling, the HubSpot lookup, the Apollo lookup) reaches the
 // status fold before the next push, including one that arrives while the run
-// pushes; statuses outlive the 90-day window; the contracts section 7 worked
+// pushes; statuses outlive the 90-day window; the status precedence worked
 // example, step by step; the receiver_only_push flag; receiver silence.
 
 import (
@@ -293,7 +293,7 @@ func TestStatusesOutliveTheWindow(t *testing.T) {
 	}
 }
 
-// The contracts section 7 worked example, step by step: Priya is
+// The status precedence worked example, step by step: Priya is
 // `contacted` by a `sent` event, `replied_positive` by her reply, `deal` once
 // the warm lane opens a deal, stays `deal` on a later reply, and is
 // `unsubscribed` for good once the Apollo lookup returns an opt-out.

@@ -19,14 +19,14 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/store/codec"
 )
 
-// State keys Intake writes (contracts section 4).
+// State keys Intake writes (the State table).
 const (
 	eventsCursorKey    = "cursor:events"
 	lastPollKey        = "last_poll_at"
 	lastReceivedPrefix = "last_received:"
 )
 
-// Fixed values (contracts section 11). Variables so tests can change them.
+// Fixed values (the engine defaults). Variables so tests can change them.
 var (
 	pollInterval    = 6 * time.Hour
 	windowRetention = 90 * 24 * time.Hour  // Window events, and the age past which processed events are deleted
@@ -45,7 +45,7 @@ const (
 // configured visit kinds, the kinds whose last_received:<kind> is kept.
 var replyKinds = map[string]bool{"sent": true, "replied": true, "replied_positive": true, "unsubscribed": true}
 
-// intake is the Intake hook (step 3, contracts section 12.7). It reads the
+// intake is the Intake hook (step 3, the events rules). It reads the
 // event log from cursor:events, parses it, merges the receiver rows, polls
 // for replies when due, and then takes every event (receiver, polled and the
 // sources' Run.SourceEvents) once: keyed, skipped when already in Seen events,
@@ -115,9 +115,9 @@ func intake(r *Run) error {
 	return shrank
 }
 
-// suppressed reports a receiver `replied` or `replied_positive` under
-// `replies: polling`: keyed in Seen events, with no effect, no window row and
-// no merged receiver row, so one reply never counts twice (contracts 5.3).
+// suppressed reports a receiver `replied` or `replied_positive` under `replies:
+// polling`: keyed in Seen events, with no effect, no window row and no merged
+// receiver row, so one reply never counts twice (the event kinds rules).
 func suppressed(r *Run, es []api.Event) bool {
 	if r.Config.Replies != "polling" {
 		return false
@@ -418,16 +418,16 @@ func trimEvents(r *Run) {
 	r.Model.Trim(model.TableSeenEvents, "first_received_at", r.Now().Add(-seenRetention))
 }
 
-// deleteProcessed is S9's AfterSave step (RFC 6.6): it deletes stored events
-// at or below the committed cursor that are older than the window retention.
-// Every fact a later run needs is already in Window events, Seen events and
-// Outcomes. It is skipped in a run whose event log shrank.
+// deleteProcessed is the events AfterSave step (event retention): it deletes
+// stored events at or below the committed cursor that are older than the window
+// retention. Every fact a later run needs is already in Window events, Seen
+// events and Outcomes. It is skipped in a run whose event log shrank.
 //
-// When the store drops a partition from the cursor, the new cursor is
-// committed at once, under the lease, retried once (contracts 12.6). If that
+// When the store drops a partition from the cursor, the new cursor is committed
+// at once, under the lease, retried once (the run's commit rules). If that
 // still fails, the stored cursor names a dropped partition and the next run
-// raises events_shrank; the error names the value to set as State
-// cursor:events by hand to recover.
+// raises events_shrank; the error names the value to set as State cursor:events
+// by hand to recover.
 func deleteProcessed(r *Run) error {
 	if r.DryRun || r.Events == nil || r.EventsShrank {
 		return nil

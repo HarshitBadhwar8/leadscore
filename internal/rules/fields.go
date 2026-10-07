@@ -13,7 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// kind is a field's value type (contracts section 2, "Fields").
+// kind is a field's value type.
 type kind int
 
 const (
@@ -53,14 +53,14 @@ type fieldDef struct {
 	aliases []string
 }
 
-// statuses are the folded statuses (RFC 6.3); a condition on `status` may name
+// statuses are the folded statuses; a condition on `status` may name
 // only these, so a typo fails at load instead of never matching.
 var statuses = []string{
 	"new", "contacted", "replied_positive", "replied_negative", "replied_neutral",
 	"replied_unlabelled", "deal", "unsubscribed", "blocked",
 }
 
-// Built-in fields (RFC 6.4). `status` is not here: it is the CEL `status`
+// Built-in fields. `status` is not here: it is the CEL `status`
 // variable, not a lead field.
 func builtinLeadFields() map[string]*fieldDef {
 	m := map[string]*fieldDef{}
@@ -98,7 +98,7 @@ var (
 // decomposed "é" match), trimmed and lowercased.
 func normText(s string) string { return strings.ToLower(strings.TrimSpace(norm.NFC.String(s))) }
 
-// NormText is the rubric's text-matching form (contracts section 2): trimmed,
+// NormText is the rubric's text-matching form: trimmed,
 // Unicode NFC, lowercased. The change detector compares with it too.
 func NormText(s string) string { return normText(s) }
 

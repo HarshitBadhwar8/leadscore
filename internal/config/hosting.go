@@ -9,13 +9,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// SaveBudget is how long a run may save after its deadline (contracts section
-// 11). The Cloud Run job's task timeout is the deadline plus this.
+// SaveBudget is how long a run may save after its deadline. The Cloud Run job's task timeout is the deadline plus this.
 const SaveBudget = 90 * time.Second
 
 // AdapterKeyVariables names the key variable each built-in vendor adapter
-// reads (RFC 6.13). S8 owns the apollo entry and S11 the hubspot one; a slice
-// that changes its adapter's key keeps its entry here. The receiver's secret
+// reads. Whoever changes an adapter's key variable keeps its entry here. The receiver's secret
 // is the receiver-secret check's, not an adapter key. Stores sign in through
 // Google's standard credentials and need none.
 var AdapterKeyVariables = map[string]string{

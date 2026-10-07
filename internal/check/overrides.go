@@ -15,7 +15,7 @@ func init() {
 	Register(duplicatesCheck{})
 }
 
-// overridesCheck is the `overrides` check (contracts section 10): a lead with
+// overridesCheck is the `overrides` check: a lead with
 // conflicting status rows or a row of unknown value is blocked on every lane
 // (status_conflict:<lead>, a failure); a row naming a person not yet known
 // waits for that person (override_unmatched:<row>, a warning); a retry row
@@ -82,7 +82,7 @@ func rubricLanes(env Env) map[string]bool {
 	return out
 }
 
-// duplicatesCheck is the `duplicates` check (contracts section 10): unresolved
+// duplicatesCheck is the `duplicates` check: unresolved
 // namesakes, which every lane skips (namesake:<lead>), and the running count of
 // key conflicts (a warning: pushing is not blocked). A lead in a hand-edited
 // merged_into cycle is raised as merge_cycle:<lead> instead.

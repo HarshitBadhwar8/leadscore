@@ -1,5 +1,4 @@
-// Package hosting is the Google Cloud side of leadscore (contracts sections 3
-// and 9): the fixed resource names, the schedule's cron form, Secret Manager
+// Package hosting is the Google Cloud side of leadscore: the fixed resource names, the schedule's cron form, Secret Manager
 // reads and writes (`config push` and the keys a local command reads on a
 // hosted install), and the reads of the Cloud Run service and job, the Cloud
 // Scheduler job and the Artifact Registry proxy that the `hosting` check makes.
@@ -26,7 +25,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/vendorhttp"
 )
 
-// The fixed resource names (contracts section 3, `hosting`).
+// The fixed resource names.
 const (
 	ServiceName      = "leadscore-receiver"
 	JobName          = "leadscore-run"
@@ -35,15 +34,15 @@ const (
 	ConfigSecret     = "leadscore-config"
 	// ConfigVersionSecret holds, as its latest value, the leadscore-config
 	// version number `config push` last wrote; the run job reads it into
-	// ConfigVersionVariable (contracts section 3).
+	// ConfigVersionVariable.
 	ConfigVersionSecret    = "leadscore-config-version"
 	ReceiverSecret         = "receiver-secret"
 	ReceiverSecretPrevious = "receiver-secret-previous"
 	// SchedulerAccount is the account Cloud Scheduler starts the job as
-	// (contracts section 9.1 step 11).
+	// (`setup/gcp.sh schedule`).
 	SchedulerAccount = "leadscore-scheduler"
 	// ConfigVersionVariable carries the bundle's Secret Manager version into
-	// the run job (contracts section 3), from ConfigVersionSecret's latest
+	// the run job, from ConfigVersionSecret's latest
 	// value, which setup/gcp.sh deploy attaches. The run records it as
 	// State.config_version.
 	ConfigVersionVariable = "LEADSCORE_CONFIG_VERSION"
@@ -63,7 +62,7 @@ func InCloudRun(getenv func(string) string) bool {
 }
 
 // AccountEmail is a service account's email: a bare name gets
-// @<project>.iam.gserviceaccount.com (contracts section 9).
+// @<project>.iam.gserviceaccount.com.
 func AccountEmail(name, project string) string {
 	if strings.Contains(name, "@") || project == "" {
 		return name
@@ -87,9 +86,9 @@ type Client struct {
 	base string // tests: every API under base/<api>; empty for Google's own hosts
 }
 
-// Connect builds a client from a block with the two test keys of contracts
-// section 3. With `base_url` set, every API points there and skips
-// authentication; only tests set it, together with `_http_client`, so a
+// Connect builds a client from a block with the two test-only keys
+// (`base_url` and `_http_client`). With `base_url` set, every API points
+// there and skips authentication; only tests set it, together with `_http_client`, so a
 // `base_url` without a client is refused: it would send the team's keys to
 // whatever address it names. Otherwise `_http_client`, when set, is an
 // already-authenticated client; else the client signs in with Google's

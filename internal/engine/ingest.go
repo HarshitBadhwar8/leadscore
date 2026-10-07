@@ -105,8 +105,8 @@ func (x *exec) fetch(src config.Source) ([]api.InputRow, []api.Event, api.Cursor
 	return s.Fetch(x.run.Ctx, cursor)
 }
 
-// sourceFailed handles a source that could not be read (contracts section
-// 12.6, "Hook errors"): its rows and events are skipped this run and its
+// sourceFailed handles a source that could not be read (the run's rule
+// for hook errors): its rows and events are skipped this run and its
 // cursor is kept, the run is unhealthy and goes on, and pushing waits, since
 // the skipped rows may hold an unmerged duplicate and the skipped events an
 // opt-out.

@@ -29,8 +29,7 @@ func readRepo(t *testing.T, name string) []byte {
 	return b
 }
 
-// The image runs as the non-root user leadscore with its own HOME (contracts
-// section 5.1), with leadscore as the entrypoint.
+// The image runs as the non-root user leadscore with its own HOME, with leadscore as the entrypoint.
 func TestDockerfileRunsAsLeadscore(t *testing.T) {
 	df := string(readRepo(t, "Dockerfile"))
 	for _, want := range []string{"USER leadscore", "ENV HOME=/home/leadscore", `ENTRYPOINT ["leadscore"]`, "-h /home/leadscore leadscore", "chmod 700 /data /out"} {
@@ -40,7 +39,7 @@ func TestDockerfileRunsAsLeadscore(t *testing.T) {
 	}
 }
 
-// compose.yaml carries every setting the brief and RFC 6.9 rely on.
+// compose.yaml carries every setting the Docker path and its run timer rely on.
 func TestComposeFile(t *testing.T) {
 	var c struct {
 		Services map[string]struct {
@@ -129,7 +128,7 @@ func TestExampleConfigs(t *testing.T) {
 	}
 }
 
-// The Apollo workflow templates use the C5.1 event names, and a body built
+// The Apollo workflow templates use the receiver's event names, and a body built
 // from each (its placeholders filled) parses to the event it is for.
 func TestWorkflowTemplates(t *testing.T) {
 	placeholder := regexp.MustCompile(`"<[^">]*>"`)
@@ -180,7 +179,7 @@ func TestWorkflowTemplates(t *testing.T) {
 }
 
 // The README warns, in the setup steps and next to the templates, that the
-// receiver secret must be kept private (contracts section 5.1).
+// receiver secret must be kept private.
 func TestSecretWarningIsPresent(t *testing.T) {
 	for _, f := range []string{"README.md", "setup/apollo/README.md", "compose.yaml"} {
 		text := strings.ToLower(string(readRepo(t, f)))

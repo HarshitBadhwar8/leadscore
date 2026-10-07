@@ -1,5 +1,4 @@
-// Package hubspot is the HubSpot adapter (RFC 6.11, 6.12; contracts section
-// 6): the `hubspot` sink, which finds or creates contacts and one deal per
+// Package hubspot is the HubSpot adapter: the `hubspot` sink, which finds or creates contacts and one deal per
 // company; the HubSpot Lookup, which reads opt-outs and each company's deals
 // before pushing; `leadscore setup hubspot`; and the `hubspot` check.
 //
@@ -39,7 +38,7 @@ func init() {
 	check.Register(hubspotCheck{})
 }
 
-// callTimeout bounds every call (contracts section 11); a variable so a test
+// callTimeout bounds every call (a fixed default); a variable so a test
 // can shorten it.
 var callTimeout = 30 * time.Second
 
@@ -55,7 +54,7 @@ const (
 	groupName = "leadscore"
 )
 
-// Destinations and their steps (contracts section 6).
+// Destinations and their steps.
 const (
 	destContacts = "contacts"
 	destDeals    = "deals"
@@ -126,8 +125,7 @@ func parse(cfg api.Config) (settings, error) {
 
 func (s settings) prop(name string) string { return s.prefix + name }
 
-// stageClass is a deal stage's class: open, won or lost (contracts section
-// 6, "Deal stages").
+// stageClass is a deal stage's class: open, won or lost.
 type stageClass string
 
 const (

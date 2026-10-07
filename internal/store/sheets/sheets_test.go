@@ -345,7 +345,7 @@ func TestNewToolTabCopiesProtection(t *testing.T) {
 	}
 }
 
-// The lease is the C4 file in the bucket; LeaseInfo shows it; release deletes it.
+// The lease is a file in the bucket; LeaseInfo shows it; release deletes it.
 func TestLeaseFile(t *testing.T) {
 	f := newFakeGoogle(t)
 	s := openStore(t, f)

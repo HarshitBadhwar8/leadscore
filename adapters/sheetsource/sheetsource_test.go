@@ -66,8 +66,8 @@ func TestFetchRows(t *testing.T) {
 	}
 }
 
-// An events tab follows the CSV event rules (contracts section 5.2),
-// rejected rows named by their sheet row.
+// An events tab follows the CSV event-row rules, rejected rows named by their
+// sheet row.
 func TestFetchEvents(t *testing.T) {
 	fs, with := setup(t)
 	id := fs.NewSpreadsheet("team")

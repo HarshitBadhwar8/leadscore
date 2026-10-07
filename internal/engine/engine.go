@@ -1,8 +1,7 @@
-// Package engine is the run (RFC 6.9, contracts section 12.6): one execution
-// of the loop, from reading leadscore.yml to writing Ranked. S10a owns the
-// loop, the lease, the two-phase writes, chunked intake, the deadline and the
-// Health writer; the other steps plug in as Hooks, which each owning slice sets
-// in DefaultHooks.
+// Package engine is the run: one execution of the loop, from reading
+// leadscore.yml to writing Ranked. The engine owns the loop, the lease, the
+// two-phase writes, chunked intake, the deadline and the Health writer; the
+// other steps plug in as Hooks, set in DefaultHooks.
 package engine
 
 import (
@@ -34,42 +33,42 @@ type Run struct {
 	DryRun       bool
 	Now          func() time.Time
 	HTTPClient   *http.Client
-	SourceEvents []api.Event                                  // step 3 source events, keys already normalized, set by S10a before Intake
+	SourceEvents []api.Event                                  // step 3 source events, keys already normalized, set by the engine before Intake
 	NoPush       string                                       // non-empty: score and save, but push nothing (the reason)
 	EventsShrank bool                                         // Intake returned ErrEventsShrank: no processed event is deleted this run
 	Problem      func(key, message, fix string, warning bool) // raise an open problem this run
-	// ReRead calls Hooks.ReRead (S15) for S10b's push loop before each batch;
-	// with no hook it returns nothing. Its error also raises step_failed:reread.
+	// ReRead calls Hooks.ReRead for the push loop before each batch; with no
+	// hook it returns nothing. Its error also raises step_failed:reread.
 	ReRead func() (changed []api.LeadID, err error)
-	Input  rules.Input  // step 6's evaluator input; a re-score (S10b) updates it
+	Input  rules.Input  // step 6's evaluator input; a re-score updates it
 	Result rules.Result // step 6's result; PrePush may update it, and Ranked and the dry-run report follow it
-	Pushed int          // pushes made this run (S10b); RunResult.Pushed
+	Pushed int          // pushes made this run; RunResult.Pushed
 
-	lv         *view        // the lane view (S10b), built on first use; nil after invalidate
-	pushing    *pushRun     // what PrePush decided for Push (S10b); nil before PrePush
+	lv         *view        // the lane view, built on first use; nil after invalidate
+	pushing    *pushRun     // what PrePush decided for Push; nil before PrePush
 	leaseUntil time.Time    // when the lease taken at start runs out (real clock); zero on a dry run
 	judged     bool         // step 6 finished on full inputs (no Enrich or Detect failure), so Result can list and reopen export rows; set before Export
 	enrich     *enrichMemo  // what Enrich bought this run; kept across an ErrTooLarge redo so no answer is paid for twice
-	reread     *rereadState // the re-read's position in the event log this run (S15); nil before the first
+	reread     *rereadState // the re-read's position in the event log this run; nil before the first
 }
 
 // Hooks are the run's plug-in steps. A nil hook is skipped. Their errors are
-// handled per contracts section 12.6 ("Hook errors").
+// handled by the run's rule for hook errors.
 type Hooks struct {
-	Intake    func(*Run) error                             // step 3 after sources (S9)
-	Enrich    func(*Run) error                             // step 4 (S8); skipped on dry-run
-	Fold      func(*Run) error                             // step 5; default gives every live lead with no stored status new (S10b)
-	Detect    func(*Run) (rules.DetectorResults, error)    // step 6, before Evaluate (S9)
-	PrePush   func(*Run, []api.LeadID) error               // step 8 (S10b)
-	Push      func(*Run) error                             // step 9 (S10b)
-	ReRead    func(*Run) (changed []api.LeadID, err error) // before each pushing batch (S15)
-	Export    func(*Run) error                             // after Push, before phase 2, every run (S13)
-	AfterSave func(*Run) error                             // after phase 2 committed: CSV rewrite (S13), view (S16)
+	Intake    func(*Run) error                             // step 3 after sources
+	Enrich    func(*Run) error                             // step 4; skipped on dry-run
+	Fold      func(*Run) error                             // step 5; default gives every live lead with no stored status new
+	Detect    func(*Run) (rules.DetectorResults, error)    // step 6, before Evaluate
+	PrePush   func(*Run, []api.LeadID) error               // step 8
+	Push      func(*Run) error                             // step 9
+	ReRead    func(*Run) (changed []api.LeadID, err error) // before each pushing batch
+	Export    func(*Run) error                             // after Push, before phase 2, every run
+	AfterSave func(*Run) error                             // after phase 2 committed: CSV rewrite, view
 }
 
-// DefaultHooks is the production set. Each hook slice sets its field here in
-// its own PR; slices sharing AfterSave each add one function to its Chain
-// (S9's deletion of processed events, S13's CSV rewrite, S16's view).
+// DefaultHooks is the production set. Steps sharing AfterSave each add one
+// function to its Chain (deleting processed events, the CSV rewrite, the
+// view).
 func DefaultHooks() Hooks {
 	return Hooks{
 		Intake:    intake,
@@ -98,7 +97,7 @@ func Chain(fs ...func(*Run) error) func(*Run) error {
 	}
 }
 
-// Fixed values (contracts section 11). Variables so tests can shrink them.
+// Fixed values (the engine defaults). Variables so tests can shrink them.
 var (
 	// saveBudget is how long the run may save after the deadline.
 	saveBudget = config.SaveBudget
@@ -139,7 +138,7 @@ type settings struct {
 	out    io.Writer
 	getenv func(string) string
 	// loadKeys fills empty key variables from Secret Manager on a hosted
-	// install run locally (contracts section 3); nil reads nothing. RunWith
+	// install run locally (the hosting settings); nil reads nothing. RunWith
 	// leaves it nil, so tests never reach Google.
 	loadKeys func(context.Context, *config.Config) error
 }

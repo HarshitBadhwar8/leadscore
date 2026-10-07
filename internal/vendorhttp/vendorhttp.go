@@ -1,8 +1,8 @@
-// Package vendorhttp holds the HTTP rules the vendor clients share
-// (contracts sections 6 and 12.1), so Apollo's and HubSpot's cannot drift
-// apart: the test keys, no redirects, a per-call timeout, a size cap on the
-// reply, transport errors without the URL, and the error classes. Auth
-// headers, retries, pacing and parsing stay in each adapter.
+// Package vendorhttp holds the HTTP rules the vendor clients share, so Apollo's
+// and HubSpot's cannot drift apart: the test keys, no redirects, a per-call
+// timeout, a size cap on the reply, transport errors without the URL, and the
+// error classes. Auth headers, retries, pacing and parsing stay in each
+// adapter.
 package vendorhttp
 
 import (
@@ -21,12 +21,12 @@ import (
 // ErrBaseURLNeedsClient refuses a block with `base_url` but no test client.
 var ErrBaseURLNeedsClient = errors.New("`base_url` is for tests only and needs a test HTTP client; remove it from leadscore.yml")
 
-// Overrides reads a block's two test keys (contracts section 3). base is
-// base_url without a trailing "/", or "" when unset; hc is _http_client, or
-// nil when unset (a typed nil counts as unset). base_url without a client is
-// refused: only tests set it, and one written into leadscore.yml would send
-// the key to whatever address it names. A base_url that is not non-empty
-// text, or an _http_client that is not an *http.Client, is refused too.
+// Overrides reads a block's two test keys (base_url and _http_client). base is
+// base_url without a trailing "/", or "" when unset; hc is _http_client, or nil
+// when unset (a typed nil counts as unset). base_url without a client is
+// refused: only tests set it, and one written into leadscore.yml would send the
+// key to whatever address it names. A base_url that is not non-empty text, or
+// an _http_client that is not an *http.Client, is refused too.
 func Overrides(cfg api.Config) (base string, hc *http.Client, err error) {
 	if v, ok := cfg["_http_client"]; ok && v != nil {
 		if hc, ok = v.(*http.Client); !ok {
@@ -103,11 +103,11 @@ func KeyRefused(status int) bool {
 	return status == http.StatusUnauthorized || status == http.StatusForbidden
 }
 
-// Class is section 1's error class for a reply's status, the same for every
-// vendor (contracts section 6, "Errors"): a 429 is api.ErrRateLimited, and so
-// are 401 and 403 (no lead is at fault, so the sink stops for the run with no
-// attempt counted); a 5xx is api.ErrTransient, as is any error from Do. Nil
-// means the adapter decides (a refusal it recognises, else one attempt).
+// Class is the public API's error class for a reply's status, the same for
+// every vendor: a 429 is api.ErrRateLimited, and so are 401 and 403 (no lead is
+// at fault, so the sink stops for the run with no attempt counted); a 5xx is
+// api.ErrTransient, as is any error from Do. Nil means the adapter decides (a
+// refusal it recognises, else one attempt).
 func Class(status int) error {
 	switch {
 	case status == http.StatusTooManyRequests, KeyRefused(status):

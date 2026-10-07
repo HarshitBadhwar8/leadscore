@@ -191,7 +191,7 @@ func (c *Client) ProxyRepositoryExists(ctx context.Context, project, region stri
 
 // UsesProxy reports whether an image reference is pulled through ghcr-proxy
 // (a release image), as opposed to the private registry's image passed
-// directly before release (contracts section 9).
+// directly before release.
 func UsesProxy(image string) bool {
 	return strings.HasPrefix(image, "ghcr.io/") || strings.Contains(image, "-docker.pkg.dev/") && strings.Contains(image, "/"+ProxyRepository+"/")
 }

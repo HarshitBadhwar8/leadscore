@@ -22,7 +22,7 @@ import (
 // Tests point it at a fake.
 var gcpConnector hosting.Connector
 
-// runConfigGet prints one effective configuration value (contracts section 3).
+// runConfigGet prints one effective configuration value.
 func runConfigGet(inv *invocation) int {
 	c, err := config.Load(inv.configOptions())
 	if err != nil {
@@ -50,8 +50,8 @@ func runConfigSetHosting(inv *invocation) int {
 }
 
 // runConfigPush uploads leadscore.yml and the rubric together as one new
-// version of the leadscore-config secret (contracts section 3, "Hosted
-// bundle"); the next run reads it. It refuses anything a hosted run would
+// version of the leadscore-config secret (the hosted bundle); the next run
+// reads it. It refuses anything a hosted run would
 // refuse, so a broken pair is never uploaded.
 func runConfigPush(inv *invocation) int {
 	ctx := context.Background()
@@ -135,7 +135,7 @@ func runConfigPush(inv *invocation) int {
 		return inv.fail(fmt.Errorf("the bundle would not load on Google Cloud: %w", err))
 	}
 	// The bundle first, then its version number, which the run job reads
-	// into LEADSCORE_CONFIG_VERSION (contracts section 3).
+	// into LEADSCORE_CONFIG_VERSION.
 	v, err := client.AddSecretVersion(ctx, c.Hosting.Project, hosting.ConfigSecret, bundle)
 	if err != nil {
 		return inv.fail(err)
@@ -161,7 +161,7 @@ type namedText struct {
 // account, so a bundle holding one is refused even when the variables are
 // empty here (the usual case on a hosted install). A key not added yet is
 // skipped. The receiver secret is not readable by the run account, so a
-// pasted receiver secret is not detected (README, contracts section 9).
+// pasted receiver secret is not detected (see the README).
 func storedKeys(ctx context.Context, client *hosting.Client, project string) (map[string]string, error) {
 	out := map[string]string{}
 	for _, secret := range hosting.KeySecrets {

@@ -1,6 +1,6 @@
-// Package events holds the event rules (RFC 6.7, contracts sections 5.3 and
-// 12.7): the de-duplication key of every event, parsing stored receiver
-// requests, and applying an event's effect to a lead's Outcomes and People.
+// Package events holds the event rules: the de-duplication key of every event,
+// parsing stored receiver requests, and applying an event's effect to a lead's
+// Outcomes and People.
 //
 // Apply is the only code that writes event effects. Losing an effect means an
 // opt-out that never lands, so every rule here errs towards recording: an
@@ -68,7 +68,7 @@ func Time(e api.Event) time.Time {
 	return e.ReceivedAt.UTC()
 }
 
-// Key is an event's de-duplication key (RFC 6.7). The event's keys must
+// Key is an event's de-duplication key. The event's keys must
 // already be normalized (merge.NormalizeEventKeys). Every free-text part is
 // length-prefixed, so two different events never flatten to one key.
 //
@@ -201,7 +201,7 @@ func Parse(raw []api.RawEvent) ([]api.Event, []api.InputRow) {
 }
 
 // CreatesLead reports whether an event of this kind whose person matches no
-// lead creates one (RFC 6.7): a send, reply or unsubscribe, a polled reply,
+// lead creates one: a send, reply or unsubscribe, a polled reply,
 // and an identified website visit. An opt-out that arrives before the
 // person's input row is then never lost; the later row merges into the lead.
 func CreatesLead(kind string) bool {
@@ -212,7 +212,7 @@ func CreatesLead(kind string) bool {
 	return strings.HasPrefix(strings.ToLower(kind), "visit_")
 }
 
-// VendorOnly reports a kind only a vendor may report (contracts section 5.2):
+// VendorOnly reports a kind only a vendor may report:
 // a send, reply, opt-out or deal. A file or plug-in source claiming one could
 // suppress or unblock a person on no evidence.
 func VendorOnly(kind string) bool {
@@ -224,7 +224,7 @@ func VendorOnly(kind string) bool {
 	return strings.HasPrefix(k, "replied") || strings.HasPrefix(k, "deal_")
 }
 
-// The reply-label map (contracts section 5.5). "none" means no outcome.
+// The reply-label map. "none" means no outcome.
 const (
 	labelUnsubscribe = "unsubscribe"
 	labelNone        = "_unlabelled" // the reply_labels key for a reply with no label
@@ -244,10 +244,9 @@ var baseLabels = map[string]string{
 }
 
 // ReplyStatus maps a polled reply's label to its status, with the team's
-// reply_labels overrides (contracts section 5.5; config lowercases their
-// keys). ok is false for no outcome. `unsubscribe` cannot be overridden. A
-// label the map does not know is still a reply, and reads as
-// replied_unlabelled.
+// reply_labels overrides (config lowercases their keys). ok is false for no
+// outcome. `unsubscribe` cannot be overridden. A label the map does not know is
+// still a reply, and reads as replied_unlabelled.
 func ReplyStatus(label string, overrides map[string]string) (status string, ok bool) {
 	l := strings.ToLower(strings.TrimSpace(label))
 	if l == "" {
@@ -285,7 +284,7 @@ func optOutOrigin(kind string, e api.Event, labels map[string]string) string {
 	return ""
 }
 
-// Apply applies an event's section 5.3 effect to the live lead (following
+// Apply applies an event kind's effect to the live lead (following
 // merged_into). The caller resolved the person: Intake through
 // merge.ApplyEventPerson, the pre-push and re-read steps with the lead they
 // looked up. lead may be empty for a company-level deal event. labels are the
@@ -357,9 +356,9 @@ func Apply(m *model.Model, lead api.LeadID, e api.Event, labels map[string]strin
 }
 
 // applyOptOut records an opt-out on one lead: the time kept at its earliest,
-// the origin always the automated one, even over `manual` (contracts section
-// 5.3). An Apollo opt-out also marks the lead Apollo-held. It reports whether
-// the outcome or the hold changed.
+// the origin always the automated one, even over `manual`. An Apollo opt-out
+// also marks the lead Apollo-held. It reports whether the outcome or the hold
+// changed.
 func applyOptOut(m *model.Model, lead api.LeadID, at time.Time, origin string, held bool) bool {
 	o := m.Outcomes[model.Key(lead)]
 	before := o
@@ -478,7 +477,7 @@ func setReply(o *model.Outcome, status string, received time.Time) {
 }
 
 // markHeld sets apollo_held_at on the first Apollo send, reply or unsubscribe
-// event (RFC 6.7), kept at its earliest. Nothing clears it. It reports
+// event, kept at its earliest. Nothing clears it. It reports
 // whether it changed the lead.
 func markHeld(m *model.Model, lead api.LeadID, at time.Time) bool {
 	p := m.People[model.Key(lead)]
@@ -491,7 +490,7 @@ func markHeld(m *model.Model, lead api.LeadID, at time.Time) bool {
 }
 
 // applyDeal sets the deal on every live lead at the company and every lead
-// whose stored deal is this one (contracts section 5.3). The company is the
+// whose stored deal is this one. The company is the
 // event's domain (normalized), else the lead's. deal_stage holds the stage
 // class from the kind (open, won or lost), which is what the status fold
 // reads; the vendor's own stage name is stored nowhere.

@@ -1,6 +1,6 @@
 // Package sink is an in-memory fake vendor for tests: a find-or-create Sink
 // and a Lookup over one shared state, so the push loop, the pre-push lookups
-// and the sinktest suite run with no vendor account (contracts section 1).
+// and the sinktest suite run with no vendor account.
 //
 // The sink keeps one object per step key, as a real sink must; a step can be
 // made to fail before the vendor acts (Fail) or after it acted (FailAfter, a
@@ -61,7 +61,7 @@ func New(steps map[string][]string) *Vendor {
 
 // ReuseRelated makes the step reuse the object of a done step of the same
 // name in StepRequest.Related instead of creating one, as a deals sink keeps
-// one deal per company (contracts section 1, Related).
+// one deal per company.
 func (v *Vendor) ReuseRelated(step string) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -142,7 +142,7 @@ func (v *Vendor) SetDeal(domain, id, stage string) {
 
 // DealsByCompany makes the lookup read deals per company, as the HubSpot
 // lookup does: a company with no open or won deal is reported as deal_lost
-// with no deal id (contracts section 5.3).
+// with no deal id.
 func (v *Vendor) DealsByCompany() {
 	v.mu.Lock()
 	defer v.mu.Unlock()

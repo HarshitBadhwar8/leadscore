@@ -19,7 +19,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/store/sqlite"
 )
 
-// DoctorOrder is contracts section 10's table, in its order: doctor prints
+// DoctorOrder is the doctor checks table, in its order: doctor prints
 // its checks in this order, then any other registered check (a plug-in's).
 var DoctorOrder = []string{
 	"secrets", "receiver-secret", "hosting", "rubric-version", "sheet-access", "sheets", "hubspot",
@@ -36,7 +36,7 @@ var modelChecks = map[string]bool{
 // storeChecks need the open store: without it doctor prints them as skipped.
 var storeChecks = map[string]bool{"lease": true}
 
-// runDoctor is `leadscore doctor` (contracts section 10): one line per check,
+// runDoctor is `leadscore doctor`: one line per check,
 // each problem with its suggested fix. It exits 0 when no check fails
 // (warnings allowed) and 1 otherwise. It never writes the store and never
 // takes the lease: the store is opened and its model loaded read-only, and a
@@ -143,7 +143,7 @@ func openReadOnly(c *config.Config, open func(api.Config) (api.Backend, api.Even
 	return open(c.Store.Block)
 }
 
-// doctorChecks are every registered check, section 10's in its order first.
+// doctorChecks are every registered check, DoctorOrder's in its order first.
 func doctorChecks() []check.Check {
 	byName := map[string]check.Check{}
 	var rest []check.Check

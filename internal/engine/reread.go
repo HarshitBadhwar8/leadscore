@@ -11,7 +11,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
 )
 
-// reReadHook is the ReRead hook (S15, contracts section 12.6): before each
+// reReadHook is the ReRead hook (one of the run's hooks): before each
 // pushing batch it reads the receiver events stored since the last read (the
 // first time, since Intake's cursor:events), and applies their effects to the
 // run's model, so an opt-out or reply that arrives while the run pushes
@@ -84,12 +84,14 @@ type rereadState struct {
 }
 
 // receiverOnlyPushKind is the problem raised for a push to a lead known only
-// from receiver webhooks (contracts section 4, RFC 7 "Security").
+// from receiver webhooks.
 const receiverOnlyPushKind = "receiver_only_push"
 
 // receiverOnlyPush raises receiver_only_push:<lead>, a warning: anyone with
 // the receiver secret can forge a webhook-only lead and its positive reply,
-// which a non-cold lane acts on (Decisions Log row 79: warn only).
+// which a non-cold lane acts on. It only warns and adds no extra check, to keep
+// setup and runs simple: keeping the secret private is the guard, and a leaked
+// secret is accepted to work until it is rotated.
 func receiverOnlyPush(r *Run, lead api.LeadID) {
 	r.Problem(receiverOnlyPushKind+":"+string(lead),
 		fmt.Sprintf("lead %s is known only from receiver webhooks and was pushed; anyone with the receiver secret can forge such a lead and its replies", lead),

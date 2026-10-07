@@ -14,7 +14,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/vendorhttp"
 )
 
-// The `apollo` sink (contracts sections 1 and 6, RFC 6.11): a destination
+// The `apollo` sink: a destination
 // `sequence/<name>` has two steps, `contact` (create the contact, with
 // Apollo's own de-duplication on) and `enroll` (add it to the sequence).
 //
@@ -667,8 +667,8 @@ func errorFields(body []byte) string {
 	return strings.Join(parts, " ")
 }
 
-// classify maps a call's error to section 1's classes (contracts section 6;
-// the status rule is vendorhttp's): a 429, 401 or 403 is ErrRateLimited (a
+// classify maps a call's error to the sink error classes in internal/api (the
+// status rule is vendorhttp's): a 429, 401 or 403 is ErrRateLimited (a
 // refused key or a key without the scope is no lead's fault: the sink stops
 // for the run with no attempt counted); a 5xx, a timeout or a transport
 // failure is ErrTransient; a 4xx whose error fields name a refusal (another

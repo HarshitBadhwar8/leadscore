@@ -83,7 +83,7 @@ func (c *Client) EnrichOrganization(ctx context.Context, domain string) (*Organi
 	}, nil
 }
 
-// Enricher is the `apollo` enricher (contracts sections 1 and 6).
+// Enricher is the `apollo` enricher.
 type Enricher struct {
 	c   *Client
 	now func() time.Time
@@ -141,14 +141,14 @@ func (e *Enricher) Enrich(ctx context.Context, domains []string, budget int) ([]
 }
 
 // MaxFailuresInARow is how many lookups in a row may fail (no answer at all)
-// before enrichment stops for the run (contracts section 1).
+// before enrichment stops for the run.
 const MaxFailuresInARow = 3
 
 // CompanyFromOrganization maps Apollo's record onto company facts. Both
 // funding mappings fail soft rather than losing the whole company over one
 // field. A field Apollo left out stays empty, which keeps the stored fact. A
 // funding label or date it sent that cannot be mapped is put in Extra with an
-// empty value, which clears the stored fact (contracts section 4), so a stale
+// empty value, which clears the stored fact, so a stale
 // stage does not outlive the vendor's change.
 func CompanyFromOrganization(domain string, o *Organization, fetched time.Time) api.CompanyFacts {
 	f := api.CompanyFacts{
@@ -175,7 +175,7 @@ func CompanyFromOrganization(domain string, o *Organization, fetched time.Time) 
 }
 
 // fundingStages maps Apollo's labels, lowercased and trimmed, onto the fixed
-// values (contracts section 6). Only the rounds listed have a value; an angel
+// values. Only the rounds listed have a value; an angel
 // round, a grant or a post-IPO label is empty.
 var fundingStages = map[string]string{
 	"pre-seed": "pre_seed",

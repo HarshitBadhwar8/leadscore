@@ -175,7 +175,7 @@ func TestExportDryRunWritesNothing(t *testing.T) {
 	}
 }
 
-// The S13 proof: a later opt-out, an Overrides typo, an earlier cold push
+// The export proof: a later opt-out, an Overrides typo, an earlier cold push
 // and a merge of two listed people each set the right row's do_not_contact
 // to yes, and leave the other rows alone.
 func TestExportDoNotContactFlips(t *testing.T) {
@@ -305,8 +305,8 @@ func TestExportRemovedLaneStillRefreshed(t *testing.T) {
 	}
 }
 
-// A resubscribe clears a manual opt-out, and the row goes back to no only
-// when nothing else in the C4 rule holds: an automated opt-out, or an
+// A resubscribe clears a manual opt-out, and the row goes back to no only when
+// nothing else in the do_not_contact rule holds: an automated opt-out, or an
 // earlier contact, keeps it at yes.
 func TestExportResubscribe(t *testing.T) {
 	w := exportWorld(t, false,

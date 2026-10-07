@@ -11,9 +11,8 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 )
 
-// The Apollo contact Lookup (contracts sections 1 and 6, RFC 6.9 step 8):
-// just before a push, it finds each lead's Apollo contacts by email and
-// reports an `optout` for any that carries Apollo's opt-out flag. It catches a
+// The Apollo contact Lookup: just before a push, it finds each lead's Apollo
+// contacts by email and reports an `optout` for any that carries Apollo's opt-out flag. It catches a
 // person who clicked an unsubscribe link without replying, which neither
 // polling nor HubSpot may show.
 //
@@ -21,7 +20,7 @@ import (
 // without the flag it could only ever say "not opted out", which is no check
 // at all, and the apollo-key check warns Apollo-only teams instead.
 
-// KindOptOut is the kind of a lookup's opt-out event (contracts section 5.3).
+// KindOptOut is the kind of a lookup's opt-out event.
 const KindOptOut = "optout"
 
 // optOutField is the contact's opt-out flag. S0 confirms its name, that it is

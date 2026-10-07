@@ -15,8 +15,7 @@ import (
 // confirms the name and that "true" is its set value).
 const optOutProperty = "hs_email_optout"
 
-// Lookup is the HubSpot Lookup (RFC 6.9 step 8, contracts sections 1, 5.3
-// and 6). For the leads it is given it reports:
+// Lookup is the HubSpot Lookup, run just before a push. For the leads it is given it reports:
 //
 //   - an `optout` for every email of a lead whose contact has opted out:
 //     each email of the lead's family is read by email, and the lead's own
@@ -34,7 +33,7 @@ const optOutProperty = "hs_email_optout"
 //     id.
 //
 // A read that fails, or that could not see every result, fails every lead it
-// was for (contracts section 1, `failed`), and a company any failed read
+// was for (its `failed` list), and a company any failed read
 // touched gets no deal event at all: no company is released on an
 // incomplete answer. Only when every lead failed and no opt-out was learned
 // is the whole lookup failed.
@@ -530,8 +529,8 @@ func (r *lookupRun) deals(ctx context.Context) {
 // company's stored deal is preferred within a stage. A deal linked to a
 // contact at the company counts unless it is shown to be another company's
 // (elsewhere). A stored deal that no
-// longer exists counts as lost. No deal at all is deal_lost with no deal id
-// (contracts section 5.3).
+// longer exists counts as lost. No deal at all is deal_lost with no deal
+// id.
 func companyEvent(domain string, cands []candidate, read map[string]object, pipes *pipelines, domainProp string, coDomains map[string][]string) api.Event {
 	type pick struct {
 		id, stage string

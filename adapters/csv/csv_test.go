@@ -164,7 +164,7 @@ func TestApolloVisitorExport(t *testing.T) {
 	want := []api.Event{
 		{
 			Kind: "visit_site", Email: "priya@acme.example", LinkedInURL: "https://www.linkedin.com/in/example-priya",
-			// Passed through as written: merge reduces it to a host (contracts 12.5).
+			// Passed through as written: merge reduces it to a host.
 			Domain: "https://www.Acme.example/", At: time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC),
 			ReceivedAt: fixedNow, Origin: "site",
 			Attrs: map[string]string{"firstname": "Priya", "lastname": "Rao", "title": "VP Engineering",
@@ -274,10 +274,10 @@ func TestForbiddenKinds(t *testing.T) {
 // reason never echoes a cell, even a kind that holds an address.
 func TestRejectReasonsCarryNoCellValue(t *testing.T) {
 	body := "event,at,email\n" +
-		"replied a@x.io,2026-08-20,a@x.io\n" +
-		"deal_jane@acme.com,2026-08-20,a@x.io\n" +
-		"replied_jane@acme.com,2026-08-20,a@x.io\n" +
-		"visit_x,jane@acme.com,a@x.io\n"
+		"replied a@x.example,2026-08-20,a@x.example\n" +
+		"deal_jane@acmeco.example,2026-08-20,a@x.example\n" +
+		"replied_jane@acmeco.example,2026-08-20,a@x.example\n" +
+		"visit_x,jane@acmeco.example,a@x.example\n"
 	_, events := fetch(t, newSource(t, api.Config{"id": "x", "path": writeFile(t, body), "events": true}))
 	_, fixture := fetch(t, newSource(t, api.Config{"id": "x", "path": "testdata/events.csv", "events": true}))
 	_, apollo := fetch(t, newSource(t, api.Config{"id": "x", "path": "testdata/apollo_visitors.csv", "events": true}))

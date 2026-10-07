@@ -1,5 +1,5 @@
 // Package sheets is an in-memory fake of the parts of the Google Sheets v4 and
-// Drive v3 APIs that leadscore uses (contracts section 12.1): spreadsheet
+// Drive v3 APIs that leadscore uses: spreadsheet
 // create and get, batchUpdate with the requests the Sheets store sends,
 // values get and batchGet, and Drive permissions. It is an http.Handler, so a
 // test serves it with httptest and points a store's `base_url` at it.

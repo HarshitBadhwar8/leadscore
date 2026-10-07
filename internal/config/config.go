@@ -1,4 +1,4 @@
-// Package config loads leadscore.yml (contracts section 3): every engine key
+// Package config loads leadscore.yml: every engine key
 // with its default, the adapter blocks passed through as api.Config, the default
 // file locations, the hosted bundle, and the rubric path. It also backs the
 // `config get` and `config set-hosting` commands.
@@ -451,7 +451,7 @@ func (p *parser) sources(c *Config, raw map[string]any) error {
 		s.MatchDomainName = p.boolean(e, "match_domain_name", name+".match_domain_name")
 		// The engine-known source keys are read as text as written. Other keys
 		// in an adapter block reach the adapter with YAML's types, so a numeric
-		// id there should be quoted (contracts section 3).
+		// id there should be quoted.
 		if _, has := e["path"]; has {
 			e["path"] = p.path(p.str(e, "path", name+".path", ""))
 		}
@@ -589,7 +589,7 @@ func (p *parser) replyLabels(c *Config, raw map[string]any) {
 }
 
 // reservedSourceIDs are the origins and source ids of events the engine reads
-// itself (contracts section 3). A source under one of these ids could pose as
+// itself. A source under one of these ids could pose as
 // a vendor and land an opt-out or a reply on no evidence.
 var reservedSourceIDs = map[string]bool{"receiver": true, "polling": true, "hubspot": true, "apollo_lookup": true}
 

@@ -20,8 +20,9 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
 )
 
-// `leadscore setup sheet` (contracts section 9.1 step 6): the spreadsheet is
-// created from the section 4 schema, so the template is this code.
+// `leadscore setup sheet` (the Google Cloud setup's Sheet step): the
+// spreadsheet is created from the store's table schema, so the template is this
+// code.
 
 // Spreadsheet settings setup writes and the `sheets` check expects. The
 // staleness formula compares stored UTC times with NOW(), so the spreadsheet
@@ -50,7 +51,7 @@ var LeadsHeaders = []string{"Email", "Full name", "Title", "Company", "Company d
 const peopleRows = 1000
 
 // Header notes a person sees when they point at a column of a tab they type
-// in (contracts section 4 and section 7).
+// in (the store tables and the Overrides rules).
 var headerNotes = map[string]map[string]string{
 	model.TableOverrides: {
 		"person": "Who this row is about: an email, a LinkedIn URL or a lead id. " +

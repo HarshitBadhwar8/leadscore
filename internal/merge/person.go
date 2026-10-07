@@ -77,14 +77,14 @@ func Cycles(m *model.Model) map[api.LeadID]bool {
 	return out
 }
 
-// FindPerson matches an event's person, with no writes (contracts 12.5): first
+// FindPerson matches an event's person, with no writes: first
 // by Attrs["contact_id"] through Applied rows (source `receiver`, row id), then
 // by email, then by LinkedIn URL, then follows merged_into to the live lead.
 // The event's keys must already be normalized (NormalizeEventKeys).
 //
 // An event that carries a well-formed email matches by that email only, never
 // by its LinkedIn URL: an unknown email whose LinkedIn URL belongs to someone
-// else is a new person (RFC 6.5), so one wrong URL can never pin a stranger's
+// else is a new person, so one wrong URL can never pin a stranger's
 // event, such as an opt-out, on an existing lead. An email that fails
 // ValidateEmailShape can be no lead's key, so it counts as missing and the
 // LinkedIn URL decides.
@@ -113,7 +113,7 @@ func FindPerson(m *model.Model, e api.Event) (api.LeadID, bool) {
 
 // ApplyEventPerson resolves an event's person like FindPerson and, when no
 // lead matches, creates one under source `receiver` from the event's keys and
-// person attributes (contracts 12.5). It returns "" for an event that names
+// person attributes. It returns "" for an event that names
 // no usable person (a company-only event, or one whose only keys cannot be
 // written). A LinkedIn URL another lead already holds is not written; it
 // counts as a key conflict and is logged with the new lead's id, as for input
@@ -296,7 +296,7 @@ func (x *Index) familyIdentities(id api.LeadID, kind string) []model.Identity {
 	return out
 }
 
-// PrimaryEmail is the live lead's primary email (contracts section 4): its
+// PrimaryEmail is the live lead's primary email: its
 // newest email from a same-source correction, else its oldest email, from its
 // own identities before those of leads it absorbed. Empty when it has none.
 func (x *Index) PrimaryEmail(id api.LeadID) string {
@@ -349,8 +349,8 @@ func (x *Index) keys(id api.LeadID, kind, first string) []string {
 	return out
 }
 
-// PersonKey is how Overrides rows written by the CLI name a lead (contracts
-// section 7): its primary email, else its LinkedIn URL, else its id.
+// PersonKey is how Overrides rows written by the CLI name a lead: its primary
+// email, else its LinkedIn URL, else its id.
 func (x *Index) PersonKey(id api.LeadID) string {
 	if e := x.PrimaryEmail(id); e != "" {
 		return e
@@ -362,7 +362,7 @@ func (x *Index) PersonKey(id api.LeadID) string {
 }
 
 // SourcesSeen is the built-in field sources_seen: the number of distinct
-// channels (contracts section 3, sources[].channel) that reported the live
+// channels (leadscore.yml's sources[].channel) that reported the live
 // lead or a lead it absorbed. A source no longer configured counts under its
 // id; the receiver is its own channel.
 func (x *Index) SourcesSeen(id api.LeadID) int {

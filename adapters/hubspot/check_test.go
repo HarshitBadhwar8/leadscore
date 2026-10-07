@@ -41,7 +41,7 @@ func keysOf(ps []check.Problem) string {
 	return strings.Join(out, ",")
 }
 
-// The hubspot check (contracts section 10): the token's scopes, the custom
+// The hubspot doctor check: the token's scopes, the custom
 // properties, and the pipeline and stage.
 func TestHubSpotCheck(t *testing.T) {
 	c := hubspotCheck(t)
