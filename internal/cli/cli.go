@@ -64,9 +64,9 @@ var commands = []*command{
 		run:     runExplain,
 	},
 	{
-		path:  []string{"doctor"},
-		help:  "one pass/fail line per check",
-		slice: "S16",
+		path: []string{"doctor"},
+		help: "one pass/fail line per check",
+		run:  runDoctor,
 	},
 	{
 		path:  []string{"ranked"},
