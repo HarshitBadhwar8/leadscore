@@ -52,8 +52,9 @@ type exec struct {
 	oldRanked    map[model.Key]model.RankedRow
 	tierLogs     []model.LogEntry // written with Ranked, so a failed Ranked write never logs a change twice
 
-	failed bool // the run stopped with an error
-	lost   bool // the lease was lost: write nothing more
+	failed     bool // the run stopped with an error
+	lost       bool // the lease was lost: write nothing more
+	afterSaved bool // AfterSave ran: its problems (afterSaveProblems) were re-checked
 }
 
 type problem struct {
@@ -317,8 +318,16 @@ func (x *exec) main() error {
 		return err
 	}
 	if x.s.hooks.AfterSave != nil {
-		if err := x.s.hooks.AfterSave(r); err != nil {
+		err := x.s.hooks.AfterSave(r)
+		x.afterSaved = true
+		if err != nil {
 			x.lateProblem("step_failed:aftersave", "the step after saving failed: "+err.Error(), "see the message; the next run tries again")
+		} else if !x.lost {
+			// Settle the problems only AfterSave raises (view_write_failed, a
+			// warning): raised now, or resolved. Nothing changed writes nothing;
+			// a run cut short still deletes no problem it did not re-check.
+			x.putHealth(!x.cutShort)
+			_ = x.commit("Health", codec.Encode(r.Model, model.TableHealth), false)
 		}
 	}
 	return nil
