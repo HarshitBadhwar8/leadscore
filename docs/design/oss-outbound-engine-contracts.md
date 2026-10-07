@@ -806,6 +806,7 @@ Not public API: these live under `internal/` and may change between releases. Th
 | `internal/check` | S1 | the check framework (12.4) |
 | `internal/config` | S1 | loading `leadscore.yml`, the rubric path, the bundle, `config get` and `set-hosting` (section 3) |
 | `internal/logredact` | S1 | `Redact`, `VendorErrorDetail` (copied) |
+| `internal/vendorhttp` | S8/S11 (moved out by PR #20) | the HTTP rules the vendor clients share, so they cannot drift: `Overrides` (the test keys: `base_url` refused without `_http_client`, or when not non-empty text; an `_http_client` that is not an `*http.Client` refused; a typed nil counts as absent), `NewClient` (a copy of the caller's client that never follows redirects), `Do` (a per-call timeout on the call's own context, the whole reply read under a size cap, transport errors naming the operation and cause, never the URL; when the body read fails or passes the cap, the status still comes back with the error, so a 429, 401 or 403 is still read as one), and `Class` / `KeyRefused` (429, 401, 403 are `ErrRateLimited`; 5xx and any other `Do` error are `ErrTransient`). Error detail is `logredact.VendorErrorDetail`. Auth headers, retries, pacing and parsing stay in each adapter. `adapters/apollo` and `adapters/hubspot` use all of it; `internal/hosting` uses `Overrides`, `NewClient` and `Do`; `internal/store/sheets` uses `Overrides` only (the Google libraries make its calls) |
 | `internal/csvsafe` | S10a | `Cell` and `Row`: quote a CSV cell a spreadsheet would read as a formula (starting with a tab or a carriage return, or whose first non-space character is `=`, `+`, `-` or `@`, unless it parses as a number); `ranked --csv` and the export CSVs (S13) use it |
 | `internal/duration` | S1 (moved out of `internal/config` by S2) | `Parse`: Go durations plus `d` for days, shared by config and the rubric |
 | `internal/model` | S1 creates it empty; S4 fills it | the in-memory model (12.2) |
@@ -984,7 +985,7 @@ func RunWithOutput(ctx context.Context, opts api.RunOptions, hooks Hooks, now fu
 
 ### 12.8 The Apollo client (S8)
 
-`adapters/apollo/client.go` is the one way into Apollo's API; S12's sink, `Lookup` and `Poller` build on it.
+`adapters/apollo/client.go` is the one way into Apollo's API; S12's sink, `Lookup` and `Poller` build on it. It keeps the API below and builds on `internal/vendorhttp` (12.1) for the test keys, redirects, timeout, size cap, transport errors and status classes.
 
 ```go
 const KeyVariable = "APOLLO_API_KEY"
