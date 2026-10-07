@@ -49,8 +49,8 @@ const (
 	// AttrVisitedAt is the vendor's visit time as sent (UTC), before it is
 	// clamped to the received time; the de-duplication key reads it.
 	AttrVisitedAt = "visited_at"
-	AttrLabel       = "label"      // polled replies
-	AttrMessageID   = "message_id" // polled replies
+	AttrLabel     = "label"      // polled replies
+	AttrMessageID = "message_id" // polled replies
 )
 
 // ErrIgnored marks a body of an engagement kind we do not act on (an open, a
