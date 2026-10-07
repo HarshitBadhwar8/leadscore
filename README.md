@@ -20,6 +20,7 @@ the task breakdown); the contracts doc is the source of truth for every shape.
 | `internal/store/sqlite` | the built-in SQLite store (WAL, lease row, event log) |
 | `internal/rules` | the rubric compiler and evaluator: YAML rules compiled to CEL |
 | `internal/merge` | turns input rows into one lead per person: header aliases, identities, `same_as` merges, the Overrides tab |
+| `internal/engine` | the run: lease, sources and chunked merge, scoring, the two saves, `Ranked`, `Health`; later steps plug in as hooks |
 | `internal/logredact` | log redaction: logs carry ids, never emails |
 | `adapters/csv` | the CSV file source (`type: csv`): lead rows, or event rows with `events: true` |
 | `storetest/`, `sinktest/` | conformance suites for plug-in stores and sinks |
@@ -35,9 +36,25 @@ go test -race ./...
 
 ## Commands
 
-`leadscore help` lists every command. So far `config get`, `config set-hosting`,
-`rules check` and the Overrides writers work; every other command prints
-`not built yet (slice S<n>)` and exits 2.
+`leadscore help` lists every command. So far `run`, `status`, `ranked`,
+`explain`, `config get`, `config set-hosting`, `rules check` and the Overrides
+writers work; every other command prints `not built yet (slice S<n>)` and
+exits 2.
+
+- `leadscore run`: one run. It reads `leadscore.yml` and the rubric fresh,
+  takes the run lease (another run holding it means this one is skipped),
+  merges new input rows (`ingest_chunk_rows` per run; a large first import
+  finishes over several runs, and nothing is pushed until it has), scores
+  every lead, and saves `Ranked` and `Health`. It exits 1 when the run failed
+  or finished unhealthy. Enrichment, events and pushing arrive with later
+  slices; until then a lane whose sink is not in the build is reported in
+  `Health`.
+- `leadscore run --dry-run`: scores every row in memory and prints one line
+  per lead whose verdict, status or planned lane would change, then totals. It
+  takes no lease and writes nothing.
+- `leadscore status`: the last run's result and every open problem.
+- `leadscore ranked [--csv]`: every lead's verdict, highest score first.
+- `leadscore explain <person>`: one lead's verdict and the reasons behind it.
 
 The Overrides writers edit the `Overrides` table the same way on every store.
 A person is an email, a LinkedIn URL or a lead id; a row for someone not yet

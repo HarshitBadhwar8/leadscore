@@ -9,20 +9,24 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/HarshitBadhwar8/leadscore/internal/config"
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
 	"github.com/HarshitBadhwar8/leadscore/internal/store/codec"
 )
 
 func init() {
 	Register(storeCheck{
+		getenv:      os.Getenv,
 		inContainer: func() bool { _, err := os.Stat("/.dockerenv"); return err == nil },
 		mountType:   func(path string) (string, bool) { return mountType("/proc/self/mountinfo", path) },
 	})
 }
 
 // storeCheck is the `store` check (contracts section 10). S4 owns the schema
-// version and SQLite cases; S5 adds the Sheets cases and S10b the ledger case.
+// version and SQLite cases; S10a the Cloud Run case; S5 adds the Sheets cases
+// and S10b the ledger case.
 type storeCheck struct {
+	getenv      func(string) string
 	inContainer func() bool
 	// mountType returns the filesystem type of the mount holding path, and
 	// false when it cannot tell (any system without /proc/self/mountinfo).
@@ -62,6 +66,9 @@ func (c storeCheck) Run(ctx context.Context, env Env) []Problem {
 				Message: "State.schema_version is " + strconv.Quote(v) + ", not a major.minor version",
 				Fix:     "restore the State row from a backup, or set it to the version that wrote the store"})
 		}
+	}
+	if env.Config != nil && c.getenv != nil {
+		out = append(out, CloudRunRefusal(env.Config, c.getenv)...)
 	}
 	if env.Config == nil || env.Config.Store.Type != "sqlite" {
 		return out
@@ -142,4 +149,31 @@ func unescapeMount(s string) string {
 		b.WriteByte(s[i])
 	}
 	return b.String()
+}
+
+// CloudRunRefusal is the store check's Cloud Run case: Cloud Run keeps no
+// files, so a SQLite store or a CSV source path is refused while
+// CLOUD_RUN_JOB or K_SERVICE is set (RFC 6.6, "Store and setup pairs"). Every
+// run refuses to start on it, as doctor reports it.
+func CloudRunRefusal(c *config.Config, getenv func(string) string) []Problem {
+	if getenv == nil || (getenv("CLOUD_RUN_JOB") == "" && getenv("K_SERVICE") == "") {
+		return nil
+	}
+	var files []string
+	if c.Store.Type == "sqlite" {
+		files = append(files, "a SQLite store")
+	}
+	for _, src := range c.Sources {
+		if _, hasPath := src.Block["path"]; hasPath || src.Type == "csv" {
+			files = append(files, "the CSV path of source "+src.ID)
+		}
+	}
+	if len(files) == 0 {
+		return nil
+	}
+	return []Problem{{
+		Key:     "store:cloud_run_files",
+		Message: "Cloud Run keeps no files, but this install uses " + strings.Join(files, " and "),
+		Fix:     "on Google Cloud use the Sheets store and Sheet-tab sources",
+	}}
 }

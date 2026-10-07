@@ -38,8 +38,12 @@ func init() {
 	})
 }
 
-// busyTimeout is how long one statement waits for another writer's lock.
-const busyTimeout = 10 * time.Second
+// busyTimeout is how long one statement waits for another writer's lock;
+// openBusyWait how long Open retries a busy file.
+const (
+	busyTimeout  = 10 * time.Second
+	openBusyWait = 10 * time.Second
+)
 
 // Store is a SQLite Backend, EventLog and LeaseInspector.
 type Store struct {
@@ -84,7 +88,13 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("sqlite store %s: %w", path, err)
 	}
-	if err := db.Ping(); err != nil {
+	// Two processes opening a new file at once can meet SQLITE_BUSY while the
+	// first sets WAL mode, before the busy timeout applies; wait a little.
+	err = db.Ping()
+	for wait := time.Now().Add(openBusyWait); isBusy(err) && time.Now().Before(wait); err = db.Ping() {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if err != nil {
 		db.Close()
 		return nil, fmt.Errorf("sqlite store %s: %w", path, err)
 	}
