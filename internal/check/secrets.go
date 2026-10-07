@@ -2,58 +2,38 @@ package check
 
 import (
 	"context"
+	"errors"
 	"os"
 	"sort"
 	"strings"
+
+	"github.com/HarshitBadhwar8/leadscore/internal/hosting"
 )
 
 func init() { Register(secrets{getenv: os.Getenv}) }
 
-// adapterKeyVariables names the key variable each built-in vendor adapter
-// reads (RFC 6.13). S8 owns the apollo entry and S11 the hubspot one; a slice
-// that changes its adapter's key keeps its entry here. The receiver's secret is
-// the receiver-secret check's, not this one's. Stores sign in through Google's
-// standard credentials and need none.
-var adapterKeyVariables = map[string]string{
-	"apollo":  "APOLLO_API_KEY",
-	"hubspot": "HUBSPOT_TOKEN",
+// secrets fails when a configured adapter's key variable is missing (section
+// 10). On a hosted install, outside Cloud Run, an empty variable is read from
+// Secret Manager instead (contracts section 3), so there the check fails only
+// when that read fails.
+type secrets struct {
+	getenv  func(string) string
+	connect hosting.Connector // nil: Google's standard credentials
 }
-
-// secrets fails when a configured adapter's key variable is missing (section 10).
-type secrets struct{ getenv func(string) string }
 
 func (secrets) Name() string { return "secrets" }
 func (secrets) InRun() bool  { return true }
 
-func (s secrets) Run(_ context.Context, env Env) []Problem {
+func (s secrets) Run(ctx context.Context, env Env) []Problem {
 	if env.Config == nil {
 		return nil
 	}
 	// A local command on a hosted install reads empty keys from Secret Manager
-	// (contracts section 3), so an empty variable is not missing there; S14b
-	// extends this check to Secret Manager. Inside Cloud Run the variables are
-	// filled from Secret Manager, so they are checked as usual.
-	inCloudRun := s.getenv("K_SERVICE") != "" || s.getenv("CLOUD_RUN_JOB") != ""
-	if env.Config.Hosted() && !inCloudRun {
-		return nil
-	}
+	// as the run account. Inside Cloud Run the variables are filled from
+	// Secret Manager by the service and job, so they are checked as usual.
+	fromSecretManager := env.Config.Hosted() && !hosting.InCloudRun(s.getenv)
 	// Variable -> the config places that need it, so one problem names every user.
-	needs := map[string][]string{}
-	need := func(typ, where string) {
-		if v, ok := adapterKeyVariables[typ]; ok {
-			needs[v] = append(needs[v], where)
-		}
-	}
-	c := env.Config
-	if c.Enrich != nil {
-		need(c.Enrich.Type, "enrich")
-	}
-	for _, src := range c.Sources {
-		need(src.Type, "sources."+src.ID)
-	}
-	for typ := range c.Sinks {
-		need(typ, "sinks."+typ)
-	}
+	needs := env.Config.KeyVariables()
 
 	vars := make([]string, 0, len(needs))
 	for v := range needs {
@@ -66,14 +46,40 @@ func (s secrets) Run(_ context.Context, env Env) []Problem {
 			continue
 		}
 		users := needs[v]
-		sort.Strings(users)
+		need := strings.Join(users, ", ") + " need" + plural(len(users)) + " it"
+		if fromSecretManager {
+			secret := hosting.KeySecrets[v]
+			err := s.readSecret(ctx, env.Config.Hosting.Project, secret)
+			if err == nil {
+				continue
+			}
+			out = append(out, Problem{
+				Key:     "secret_missing:" + v,
+				Message: v + " is not set here and Secret Manager secret " + secret + " cannot be read as the run account (" + err.Error() + "); " + need,
+				Fix:     "add it with `setup/gcp.sh secrets`; `setup/gcp.sh accounts` gives the run account access",
+			})
+			continue
+		}
 		out = append(out, Problem{
 			Key:     "secret_missing:" + v,
-			Message: v + " is not set; " + strings.Join(users, ", ") + " need" + plural(len(users)) + " it",
+			Message: v + " is not set; " + need,
 			Fix:     "add " + v + " to Secret Manager or .env",
 		})
 	}
 	return out
+}
+
+// readSecret reads a key secret, as the run account, to see that it can be.
+func (s secrets) readSecret(ctx context.Context, project, secret string) error {
+	if secret == "" {
+		return errors.New("no secret holds this key")
+	}
+	client, err := s.connect.Open(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = hosting.ReadKey(ctx, client, project, secret)
+	return err
 }
 
 func plural(n int) string {

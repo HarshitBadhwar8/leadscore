@@ -92,6 +92,13 @@ func execute(ctx context.Context, opts api.RunOptions, s settings) (api.RunResul
 	if ps := check.CloudRunRefusal(cfg, s.getenv); len(ps) > 0 {
 		return api.RunResult{}, fmt.Errorf("%s (%s)", ps[0].Message, ps[0].Fix)
 	}
+	if s.loadKeys != nil {
+		// A key that cannot be read stays empty; the secrets check reports it
+		// and the adapter needing it fails, as with a missing variable.
+		if err := s.loadKeys(ctx, cfg); err != nil {
+			fmt.Fprintf(s.out, "keys from Secret Manager: %s\n", logredact.Redact(err.Error()))
+		}
+	}
 	withTestClient(cfg, s.client)
 	text, err := cfg.Rubric()
 	if err != nil {

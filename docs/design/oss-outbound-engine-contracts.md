@@ -445,7 +445,7 @@ Unknown engine keys fail loading, naming the key; adapter blocks are passed thro
 | `ingest_chunk_rows` | number | `2000` | input rows processed per run, shared across sources (events are not chunked) |
 | `silence_threshold` | duration | `3d` | receiver silence before `Health` flags it |
 | `log_retention` | duration | `90d` | how long `Log` rows are kept |
-| `hosting` | object | — | Google Cloud only, written by setup: `{ project, region, run_account, receiver_account, image }`. Resource names are fixed: service `leadscore-receiver`, job `leadscore-run`, scheduler job `leadscore-schedule`, Artifact Registry remote repository `ghcr-proxy`, secrets `leadscore-config`, `apollo-api-key`, `hubspot-token`, `receiver-secret`, `receiver-secret-previous` |
+| `hosting` | object | — | Google Cloud only, written by setup: `{ project, region, run_account, receiver_account, image }`. Resource names are fixed: service `leadscore-receiver`, job `leadscore-run`, scheduler job `leadscore-schedule` and its account `leadscore-scheduler`, Artifact Registry remote repository `ghcr-proxy`, secrets `leadscore-config`, `apollo-api-key`, `hubspot-token`, `receiver-secret`, `receiver-secret-previous` |
 
 **Which block each adapter gets.** A source gets its `sources[]` entry (with `id` and `type`); the enricher gets `enrich`; the store gets `store`; a sink of type T gets `sinks.T`. A `Lookup` and a `Poller` of type T are built from `sinks.T` when that block exists (the Poller only with `replies: polling`). Two unexported keys serve tests in every vendor and store block: `base_url` and `_http_client`; every factory honours them, and Google clients skip authentication when `base_url` is set. `RunWith` (section 12.6) adds `_http_client` to every block; a test sets each block's `base_url` (its fake's URL) in its YAML.
 
@@ -693,7 +693,7 @@ The README follows these steps in order (RFC section 6.14). It says up front tha
 
 | Account | Roles, on which resource |
 |---|---|
-| Run account | Secret Manager Secret Accessor on the key secrets and `leadscore-config`; Secret Version Adder on `leadscore-config` (for `config push`); Storage Object Admin on the lease bucket; Cloud Run Viewer and Cloud Scheduler Viewer on the project (for `doctor`); editor on the spreadsheet |
+| Run account | Secret Manager Secret Accessor on the key secrets and `leadscore-config`; Secret Version Adder on `leadscore-config` (for `config push`); Storage Object Admin on the lease bucket; Cloud Run Viewer and Cloud Scheduler Viewer on the project, and Artifact Registry Reader on `ghcr-proxy` when it exists (for `doctor`); editor on the spreadsheet |
 | Receiver account | Secret Manager Secret Accessor on `receiver-secret`, `receiver-secret-previous` and `leadscore-config`; editor on the spreadsheet (`Events` tabs protected for it) |
 | Scheduler account | Cloud Run Invoker on the job `leadscore-run` |
 | The person | the roles to create the above, plus Service Account Token Creator on the run account |
@@ -706,7 +706,7 @@ The README follows these steps in order (RFC section 6.14). It says up front tha
 2. Install the `leadscore` CLI: the release binary for the person's OS, or `docker run --rm -v ~/.config/gcloud:/home/leadscore/.config/gcloud:ro -v "$PWD":/config <image>`.
 3. Create or pick a Google Cloud project with billing (a person approves billing).
 4. Enable the Cloud Run, Cloud Scheduler, Secret Manager, Cloud Storage, Sheets, Drive, Artifact Registry and IAM Service Account Credentials APIs.
-5. `setup/gcp.sh accounts` and `bucket`: create the run and receiver accounts with the roles above, create the lease bucket, write the `hosting` block, and finish with the impersonated login.
+5. `setup/gcp.sh accounts` and `bucket`: create the run and receiver accounts with the roles above, create the lease bucket (named by `store.lease_bucket`, which the person sets, since the script writes only `hosting`), write the `hosting` block, and finish with the impersonated login.
 6. `leadscore setup sheet`, with the person's own login: create the spreadsheet from the section 4 schema (the template is code), including the current month's `Events` tab; share it with both accounts; protect the `Events` tabs for both accounts and every other tool tab for the run account only; set hourly recalculation; write the staleness formula; write `store.spreadsheet`. The template hides the machine-data tabs, colors `Ranked` and `Health`, gives the people tabs (`Leads`, `Companies`, `Overrides`) 1,000 rows, notes on their headers and a green color, puts a note and a red highlight (while it reads `STALE`) on `Health!H1`, and turns off re-sharing by editors (`writersCanShare`). `--view` makes `Ranked`, `Health` and one `Export <lane id>` tab per export lane in the rubric. If a Workspace sharing policy blocks the share, it reports Drive's error and the README names the exception to ask the admin for.
 7. `setup/gcp.sh secrets`: add the API keys and the receiver secret to Secret Manager (a person pastes each key).
 8. Write the rubric, run `setup hubspot` if HubSpot is used, and upload the bundle with `leadscore config push`.
@@ -819,6 +819,8 @@ Not public API: these live under `internal/` and may change between releases. Th
 | `internal/fakes/apollo` | S8 (enrichment), S12 (the rest) | built from S0's fixtures |
 | `internal/fakes/hubspot` | S11 | built from S0's fixtures |
 | `internal/fakes/sink` | S10b | an in-memory find-or-create sink and lookup for engine and `sinktest` tests |
+| `internal/hosting` | S14b | Google Cloud: the section 3 resource names, the cron conversion, Secret Manager reads and writes (`config push`, keys on a hosted install), the reads the `hosting` check makes; its client honours `base_url` and `_http_client` like a vendor block |
+| `internal/fakes/gcp` | S14b | importable fake of Secret Manager, Cloud Run, Cloud Scheduler and Artifact Registry |
 | `internal/e2e` | S17 | the end-to-end suite |
 | `adapters/apollo` | S8 owns `client.go` (key, base URL, 30-second timeout, the two call modes; 12.8) and registration; S9 adds the body parsers, `PolledReplyKey` and `RequiredPaths`; S12 adds sinks, the `Lookup` and the `Poller` | |
 | `adapters/hubspot`, `adapters/csv`, `adapters/sheetsource` | S11, S7, S5 | `adapters/hubspot` also registers the `hubspot` check (it imports `internal/check`), and `internal/cli` imports it for `setup hubspot`, so every build registers the HubSpot sink, lookup and check: a custom adapter registered as `hubspot` panics as a duplicate |

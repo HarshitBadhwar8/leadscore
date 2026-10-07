@@ -15,6 +15,7 @@ import (
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/config"
+	"github.com/HarshitBadhwar8/leadscore/internal/hosting"
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
 	"github.com/HarshitBadhwar8/leadscore/internal/rules"
 )
@@ -98,7 +99,7 @@ func Chain(fs ...func(*Run) error) func(*Run) error {
 // Fixed values (contracts section 11). Variables so tests can shrink them.
 var (
 	// saveBudget is how long the run may save after the deadline.
-	saveBudget = 90 * time.Second
+	saveBudget = config.SaveBudget
 	// leaseMargin is how long before the lease expires the run is stopped.
 	leaseMargin = 30 * time.Second
 	// rankedChunkRows bounds one Ranked write after phase 2.
@@ -117,7 +118,7 @@ func RunWith(ctx context.Context, opts api.RunOptions, hooks Hooks, now func() t
 // (and, on a dry run, the report) to out. `leadscore run` and leadscore.Run
 // use it.
 func RunTo(ctx context.Context, opts api.RunOptions, out io.Writer) (api.RunResult, error) {
-	return execute(ctx, opts, settings{hooks: DefaultHooks(), now: time.Now, out: out, getenv: os.Getenv})
+	return execute(ctx, opts, settings{hooks: DefaultHooks(), now: time.Now, out: out, getenv: os.Getenv, loadKeys: loadHostedKeys})
 }
 
 // settings is how one run is wired: the hooks, clock, HTTP client, output and
@@ -128,6 +129,16 @@ type settings struct {
 	client *http.Client
 	out    io.Writer
 	getenv func(string) string
+	// loadKeys fills empty key variables from Secret Manager on a hosted
+	// install run locally (contracts section 3); nil reads nothing. RunWith
+	// leaves it nil, so tests never reach Google.
+	loadKeys func(context.Context, *config.Config) error
+}
+
+// loadHostedKeys is the production loadKeys: as the run account, into the
+// process environment the adapters read.
+func loadHostedKeys(ctx context.Context, c *config.Config) error {
+	return hosting.LoadKeys(ctx, c, os.Getenv, os.Setenv, nil)
 }
 
 // withTestClient adds _http_client to every vendor and store block.

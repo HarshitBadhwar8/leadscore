@@ -78,3 +78,34 @@ func TestMaskEnvSecrets(t *testing.T) {
 		t.Errorf("a one-character secret masked text: %q", got)
 	}
 }
+
+// A key read from Secret Manager is masked like an environment key, and stays
+// masked when MaskEnvSecrets runs again.
+func TestAddSecretValues(t *testing.T) {
+	t.Cleanup(func() {
+		ResetSecretValues()
+		MaskEnvSecrets(func(string) string { return "" })
+	})
+	MaskEnvSecrets(func(k string) string {
+		if k == "APOLLO_API_KEY" {
+			return "env-apollo-key"
+		}
+		return ""
+	})
+	AddSecretValues("sm-hubspot-token", "tiny", "  sm-apollo-key-from-manager \n")
+	for _, in := range []string{"env-apollo-key", "sm-hubspot-token", "sm-apollo-key-from-manager"} {
+		if got := Redact("k=" + in); got != "k=[REDACTED]" {
+			t.Errorf("Redact(%q) = %q", in, got)
+		}
+	}
+	if got := Redact("tiny"); got != "tiny" {
+		t.Errorf("a short value masked text: %q", got)
+	}
+	MaskEnvSecrets(func(string) string { return "" })
+	if got := Redact("sm-hubspot-token"); got != "[REDACTED]" {
+		t.Errorf("MaskEnvSecrets dropped an added value: %q", got)
+	}
+	if got := Redact("env-apollo-key"); got != "env-apollo-key" {
+		t.Errorf("MaskEnvSecrets kept a value no longer in the environment: %q", got)
+	}
+}
