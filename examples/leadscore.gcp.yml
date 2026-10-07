@@ -16,9 +16,10 @@ store:
   type: sheets
   # Written by `leadscore setup sheet`.
   spreadsheet: ""
-  # The Cloud Storage bucket for the run lease, which setup/gcp.sh bucket
-  # creates. Bucket names are global: use your project id in it.
-  lease_bucket: your-project-id-leadscore-lease
+  # The run lease's Cloud Storage bucket is <project>-leadscore-lease, which
+  # setup/gcp.sh bucket creates. Bucket names are global: only if that name
+  # is taken, set another here:
+  # lease_bucket: my-own-bucket-name
 
 # Your lead tabs in that spreadsheet. Cloud Run keeps no files, so on Google
 # Cloud every source is a Sheet tab.
@@ -30,7 +31,8 @@ sources:
 replies: receiver
 
 receiver:
-  # The receiver service's address, which setup/gcp.sh deploy prints.
+  # The receiver service's address, which setup/gcp.sh deploy prints; set it,
+  # then leadscore config push again.
   # public_url: https://leadscore-receiver-xxxxxxxx.a.run.app
   # The visit workflows you created from setup/apollo/, as visit_<name>, so a
   # silent workflow is noticed.

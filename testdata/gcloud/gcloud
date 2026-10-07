@@ -4,7 +4,9 @@
 # $FAKE_GCLOUD_DIR/state so describe and list answer as a project would:
 # a file per service account, secret, secret version, bucket, repository and
 # scheduler job. With FAKE_GCLOUD_READONLY set, any call that would change
-# something fails, so a dry run that changes anything is caught.
+# something fails, so a dry run that changes anything is caught. With
+# FAKE_GCLOUD_FAIL_LIST set, listing secret versions fails (no access); with
+# FAKE_GCLOUD_BUCKET_TAKEN set, creating a bucket fails (the name is taken).
 set -euo pipefail
 dir=${FAKE_GCLOUD_DIR:?}
 state=$dir/state
@@ -49,7 +51,14 @@ case "$1 $2" in
   "storage buckets")
     case $3 in
       describe) has "bucket-${4#gs://}" ;;
-      create) mutate "$@"; touch "$state/bucket-${4#gs://}" ;;
+      create)
+        mutate "$@"
+        if [[ -n ${FAKE_GCLOUD_BUCKET_TAKEN:-} ]]; then
+          echo "ERROR: (gcloud.storage.buckets.create) HTTPError 409: name already taken" >&2
+          exit 1
+        fi
+        touch "$state/bucket-${4#gs://}"
+        ;;
       *) mutate "$@" ;;
     esac
     ;;
@@ -58,6 +67,10 @@ case "$1 $2" in
   "secrets versions")
     case $3 in
       list)
+        if [[ -n ${FAKE_GCLOUD_FAIL_LIST:-} ]]; then
+          echo "ERROR: (gcloud.secrets.versions.list) PERMISSION_DENIED" >&2
+          exit 1
+        fi
         if has "version-$4"; then echo "projects/1/secrets/$4/versions/$(wc -l <"$state/version-$4" | tr -d ' ')"; fi
         ;;
       describe)
@@ -84,6 +97,13 @@ case "$1 $2" in
     case $3 in
       describe) has "schedjob-$4" ;;
       create) mutate "$@"; touch "$state/schedjob-$5" ;;
+      *) mutate "$@" ;;
+    esac
+    ;;
+  "run jobs")
+    case $3 in
+      describe) has "job-$4" ;;
+      deploy) mutate "$@"; touch "$state/job-$4" ;;
       *) mutate "$@" ;;
     esac
     ;;

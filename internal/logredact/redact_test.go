@@ -79,33 +79,24 @@ func TestMaskEnvSecrets(t *testing.T) {
 	}
 }
 
-// A key read from Secret Manager is masked like an environment key, and stays
-// masked when MaskEnvSecrets runs again.
-func TestAddSecretValues(t *testing.T) {
-	t.Cleanup(func() {
-		ResetSecretValues()
-		MaskEnvSecrets(func(string) string { return "" })
-	})
+func TestContainsSecret(t *testing.T) {
+	t.Cleanup(func() { MaskEnvSecrets(func(string) string { return "" }) })
 	MaskEnvSecrets(func(k string) string {
 		if k == "APOLLO_API_KEY" {
-			return "env-apollo-key"
+			return "apolloKEY123456"
 		}
 		return ""
 	})
-	AddSecretValues("sm-hubspot-token", "tiny", "  sm-apollo-key-from-manager \n")
-	for _, in := range []string{"env-apollo-key", "sm-hubspot-token", "sm-apollo-key-from-manager"} {
-		if got := Redact("k=" + in); got != "k=[REDACTED]" {
-			t.Errorf("Redact(%q) = %q", in, got)
+	for s, want := range map[string]bool{
+		"key: apolloKEY123456":                                true,
+		"token: pat-na1-12345678-1234-1234-1234-123456789012": true,
+		"Authorization: Bearer abc.def":                       true,
+		"owner: ana@acme.example":                             false, // personal data, not a key
+		"path: /Users/ana/leads.csv":                          false,
+		"pipeline: Sales":                                     false,
+	} {
+		if got := ContainsSecret(s); got != want {
+			t.Errorf("ContainsSecret(%q) = %v, want %v", s, got, want)
 		}
-	}
-	if got := Redact("tiny"); got != "tiny" {
-		t.Errorf("a short value masked text: %q", got)
-	}
-	MaskEnvSecrets(func(string) string { return "" })
-	if got := Redact("sm-hubspot-token"); got != "[REDACTED]" {
-		t.Errorf("MaskEnvSecrets dropped an added value: %q", got)
-	}
-	if got := Redact("env-apollo-key"); got != "env-apollo-key" {
-		t.Errorf("MaskEnvSecrets kept a value no longer in the environment: %q", got)
 	}
 }

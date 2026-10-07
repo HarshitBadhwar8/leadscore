@@ -82,7 +82,7 @@ sinks: { apollo: { mailbox_id: m }, hubspot: { pipeline: Sales, stage: New } }
 	sm.AddVersion("p", "apollo-api-key", []byte("apollo-key-in-secret-manager"))
 	srv := httptest.NewServer(sm)
 	defer srv.Close()
-	t.Cleanup(logredact.ResetSecretValues)
+	t.Cleanup(func() { logredact.MaskEnvSecrets(func(string) string { return "" }) })
 	connect := func(ctx context.Context) (*hosting.Client, error) {
 		return hosting.Connect(ctx, api.Config{"base_url": srv.URL, "_http_client": srv.Client()})
 	}

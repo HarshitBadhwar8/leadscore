@@ -27,18 +27,24 @@ import (
 
 // The fixed resource names (contracts section 3, `hosting`).
 const (
-	ServiceName            = "leadscore-receiver"
-	JobName                = "leadscore-run"
-	SchedulerJobName       = "leadscore-schedule"
-	ProxyRepository        = "ghcr-proxy"
-	ConfigSecret           = "leadscore-config"
+	ServiceName      = "leadscore-receiver"
+	JobName          = "leadscore-run"
+	SchedulerJobName = "leadscore-schedule"
+	ProxyRepository  = "ghcr-proxy"
+	ConfigSecret     = "leadscore-config"
+	// ConfigVersionSecret holds, as its latest value, the leadscore-config
+	// version number `config push` last wrote; the run job reads it into
+	// ConfigVersionVariable (contracts section 3).
+	ConfigVersionSecret    = "leadscore-config-version"
 	ReceiverSecret         = "receiver-secret"
 	ReceiverSecretPrevious = "receiver-secret-previous"
 	// SchedulerAccount is the account Cloud Scheduler starts the job as
 	// (contracts section 9.1 step 11).
 	SchedulerAccount = "leadscore-scheduler"
 	// ConfigVersionVariable carries the bundle's Secret Manager version into
-	// the run job (contracts section 3); setup/gcp.sh deploy sets it.
+	// the run job (contracts section 3), from ConfigVersionSecret's latest
+	// value, which setup/gcp.sh deploy attaches. The run records it as
+	// State.config_version.
 	ConfigVersionVariable = "LEADSCORE_CONFIG_VERSION"
 )
 

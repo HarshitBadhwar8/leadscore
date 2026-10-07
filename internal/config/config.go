@@ -365,11 +365,24 @@ func Parse(data []byte, dir string, getenv func(string) string) (*Config, error)
 		}
 	}
 
+	// On Google Cloud the lease bucket defaults to a name from the project, so
+	// a team sets it only when that name is taken (bucket names are global).
+	if c.Hosted() && c.Store.Type == "sheets" && c.Store.LeaseBucket == "" {
+		c.Store.LeaseBucket = DefaultLeaseBucket(c.Hosting.Project)
+		c.Store.Block["lease_bucket"] = c.Store.LeaseBucket
+		if s, ok := raw["store"].(map[string]any); ok {
+			s["lease_bucket"] = c.Store.LeaseBucket
+		}
+	}
+
 	if p.err != nil {
 		return nil, p.err
 	}
 	return c, nil
 }
+
+// DefaultLeaseBucket is store.lease_bucket's default on Google Cloud.
+func DefaultLeaseBucket(project string) string { return project + "-leadscore-lease" }
 
 func (p *parser) store(c *Config, raw map[string]any) error {
 	s, ok := raw["store"].(map[string]any)

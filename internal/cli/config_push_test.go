@@ -62,6 +62,7 @@ func pushInstall(t *testing.T, cfg, rubric string) string {
 func TestConfigPush(t *testing.T) {
 	f := fakeGCP(t)
 	f.CreateSecret("p", hosting.ConfigSecret)
+	f.CreateSecret("p", hosting.ConfigVersionSecret)
 	path := pushInstall(t, pushConfig, pushRubric)
 	code, stdout, stderr := run("config", "push", "--config", path)
 	if code != exitOK {
@@ -96,6 +97,48 @@ func TestConfigPush(t *testing.T) {
 	}
 	if v := f.Versions("p", hosting.ConfigSecret); !strings.Contains(string(v[1]), "# v2") {
 		t.Error("--rubric was not the rubric pushed")
+	}
+	// Each push records the bundle's version number, which the job reads.
+	if got := f.Versions("p", hosting.ConfigVersionSecret); len(got) != 2 || string(got[0]) != "1" || string(got[1]) != "2" {
+		t.Errorf("%s holds %q, want 1 then 2", hosting.ConfigVersionSecret, got)
+	}
+}
+
+// When the version number cannot be recorded, the push fails and says to run
+// it again, since runs would record the wrong version.
+func TestConfigPushVersionWriteFails(t *testing.T) {
+	f := fakeGCP(t)
+	f.CreateSecret("p", hosting.ConfigSecret)
+	f.CreateSecret("p", hosting.ConfigVersionSecret)
+	f.Deny("p", hosting.ConfigVersionSecret)
+	code, _, stderr := run("config", "push", "--config", pushInstall(t, pushConfig, pushRubric))
+	if code != exitFail || !strings.Contains(stderr, "run `leadscore config push` again") || !strings.Contains(stderr, "version 1") {
+		t.Errorf("exit %d, stderr %q", code, stderr)
+	}
+}
+
+// No key ever goes into the bundle: a token pattern, the value of a key
+// variable, or an adapter key named like a credential.
+func TestConfigPushRefusesKeys(t *testing.T) {
+	f := fakeGCP(t)
+	f.CreateSecret("p", hosting.ConfigSecret)
+	f.CreateSecret("p", hosting.ConfigVersionSecret)
+	t.Setenv("APOLLO_API_KEY", "apollo-live-key-98765")
+	for _, tt := range []struct{ name, cfg, rubric, want string }{
+		{"a token pattern in the rubric", pushConfig, pushRubric + "# pat-na1-12345678-1234-1234-1234-123456789012\n", "looks like a key"},
+		{"a key variable's value", pushConfig + "# apollo-live-key-98765\n", pushRubric, "value of APOLLO_API_KEY"},
+		{"an adapter key named like a credential", pushConfig + "sinks: { apollo: { mailbox_id: m, api_key: x } }\n", pushRubric, `sinks.apollo has a key named "api_key"`},
+		{"a nested one", pushConfig + "enrich: { type: apollo, auth: { password: x } }\n", pushRubric, `"password"`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			code, _, stderr := run("config", "push", "--config", pushInstall(t, tt.cfg, tt.rubric))
+			if code != exitFail || !strings.Contains(stderr, tt.want) || strings.Contains(stderr, "98765") {
+				t.Errorf("exit %d, stderr %q; want %q", code, stderr, tt.want)
+			}
+		})
+	}
+	if n := len(f.Versions("p", hosting.ConfigSecret)); n != 0 {
+		t.Errorf("%d versions uploaded", n)
 	}
 }
 
@@ -138,7 +181,7 @@ func TestConfigPushNeedsTheSecret(t *testing.T) {
 // On a hosted install with no HUBSPOT_TOKEN set, setup hubspot reads the
 // token from Secret Manager, and only that key.
 func TestSetupHubSpotReadsTheTokenFromSecretManager(t *testing.T) {
-	t.Cleanup(logredact.ResetSecretValues)
+	t.Cleanup(func() { logredact.MaskEnvSecrets(func(string) string { return "" }) })
 	_, url := fakeHubSpot(t)
 	t.Setenv("HUBSPOT_TOKEN", "")
 	t.Setenv("APOLLO_API_KEY", "")

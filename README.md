@@ -256,9 +256,13 @@ the changes it would make without making them.
 1. `setup/gcp.sh accounts --project <id> [--region asia-south1]`: enables the
    APIs, creates the run account (`leadscore-run`) and the receiver account
    (`leadscore-receiver`), writes the `hosting` block, and ends by signing your
-   local commands in as the run account (a browser opens).
-2. Set `store.lease_bucket` (bucket names are global; use your project id in
-   it), then `setup/gcp.sh bucket`.
+   local commands in as the run account (a browser opens). From then on,
+   Google's application-default login on your machine acts as the run
+   account for every program that uses it; `gcloud auth application-default
+   revoke` undoes it.
+2. `setup/gcp.sh bucket`: creates the lease bucket,
+   `<project>-leadscore-lease`. Bucket names are global: only if that name is
+   taken, set `store.lease_bucket` to another and run it again.
 3. `gcloud auth login --enable-gdrive-access`, then `leadscore setup sheet`:
    creates the spreadsheet with your own login, so you own it, and shares it
    with both accounts.
@@ -270,47 +274,64 @@ the changes it would make without making them.
 5. Write the rubric, `leadscore setup hubspot` if you use HubSpot, then
    `leadscore config push`: uploads `leadscore.yml` and the rubric together as
    one version of the `leadscore-config` secret. It refuses a rubric that does
-   not compile, a SQLite store or CSV path (Cloud Run keeps no files), and a
-   `schedule` or `deadline` Cloud Scheduler cannot run.
+   not compile, a SQLite store or CSV path (Cloud Run keeps no files), a
+   `schedule` or `deadline` Cloud Scheduler cannot run (write them in whole
+   days, hours, minutes or seconds, like `15m`), and anything that looks like
+   a key: keys go only in their own secrets.
 6. `setup/gcp.sh deploy <image>`: the receiver service (at most one instance,
    no sign-in check so Apollo can reach it) and the run job (task timeout the
    deadline plus 90 seconds, no retries). It prints the receiver's address:
-   set `receiver.public_url` to it and point the Apollo workflows at it, from
-   the templates in `setup/apollo/`. Before release, pass the private
+   set `receiver.public_url` to it, run `leadscore config push` again, and
+   point the Apollo workflows at it, from the templates in `setup/apollo/`. Before release, pass the private
    registry's image; a release image (`ghcr.io/...`) is pulled through an
    Artifact Registry repository, `ghcr-proxy`, that the step creates.
 7. `setup/gcp.sh schedule`: creates the scheduler account and the scheduler
    job from `schedule` (UTC). Pushes are still off, so runs only score.
-8. `leadscore doctor` until green, then open the `Ranked` tab. Review
+8. `leadscore doctor` until green (the `doctor` command arrives in S16; until
+   then, `leadscore status`), then open the `Ranked` tab. Review
    `leadscore run --dry-run`; when it looks right, set `pushes_enabled: true`
    and `leadscore config push`.
 
 **Changing settings or rules** is editing the files and `leadscore config push`;
 the next run reads them, with no redeploy. A new `schedule` also needs
 `setup/gcp.sh schedule`, and a new `deadline` `setup/gcp.sh redeploy`.
-Each run records the bundle version it was deployed with in `State`
-(`config_version`); until a redeploy, the `hosting` check reports a newer
-pushed version.
+Each run records the bundle version it read in `State` (`config_version`).
 
 **Keys on your machine.** Local commands on a Google Cloud install read an API
 key you have not set as a variable from Secret Manager, as the run account,
 and only the keys the command's adapters need. Inside Cloud Run the keys come
 from the service's and job's own secret references.
 
-**Rotating a secret.** Add a version to `receiver-secret-previous` holding the
-current secret, add the new one to `receiver-secret`, and run
-`setup/gcp.sh redeploy`: the receiver accepts both. Update each Apollo
-workflow, disable the versions of `receiver-secret-previous`, and redeploy
-again; the previous secret is attached only while it has an enabled version.
-An API key is rotated by setting its variable and running `setup/gcp.sh
-secrets`, then `redeploy`.
+**Rotating a secret.** No webhook is refused at any point. Replace `P` with
+your project id:
+
+```sh
+# 1. Keep the current secret as the previous one, and add a new current one.
+gcloud secrets versions access latest --secret receiver-secret --project P |
+  gcloud secrets versions add receiver-secret-previous --project P --data-file=-
+head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' |
+  gcloud secrets versions add receiver-secret --project P --data-file=-
+# 2. Deploy: the receiver accepts both.
+setup/gcp.sh redeploy
+# 3. Paste the new secret into each Apollo workflow; read it with:
+gcloud secrets versions access latest --secret receiver-secret --project P
+# 4. Stop accepting the previous one: detach it first, then disable it.
+setup/gcp.sh redeploy --finish-rotation
+gcloud secrets versions disable latest --secret receiver-secret-previous --project P
+```
+
+Keep that order: a disabled version that is still attached stops a new
+receiver instance from starting. To rotate an API key, set its variable
+(`APOLLO_API_KEY` or `HUBSPOT_TOKEN`) and run `setup/gcp.sh secrets`; runs
+read the newest version. A key added for the first time after deploy needs
+`setup/gcp.sh redeploy`, which the script reminds you of.
 
 **Upgrading** is `setup/gcp.sh deploy <new image>`, then `doctor`; rolling
 back is deploying the previous image.
 
 ### Run time and monthly cost
 
-Not measured yet: this needs a billed project (waiting on Harshit). The live
+Not measured yet: this needs a billed project. The live
 check (`LEADSCORE_LIVE_CLOUDRUN`) prints the run length; the cost follows from
 it. The method, to fill in the table:
 

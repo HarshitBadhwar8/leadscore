@@ -2,6 +2,7 @@ package hosting_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -60,10 +61,11 @@ func TestCheckSchedule(t *testing.T) {
 		{"15m", "14m", false},
 		{"7m", "5m", false}, // no cron form
 		{"1h", "50m", true},
+		{"0.25h", "12m", false},    // 15m, but not a form setup/gcp.sh reads
+		{"900000ms", "12m", false}, // likewise
+		{"15m", "0.2h", false},
 	} {
-		c := &config.Config{}
-		c.Schedule, _ = config.ParseDuration(tt.schedule)
-		c.Deadline, _ = config.ParseDuration(tt.deadline)
+		c := hostedConfig(t, fmt.Sprintf("version: 1\nstore: { type: sqlite }\nschedule: %q\ndeadline: %q\n", tt.schedule, tt.deadline))
 		if err := hosting.CheckSchedule(c); (err == nil) != tt.ok {
 			t.Errorf("schedule %s deadline %s: err %v, want ok %v", tt.schedule, tt.deadline, err, tt.ok)
 		}
@@ -144,7 +146,7 @@ hosting: { project: p, region: asia-south1, run_account: leadscore-run }
 `
 
 func TestLoadKeys(t *testing.T) {
-	t.Cleanup(logredact.ResetSecretValues)
+	t.Cleanup(func() { logredact.MaskEnvSecrets(func(string) string { return "" }) })
 	f, connect := fake(t)
 	f.CreateSecret("p", "apollo-api-key")
 	f.AddVersion("p", "apollo-api-key", []byte("apollo-key-from-sm\n"))
@@ -212,7 +214,7 @@ func TestLoadKeysNeverInsideCloudRun(t *testing.T) {
 // A key the run account cannot read is named in the error and left empty;
 // the others are still read.
 func TestLoadKeysReportsUnreadableKey(t *testing.T) {
-	t.Cleanup(logredact.ResetSecretValues)
+	t.Cleanup(func() { logredact.MaskEnvSecrets(func(string) string { return "" }) })
 	f, connect := fake(t)
 	f.CreateSecret("p", "apollo-api-key")
 	f.AddVersion("p", "apollo-api-key", []byte("apollo-key-from-sm"))
@@ -251,7 +253,12 @@ func TestResourceReads(t *testing.T) {
 	if err != nil || j.TaskTimeout != 810*time.Second || j.MaxRetries == nil || *j.MaxRetries != 0 {
 		t.Errorf("RunJob = %+v, %v", j, err)
 	}
-	f.SetResource(run+"jobs/leadscore-run", `{"template":{"template":{"timeout":"810s"}}}`)
+	f.SetResource(run+"jobs/leadscore-run", `{"template":{"template":{"serviceAccount":"r@p.iam.gserviceaccount.com","timeout":"810s","containers":[{"env":[`+
+		`{"name":"PLAIN","value":"x"},{"name":"LEADSCORE_CONFIG_VERSION","valueSource":{"secretKeyRef":{"secret":"projects/p/secrets/leadscore-config-version","version":"latest"}}}]}]}}}`)
+	if j, _ := c.RunJob(ctx, "p", "r"); j.Account != "r@p.iam.gserviceaccount.com" || len(j.SecretEnv) != 1 ||
+		j.SecretEnv["LEADSCORE_CONFIG_VERSION"] != (hosting.SecretRef{Secret: "leadscore-config-version", Version: "latest"}) {
+		t.Errorf("job account %q, secret env %v", j.Account, j.SecretEnv)
+	}
 	if j, _ := c.RunJob(ctx, "p", "r"); j.MaxRetries != nil {
 		t.Errorf("an unset maxRetries must read as unset, not 0: %v", *j.MaxRetries)
 	}

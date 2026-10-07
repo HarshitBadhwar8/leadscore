@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,7 +24,9 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/check"
 	"github.com/HarshitBadhwar8/leadscore/internal/config"
 	"github.com/HarshitBadhwar8/leadscore/internal/hosting"
+	"github.com/HarshitBadhwar8/leadscore/internal/model"
 	"github.com/HarshitBadhwar8/leadscore/internal/receiver"
+	"github.com/HarshitBadhwar8/leadscore/internal/rules"
 	"github.com/HarshitBadhwar8/leadscore/internal/store/codec"
 	"github.com/HarshitBadhwar8/leadscore/internal/store/sheets"
 	"github.com/HarshitBadhwar8/leadscore/internal/store/sqlite"
@@ -79,7 +82,7 @@ func TestLiveCloudRun(t *testing.T) {
 	dir := t.TempDir()
 	marker := fmt.Sprintf("live%d", time.Now().Unix())
 	yml := fmt.Sprintf(`version: 1
-store: { type: sheets, lease_bucket: %s-%s }
+store: { type: sheets }
 sources: [ { id: leads, type: sheetsource, tabs: [Leads] } ]
 replies: receiver
 receiver: { visit_events: [visit_pricing] }
@@ -87,7 +90,7 @@ receiver: { visit_events: [visit_pricing] }
 ingest_chunk_rows: %d
 schedule: 15m
 deadline: 12m
-`, project, marker, rows)
+`, rows)
 	writeFile(t, filepath.Join(dir, "leadscore.yml"), yml)
 	rubric, _ := os.ReadFile(filepath.Join(repo, "testdata/compose/rubric.yml"))
 	writeFile(t, filepath.Join(dir, "rubric.yml"), string(rubric))
@@ -96,7 +99,15 @@ deadline: 12m
 	sh := func(args ...string) string {
 		t.Helper()
 		cmd := exec.CommandContext(ctx, "bash", append([]string{filepath.Join(repo, "setup/gcp.sh"), "--config", cfgPath}, args...)...)
-		cmd.Dir, cmd.Env = dir, append(os.Environ(), "LEADSCORE="+cli)
+		// The person's own keys stay out: this install uses none, and the
+		// script would otherwise upload them.
+		var env []string
+		for _, kv := range os.Environ() {
+			if !strings.HasPrefix(kv, "APOLLO_API_KEY=") && !strings.HasPrefix(kv, "HUBSPOT_TOKEN=") {
+				env = append(env, kv)
+			}
+		}
+		cmd.Dir, cmd.Env = dir, append(env, "LEADSCORE="+cli)
 		cmd.Stdin = os.Stdin // the impersonated login may ask
 		out, err := cmd.CombinedOutput()
 		if err != nil {
@@ -132,12 +143,14 @@ deadline: 12m
 	fillLeads(ctx, t, c.Store.Spreadsheet, rows)
 	sh("secrets")
 	ls("config", "push")
-	sh("deploy", image)
-	sh("schedule")
+	// Registered before anything that can start runs, so a failure below
+	// still stops the schedule.
 	t.Cleanup(func() {
 		exec.Command("gcloud", "scheduler", "jobs", "pause", hosting.SchedulerJobName,
 			"--location", region, "--project", project).Run()
 	})
+	sh("deploy", image)
+	sh("schedule")
 	url := gc("run", "services", "describe", hosting.ServiceName, "--region", region, "--format", "value(status.url)")
 	secret := gc("secrets", "versions", "access", "latest", "--secret", hosting.ReceiverSecret)
 
@@ -148,7 +161,7 @@ deadline: 12m
 	t.Logf("execution %s started", exec1.Metadata.Name)
 
 	// Burst 1: 150 visits at 100 a minute while the run writes.
-	rep1 := postBurst(ctx, url, secret, liveVisits(marker+"a", 150), 100)
+	rep1 := postBurst(ctx, url, secret, liveVisits(t, marker+"a", 150), 100)
 	t.Logf("burst during the run: %+v", rep1)
 
 	// Burst 2, with a redeploy in the middle of it.
@@ -157,7 +170,7 @@ deadline: 12m
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		rep2 = postBurst(ctx, url, secret, liveVisits(marker+"b", 150), 100)
+		rep2 = postBurst(ctx, url, secret, liveVisits(t, marker+"b", 150), 100)
 	}()
 	time.Sleep(20 * time.Second)
 	sh("redeploy")
@@ -208,6 +221,38 @@ deadline: 12m
 				t.Errorf("hosting check: %s: %s", p.Key, p.Message)
 			}
 		}
+	}
+
+	// A config push takes effect at the next run with no redeploy, and the
+	// run records the version it read.
+	edited := strings.Replace(string(rubric), "name: Nurture list", "name: Nurture list (live)", 1)
+	writeFile(t, filepath.Join(dir, "rubric.yml"), edited)
+	r2, err := rules.Compile([]byte(edited))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushed := regexp.MustCompile(`version (\d+);`).FindStringSubmatch(ls("config", "push"))
+	if pushed == nil {
+		t.Fatal("config push printed no version")
+	}
+	before = executions(t, gc, region)
+	gc("scheduler", "jobs", "run", hosting.SchedulerJobName, "--location", region)
+	if e := waitExecution(ctx, t, gc, region, before, func(e execution) bool { return e.Status.CompletionTime != "" }); e.Status.SucceededCount != 1 {
+		t.Errorf("the run after the push did not succeed: %+v", e.Status)
+	}
+	health, err := store.ReadTable(ctx, model.TableHealth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range health {
+		if row["kind"] == "result" && row["key"] == "rubric_version" && row["value"] != r2.Version() {
+			t.Errorf("the run used rubric %s, not the pushed %s", row["value"], r2.Version())
+		}
+	}
+	if m, err := codec.Load(ctx, store); err != nil {
+		t.Fatal(err)
+	} else if got := m.StateValue("config_version"); got != pushed[1] {
+		t.Errorf("the run recorded config_version %q, want the pushed %s", got, pushed[1])
 	}
 }
 
@@ -317,16 +362,31 @@ func waitExecution(ctx context.Context, t *testing.T, gc func(...string) string,
 	}
 }
 
-// liveVisits are n identified website-visit bodies (the C5.1 visit format,
-// testdata/events/apollo_visit_identified.json), each a distinct person at the
-// marker's domain, so each is one event that must be stored.
-func liveVisits(marker string, n int) [][]byte {
+// liveVisits are n identified website-visit bodies built from the golden
+// body testdata/events/apollo_visit_identified.json, each a distinct person at
+// the marker's domain, so each is one event that must be stored.
+func liveVisits(t *testing.T, marker string, n int) [][]byte {
+	t.Helper()
+	golden, err := os.ReadFile("testdata/events/apollo_visit_identified.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	out := make([][]byte, n)
 	for i := range out {
-		out[i] = []byte(fmt.Sprintf(`{"event":"website_visited_pricing","domain":"ourproduct.example",`+
-			`"visited_at":"%s","contact":{"id":"ct-%s-%d","email":"visitor%d@%s.example","first_name":"V","last_name":"%d",`+
-			`"title":"Head of Operations","company":"Live"},"account":{"domain":"%s.example","name":"Live"}}`,
-			time.Now().UTC().Format(time.RFC3339), marker, i, i, marker, i, marker))
+		var body map[string]any
+		if err := json.Unmarshal(golden, &body); err != nil {
+			t.Fatal(err)
+		}
+		delete(body, "provisional")
+		body["visited_at"] = time.Now().UTC().Format(time.RFC3339)
+		contact := body["contact"].(map[string]any)
+		contact["id"] = fmt.Sprintf("ct-%s-%d", marker, i)
+		contact["email"] = fmt.Sprintf("visitor%d@%s.example", i, marker)
+		delete(contact, "linkedin_url") // one identity per visitor
+		body["account"] = map[string]any{"domain": marker + ".example", "name": "Live"}
+		if out[i], err = json.Marshal(body); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return out
 }
@@ -453,7 +513,7 @@ func TestLiveCloudRunHelpersOnFakes(t *testing.T) {
 	defer func(old time.Duration) { retryPause = old }(retryPause)
 	retryPause = 10 * time.Millisecond
 	ctx := context.Background()
-	rep := postBurst(ctx, srv.URL, secret, liveVisits("fakeburst", 30), 6000)
+	rep := postBurst(ctx, srv.URL, secret, liveVisits(t, "fakeburst", 30), 6000)
 	h.Close()
 	if rep.Sent != 30 || rep.Retried != 10 || rep.GaveUp != 0 {
 		t.Errorf("burst report %+v, want 30 sent, 10 retried", rep)
@@ -466,7 +526,7 @@ func TestLiveCloudRunHelpersOnFakes(t *testing.T) {
 		t.Errorf("%d of 30 events read back", len(got))
 	}
 	// A refused request (401) is not sent again and does not count as sent.
-	if rep := postBurst(ctx, srv.URL, "wrong", liveVisits("other", 1), 6000); rep.GaveUp != 1 || rep.Retried != 0 {
+	if rep := postBurst(ctx, srv.URL, "wrong", liveVisits(t, "other", 1), 6000); rep.GaveUp != 1 || rep.Retried != 0 {
 		t.Errorf("a refused request must not count as sent: %+v", rep)
 	}
 

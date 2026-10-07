@@ -18,13 +18,31 @@ const (
 	schedPath = "/cloudscheduler/v1/projects/p/locations/r/jobs/leadscore-schedule"
 	proxyPath = "/artifactregistry/v1/projects/p/locations/r/repositories/ghcr-proxy"
 	schedSA   = "leadscore-scheduler@p.iam.gserviceaccount.com"
+	runSA     = "leadscore-run@p.iam.gserviceaccount.com"
+	recvSA    = "leadscore-receiver@p.iam.gserviceaccount.com"
+)
+
+// secretEnv is a container's env JSON with each variable from a secret.
+func secretEnv(pairs ...string) string {
+	var parts []string
+	for i := 0; i+1 < len(pairs); i += 2 {
+		parts = append(parts, `{"name":"`+pairs[i]+`","valueSource":{"secretKeyRef":{"secret":"projects/p/secrets/`+pairs[i+1]+`","version":"latest"}}}`)
+	}
+	return `[{"env":[` + strings.Join(parts, ",") + `]}]`
+}
+
+var (
+	healthyService = `{"template":{"serviceAccount":"` + recvSA + `","scaling":{"maxInstanceCount":1},"containers":` +
+		secretEnv("LEADSCORE_RECEIVER_SECRET", "receiver-secret") + `}}`
+	healthyJob = `{"template":{"template":{"serviceAccount":"` + runSA + `","timeout":"810s","maxRetries":0,"containers":` +
+		secretEnv("LEADSCORE_CONFIG_VERSION", "leadscore-config-version") + `}}}`
 )
 
 // healthyProject is everything setup/gcp.sh makes for deadline 12m, as the
 // hosting check should find it.
 func healthyProject(f *gcp.Server) {
-	f.SetResource(runBase+"services/leadscore-receiver", `{"template":{"scaling":{"maxInstanceCount":1}}}`)
-	f.SetResource(runBase+"jobs/leadscore-run", `{"template":{"template":{"timeout":"810s","maxRetries":0}}}`)
+	f.SetResource(runBase+"services/leadscore-receiver", healthyService)
+	f.SetResource(runBase+"jobs/leadscore-run", healthyJob)
 	f.SetResource(runBase+"jobs/leadscore-run:getIamPolicy",
 		`{"bindings":[{"role":"roles/run.invoker","members":["serviceAccount:`+schedSA+`"]}]}`)
 	f.SetResource(schedPath, `{"schedule":"*/15 * * * *","state":"ENABLED","httpTarget":{"uri":"`+
@@ -32,6 +50,8 @@ func healthyProject(f *gcp.Server) {
 	f.SetResource(proxyPath, `{"mode":"REMOTE_REPOSITORY"}`)
 	f.CreateSecret("p", hosting.ConfigSecret)
 	f.AddVersion("p", hosting.ConfigSecret, []byte("config: x\nrubric: y\n"))
+	f.CreateSecret("p", hosting.ConfigVersionSecret)
+	f.AddVersion("p", hosting.ConfigVersionSecret, []byte("1"))
 }
 
 func runHosting(t *testing.T, f *gcp.Server, yml string, m *model.Model) []string {
@@ -43,8 +63,11 @@ func runHosting(t *testing.T, f *gcp.Server, yml string, m *model.Model) []strin
 	}}
 	var keys []string
 	for _, p := range h.Run(context.Background(), Env{Config: load(t, yml), Model: m}) {
-		if p.Message == "" || p.Fix == "" || p.Warning {
-			t.Errorf("%s: every hosting problem fails with a message and a fix: %+v", p.Key, p)
+		if p.Message == "" || p.Fix == "" {
+			t.Errorf("%s: every hosting problem has a message and a fix: %+v", p.Key, p)
+		}
+		if p.Warning {
+			p.Key += " (warning)"
 		}
 		keys = append(keys, p.Key)
 	}
@@ -53,7 +76,7 @@ func runHosting(t *testing.T, f *gcp.Server, yml string, m *model.Model) []strin
 }
 
 const hostedSheets = "version: 1\nstore: { type: sheets, spreadsheet: s, lease_bucket: b }\n" +
-	"hosting: { project: p, region: r, run_account: leadscore-run, image: ghcr.io/tetriz-ai/leadscore:v0.1.0 }\n"
+	"hosting: { project: p, region: r, run_account: leadscore-run, receiver_account: leadscore-receiver, image: ghcr.io/tetriz-ai/leadscore:v0.1.0 }\n"
 
 func modelWithConfigVersion(v string) *model.Model {
 	m := model.New()
@@ -93,20 +116,20 @@ func TestHostingCheckFindsEachProblem(t *testing.T) {
 	}{
 		{"service missing", func(f *gcp.Server) { f.SetResource(runBase+"services/leadscore-receiver", "") }, hostedSheets, "1", "hosting:service_missing"},
 		{"service may scale out", func(f *gcp.Server) {
-			f.SetResource(runBase+"services/leadscore-receiver", `{"template":{"scaling":{"maxInstanceCount":2}}}`)
+			f.SetResource(runBase+"services/leadscore-receiver", strings.Replace(healthyService, `"maxInstanceCount":1`, `"maxInstanceCount":2`, 1))
 		}, hostedSheets, "1", "hosting:service_instances"},
 		{"service with no instance limit", func(f *gcp.Server) {
-			f.SetResource(runBase+"services/leadscore-receiver", `{"template":{}}`)
+			f.SetResource(runBase+"services/leadscore-receiver", strings.Replace(healthyService, `"maxInstanceCount":1`, `"maxInstanceCount":0`, 1))
 		}, hostedSheets, "1", "hosting:service_instances"},
 		{"job missing", func(f *gcp.Server) { f.SetResource(runBase+"jobs/leadscore-run", "") }, hostedSheets, "1", "hosting:job_missing"},
 		{"job timeout not deadline plus budget", func(f *gcp.Server) {
-			f.SetResource(runBase+"jobs/leadscore-run", `{"template":{"template":{"timeout":"600s","maxRetries":0}}}`)
+			f.SetResource(runBase+"jobs/leadscore-run", strings.Replace(healthyJob, "810s", "600s", 1))
 		}, hostedSheets, "1", "hosting:job_timeout"},
 		{"job retries", func(f *gcp.Server) {
-			f.SetResource(runBase+"jobs/leadscore-run", `{"template":{"template":{"timeout":"810s","maxRetries":3}}}`)
+			f.SetResource(runBase+"jobs/leadscore-run", strings.Replace(healthyJob, `"maxRetries":0`, `"maxRetries":3`, 1))
 		}, hostedSheets, "1", "hosting:job_retries"},
 		{"job retries left at the default", func(f *gcp.Server) {
-			f.SetResource(runBase+"jobs/leadscore-run", `{"template":{"template":{"timeout":"810s"}}}`)
+			f.SetResource(runBase+"jobs/leadscore-run", strings.Replace(healthyJob, `"maxRetries":0,`, ``, 1))
 		}, hostedSheets, "1", "hosting:job_retries"},
 		{"scheduler missing", func(f *gcp.Server) { f.SetResource(schedPath, "") }, hostedSheets, "1", "hosting:schedule_missing"},
 		{"scheduler account cannot run the job", func(f *gcp.Server) {
@@ -119,9 +142,41 @@ func TestHostingCheckFindsEachProblem(t *testing.T) {
 		{"deadline plus budget not below schedule", func(*gcp.Server) {}, hostedSheets + "deadline: 14m\n", "1", "hosting:job_timeout,hosting:schedule"},
 		{"a newer bundle than the last run used", func(f *gcp.Server) {
 			f.AddVersion("p", hosting.ConfigSecret, []byte("config: x2\nrubric: y\n"))
-		}, hostedSheets, "1", "hosting:config_version"},
-		{"no run recorded a version", func(*gcp.Server) {}, hostedSheets, "", "hosting:config_version"},
+			f.AddVersion("p", hosting.ConfigVersionSecret, []byte("2"))
+		}, hostedSheets, "1", "hosting:config_version (warning)"},
+		{"no run recorded a version", func(*gcp.Server) {}, hostedSheets, "", "hosting:config_version (warning)"},
+		{"an interrupted push", func(f *gcp.Server) {
+			f.AddVersion("p", hosting.ConfigSecret, []byte("config: x2\nrubric: y\n"))
+		}, hostedSheets, "1", "hosting:config_interrupted,hosting:config_version (warning)"},
+		{"a push from before the version secret", func(f *gcp.Server) {
+			f.DisableVersion("p", hosting.ConfigVersionSecret, "1")
+		}, hostedSheets, "1", "hosting:config_interrupted"},
+		{"job does not read the version secret", func(f *gcp.Server) {
+			f.SetResource(runBase+"jobs/leadscore-run", strings.Replace(healthyJob, "leadscore-config-version", "leadscore-config", 1))
+		}, hostedSheets, "1", "hosting:job_config_version"},
+		{"job runs as another account", func(f *gcp.Server) {
+			f.SetResource(runBase+"jobs/leadscore-run", strings.Replace(healthyJob, runSA, "123-compute@developer.gserviceaccount.com", 1))
+		}, hostedSheets, "1", "hosting:job_account"},
+		{"receiver runs as another account", func(f *gcp.Server) {
+			f.SetResource(runBase+"services/leadscore-receiver", strings.Replace(healthyService, recvSA, runSA, 1))
+		}, hostedSheets, "1", "hosting:service_account"},
+		{"receiver without its secret", func(f *gcp.Server) {
+			f.SetResource(runBase+"services/leadscore-receiver", strings.Replace(healthyService, "LEADSCORE_RECEIVER_SECRET", "OTHER", 1))
+		}, hostedSheets, "1", "hosting:receiver_secret"},
+		{"rotation not finished", func(f *gcp.Server) {
+			f.SetResource(runBase+"services/leadscore-receiver", strings.Replace(healthyService, `"containers":`+secretEnv("LEADSCORE_RECEIVER_SECRET", "receiver-secret"),
+				`"containers":`+secretEnv("LEADSCORE_RECEIVER_SECRET", "receiver-secret", "LEADSCORE_RECEIVER_SECRET_PREVIOUS", "receiver-secret-previous"), 1))
+		}, hostedSheets, "1", "hosting:receiver_secret_previous (warning)"},
+		{"anyone may start the job", func(f *gcp.Server) {
+			f.SetResource(runBase+"jobs/leadscore-run:getIamPolicy",
+				`{"bindings":[{"role":"roles/run.invoker","members":["serviceAccount:`+schedSA+`","allUsers"]}]}`)
+		}, hostedSheets, "1", "hosting:job_public"},
+		{"scheduler paused", func(f *gcp.Server) {
+			f.SetResource(schedPath, `{"schedule":"*/15 * * * *","state":"PAUSED","httpTarget":{"uri":"`+
+				hosting.JobRunURI("p", "r")+`","oauthToken":{"serviceAccountEmail":"`+schedSA+`"}}}`)
+		}, hostedSheets, "1", "hosting:schedule_paused (warning)"},
 		{"no bundle pushed", func(f *gcp.Server) { f.DisableVersion("p", hosting.ConfigSecret, "1") }, hostedSheets, "1", "hosting:config_missing"},
+		{"a schedule setup/gcp.sh cannot read", func(*gcp.Server) {}, hostedSheets + "schedule: 0.25h\n", "1", "hosting:schedule"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			f := gcp.New()

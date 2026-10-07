@@ -176,7 +176,7 @@ func buildCLI(t *testing.T) string {
 
 const gcpYAML = `version: 1
 # the team's settings
-store: { type: sheets, spreadsheet: "0123", lease_bucket: team-lease }
+store: { type: sheets, spreadsheet: "0123" }
 sources: [ { id: leads, type: sheetsource, tabs: [Leads] } ]
 enrich: { type: apollo }
 replies: receiver
@@ -191,7 +191,12 @@ func TestGCPScript(t *testing.T) {
 		const runSA = "leadscore-run@p.iam.gserviceaccount.com"
 		const recvSA = "leadscore-receiver@p.iam.gserviceaccount.com"
 
-		calls, _ := e.mustRun("accounts", "--project", "p")
+		e.extra = []string{"FAKE_GCLOUD_PROJECT=active-project"} // never used: --project is required
+		calls, stdout := e.mustRun("accounts", "--project", "p")
+		e.extra = nil
+		if !strings.Contains(stdout, "now acts as "+runSA) || !strings.Contains(stdout, "gcloud auth application-default revoke") {
+			t.Errorf("accounts must say the machine's login now acts as the run account, and how to undo it: %q", stdout)
+		}
 		wantCall(t, calls, "services enable", "run.googleapis.com", "cloudscheduler.googleapis.com", "secretmanager.googleapis.com", "iamcredentials.googleapis.com")
 		wantCall(t, calls, "iam service-accounts create leadscore-run --project p")
 		wantCall(t, calls, "iam service-accounts create leadscore-receiver --project p")
@@ -214,16 +219,17 @@ func TestGCPScript(t *testing.T) {
 		calls, _ = e.mustRun("accounts")
 		noCall(t, calls, "service-accounts create")
 
+		// The lease bucket defaults to <project>-leadscore-lease.
 		calls, _ = e.mustRun("bucket")
-		wantCall(t, calls, "storage buckets create gs://team-lease --project p --location asia-south1")
-		wantCall(t, calls, "storage buckets add-iam-policy-binding gs://team-lease --member serviceAccount:"+runSA+" --role roles/storage.objectAdmin")
+		wantCall(t, calls, "storage buckets create gs://p-leadscore-lease --project p --location asia-south1")
+		wantCall(t, calls, "storage buckets add-iam-policy-binding gs://p-leadscore-lease --member serviceAccount:"+runSA+" --role roles/storage.objectAdmin")
 
 		// Keys come from the variables (or a hidden prompt), never from
 		// arguments, and are never printed.
 		e.extra = []string{"APOLLO_API_KEY=apollo-key-value-123"}
-		calls, stdout := e.mustRun("secrets")
+		calls, stdout = e.mustRun("secrets")
 		e.extra = nil
-		for _, s := range []string{"leadscore-config", "apollo-api-key", "hubspot-token", "receiver-secret", "receiver-secret-previous"} {
+		for _, s := range []string{"leadscore-config", "leadscore-config-version", "apollo-api-key", "hubspot-token", "receiver-secret", "receiver-secret-previous"} {
 			wantCall(t, calls, "secrets create "+s+" --project p")
 		}
 		// The C9 role table.
@@ -232,6 +238,8 @@ func TestGCPScript(t *testing.T) {
 			{"hubspot-token", runSA + " --role roles/secretmanager.secretAccessor"},
 			{"leadscore-config", runSA + " --role roles/secretmanager.secretAccessor"},
 			{"leadscore-config", runSA + " --role roles/secretmanager.secretVersionAdder"},
+			{"leadscore-config-version", runSA + " --role roles/secretmanager.secretAccessor"},
+			{"leadscore-config-version", runSA + " --role roles/secretmanager.secretVersionAdder"},
 			{"receiver-secret", recvSA + " --role roles/secretmanager.secretAccessor"},
 			{"receiver-secret-previous", recvSA + " --role roles/secretmanager.secretAccessor"},
 			{"leadscore-config", recvSA + " --role roles/secretmanager.secretAccessor"},
@@ -239,6 +247,7 @@ func TestGCPScript(t *testing.T) {
 			wantCall(t, calls, "secrets add-iam-policy-binding "+g[0]+" --project p --member serviceAccount:"+g[1])
 		}
 		noCall(t, calls, "add-iam-policy-binding apollo-api-key --project p --member serviceAccount:"+recvSA)
+		noCall(t, calls, "add-iam-policy-binding leadscore-config-version --project p --member serviceAccount:"+recvSA)
 		if got, _ := os.ReadFile(filepath.Join(e.gcloud, "stdin-apollo-api-key")); string(got) != "apollo-key-value-123" {
 			t.Errorf("apollo-api-key was given %q", got)
 		}
@@ -258,7 +267,11 @@ func TestGCPScript(t *testing.T) {
 		if code, _, stderr := e.script("deploy", "ghcr.io/tetriz-ai/leadscore:v0.1.0"); code == 0 || !strings.Contains(stderr, "leadscore config push") {
 			t.Errorf("deploy with no bundle: exit %d %q", code, stderr)
 		}
-		e.touch("version-leadscore-config") // config push made version 1
+		e.touch("version-leadscore-config") // config push made version 1 ...
+		if code, _, stderr := e.script("deploy", "ghcr.io/tetriz-ai/leadscore:v0.1.0"); code == 0 || !strings.Contains(stderr, "leadscore config push") {
+			t.Errorf("deploy with no version number: exit %d %q", code, stderr)
+		}
+		e.touch("version-leadscore-config-version") // ... and recorded its number
 		calls, stdout = e.mustRun("deploy", "ghcr.io/tetriz-ai/leadscore:v0.1.0")
 		const proxied = "asia-south1-docker.pkg.dev/p/ghcr-proxy/tetriz-ai/leadscore:v0.1.0"
 		wantCall(t, calls, "artifacts repositories create ghcr-proxy --project p --location asia-south1", "--mode remote-repository", "--remote-docker-repo https://ghcr.io")
@@ -268,24 +281,40 @@ func TestGCPScript(t *testing.T) {
 			"--set-secrets LEADSCORE_RECEIVER_SECRET=receiver-secret:latest,/config/bundle.yaml=leadscore-config:latest")
 		wantCall(t, calls, "run jobs deploy leadscore-run --project p --region asia-south1 --image "+proxied,
 			"--service-account "+runSA+" --args run --tasks 1 --parallelism 1 --max-retries 0 --task-timeout 810s",
-			"--set-secrets APOLLO_API_KEY=apollo-api-key:latest,/config/bundle.yaml=leadscore-config:latest",
-			"--set-env-vars LEADSCORE_CONFIG_VERSION=1")
+			"--set-secrets APOLLO_API_KEY=apollo-api-key:latest,LEADSCORE_CONFIG_VERSION=leadscore-config-version:latest,/config/bundle.yaml=leadscore-config:latest")
+		noCall(t, calls, "--set-env-vars")
 		if got := e.configGet("hosting.image"); got != "ghcr.io/tetriz-ai/leadscore:v0.1.0" {
 			t.Errorf("hosting.image = %q", got)
 		}
-		if !strings.Contains(stdout, "https://leadscore-receiver-abc-el.a.run.app") {
-			t.Errorf("deploy must print the receiver's address: %q", stdout)
+		if !strings.Contains(stdout, "https://leadscore-receiver-abc-el.a.run.app") || !strings.Contains(stdout, "receiver.public_url") ||
+			!strings.Contains(stdout, "leadscore config push again") {
+			t.Errorf("deploy must print the receiver's address and say to set receiver.public_url and push again: %q", stdout)
 		}
 
-		// Rotation (C5.1): the previous secret is attached only while it has
-		// an enabled version; a new bundle version is what runs record.
+		// A key added once the job exists needs a redeploy to reach it.
+		e.extra = []string{"HUBSPOT_TOKEN=hubspot-token-value-1"}
+		_, stdout = e.mustRun("secrets")
+		e.extra = nil
+		if !strings.Contains(stdout, "added HUBSPOT_TOKEN") || !strings.Contains(stdout, "setup/gcp.sh redeploy") {
+			t.Errorf("a key added after deploy must say to redeploy: %q", stdout)
+		}
+		calls, _ = e.mustRun("redeploy")
+		wantCall(t, calls, "run jobs deploy leadscore-run", "HUBSPOT_TOKEN=hubspot-token:latest")
+
+		// Rotation (C5.1): the previous secret is attached while it has an
+		// enabled version; --finish-rotation detaches it, and only then are
+		// its versions disabled.
 		e.touch("version-receiver-secret-previous")
-		os.WriteFile(filepath.Join(e.gcloud, "state", "version-leadscore-config"), []byte("x\nx\n"), 0o600)
 		calls, _ = e.mustRun("redeploy")
 		wantCall(t, calls, "run deploy leadscore-receiver", "--image "+proxied,
 			"LEADSCORE_RECEIVER_SECRET=receiver-secret:latest,LEADSCORE_RECEIVER_SECRET_PREVIOUS=receiver-secret-previous:latest,/config/bundle.yaml")
-		wantCall(t, calls, "run jobs deploy leadscore-run", "LEADSCORE_CONFIG_VERSION=2")
 		noCall(t, calls, "artifacts repositories create")
+		calls, stdout = e.mustRun("redeploy", "--finish-rotation")
+		noCall(t, calls, "LEADSCORE_RECEIVER_SECRET_PREVIOUS")
+		wantCall(t, calls, "run deploy leadscore-receiver", "LEADSCORE_RECEIVER_SECRET=receiver-secret:latest,/config/bundle.yaml")
+		if !strings.Contains(stdout, "gcloud secrets versions disable latest --secret receiver-secret-previous --project p") {
+			t.Errorf("--finish-rotation must give the disable command: %q", stdout)
+		}
 		os.Remove(filepath.Join(e.gcloud, "state", "version-receiver-secret-previous"))
 		calls, _ = e.mustRun("redeploy")
 		noCall(t, calls, "LEADSCORE_RECEIVER_SECRET_PREVIOUS")
@@ -304,6 +333,7 @@ func TestGCPScript(t *testing.T) {
 	t.Run("pre-release image", func(t *testing.T) {
 		e := newGCPEnv(t, cli, gcpYAML+"hosting: { project: p, region: asia-south1, run_account: leadscore-run, receiver_account: leadscore-receiver }\n")
 		e.touch("version-leadscore-config")
+		e.touch("version-leadscore-config-version")
 		const img = "asia-south1-docker.pkg.dev/leadscore-dev/leadscore/leadscore:abc123"
 		calls, _ := e.mustRun("deploy", img)
 		noCall(t, calls, "artifacts repositories")
@@ -316,6 +346,7 @@ func TestGCPScript(t *testing.T) {
 		yml := gcpYAML + "hosting: { project: p, region: asia-south1, run_account: leadscore-run, receiver_account: leadscore-receiver }\n"
 		e := newGCPEnv(t, cli, yml)
 		e.touch("version-leadscore-config")
+		e.touch("version-leadscore-config-version")
 		e.extra = []string{"FAKE_GCLOUD_READONLY=1", "APOLLO_API_KEY=apollo-key-value-123"}
 		var all string
 		for _, step := range [][]string{{"accounts"}, {"bucket"}, {"secrets"}, {"deploy", "ghcr.io/tetriz-ai/leadscore:v0.1.0"}, {"schedule"}} {
@@ -332,7 +363,7 @@ func TestGCPScript(t *testing.T) {
 			"+ gcloud iam service-accounts create leadscore-run",
 			"+ leadscore config set-hosting project=p",
 			"+ gcloud auth application-default login --impersonate-service-account leadscore-run@p.iam.gserviceaccount.com",
-			"+ gcloud storage buckets create gs://team-lease",
+			"+ gcloud storage buckets create gs://p-leadscore-lease",
 			"+ printf %s <hidden> | gcloud secrets versions add apollo-api-key --project p --data-file=-",
 			"+ gcloud run jobs deploy leadscore-run",
 			"--task-timeout 810s",
@@ -359,8 +390,11 @@ func TestGCPScript(t *testing.T) {
 		}{
 			{"no hosting yet", gcpYAML, []string{"bucket"}, "run setup/gcp.sh accounts first"},
 			{"no project", gcpYAML, []string{"accounts"}, "pass --project"},
-			{"sqlite has no lease bucket", strings.Replace(gcpYAML, `{ type: sheets, spreadsheet: "0123", lease_bucket: team-lease }`, "{ type: sqlite }", 1) + hostingBlock, []string{"bucket"}, "store.type: sheets"},
-			{"no lease bucket", strings.Replace(gcpYAML, ", lease_bucket: team-lease", "", 1) + hostingBlock, []string{"bucket"}, "store.lease_bucket is not set"},
+			{"sqlite has no lease bucket", strings.Replace(gcpYAML, `{ type: sheets, spreadsheet: "0123" }`, "{ type: sqlite }", 1) + hostingBlock, []string{"bucket"}, "store.type: sheets"},
+			{"lease bucket name taken", gcpYAML + hostingBlock, []string{"bucket"}, "set store.lease_bucket in leadscore.yml to another name"},
+			{"leadscore.yml does not load", gcpYAML + hostingBlock + "nonsense: 1\n", []string{"bucket"}, `leadscore.yml does not load: leadscore config get: `},
+			{"versions cannot be listed", gcpYAML + hostingBlock, []string{"deploy", "img"}, "cannot list the versions of secret leadscore-config"},
+			{"finish-rotation without redeploy", gcpYAML + hostingBlock, []string{"deploy", "img", "--finish-rotation"}, "--finish-rotation goes with redeploy"},
 			{"schedule with no cron form", gcpYAML + hostingBlock + "schedule: 7m\n", []string{"schedule"}, "cannot run on Cloud Scheduler"},
 			{"runs would overlap", gcpYAML + hostingBlock + "deadline: 14m\n", []string{"deploy", "img"}, "runs would overlap"},
 			{"redeploy before deploy", gcpYAML + hostingBlock, []string{"redeploy"}, "hosting.image is not set"},
@@ -368,6 +402,7 @@ func TestGCPScript(t *testing.T) {
 		} {
 			t.Run(tt.name, func(t *testing.T) {
 				e := newGCPEnv(t, cli, tt.yml)
+				e.extra = []string{"FAKE_GCLOUD_PROJECT=active-project", "FAKE_GCLOUD_BUCKET_TAKEN=1", "FAKE_GCLOUD_FAIL_LIST=1"}
 				code, _, stderr := e.script(tt.args...)
 				if code == 0 || !strings.Contains(stderr, tt.want) {
 					t.Errorf("exit %d, stderr %q; want %q", code, stderr, tt.want)
@@ -377,12 +412,12 @@ func TestGCPScript(t *testing.T) {
 	})
 }
 
-// The script's schedule conversion is hosting.Cron's, and its durations are
-// config's, for every form it accepts.
+// The script's schedule conversion is hosting.ScheduleCron's, and its
+// durations are config's, for every form: what one refuses the other refuses.
 func TestGCPScriptCronMatchesGo(t *testing.T) {
 	bash := needBash(t)
 	inputs := []string{"1m", "2m", "5m", "7m", "10m", "15m", "20m", "30m", "45m", "60m", "90m", "1h", "2h", "5h",
-		"6h", "12h", "24h", "1d", "2d", "36h", "90s", "60s", "15m30s", "1h30m", "1d12h", "0m"}
+		"6h", "12h", "24h", "1d", "2d", "36h", "90s", "60s", "15m30s", "1h30m", "1d12h", "0m", "0.25h", "900000ms", "1.5h"}
 	var script strings.Builder
 	script.WriteString("source setup/gcp.sh\n")
 	for _, in := range inputs {
@@ -392,6 +427,7 @@ func TestGCPScriptCronMatchesGo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
+	whole := regexp.MustCompile(`^([0-9]+[dhms])+$`)
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		parts := strings.Split(line, "|")
 		in, gotCron, gotSecs := parts[0], parts[1], parts[2]
@@ -399,15 +435,64 @@ func TestGCPScriptCronMatchesGo(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", in, err)
 		}
-		wantCron, err := hosting.Cron(d)
+		wantCron, err := hosting.ScheduleCron(in)
 		if err != nil {
 			wantCron = "refused"
 		}
 		if gotCron != wantCron {
-			t.Errorf("cron_for %s = %q, hosting.Cron = %q", in, gotCron, wantCron)
+			t.Errorf("cron_for %s = %q, hosting.ScheduleCron = %q", in, gotCron, wantCron)
 		}
-		if want := strconv.Itoa(int(d / time.Second)); gotSecs != want {
+		want := "bad"
+		if whole.MatchString(in) {
+			want = strconv.Itoa(int(d / time.Second))
+		}
+		if gotSecs != want {
 			t.Errorf("duration_seconds %s = %s, want %s", in, gotSecs, want)
+		}
+	}
+}
+
+// The names the script uses are the ones Go uses: the fixed resource names
+// and each key variable's secret.
+func TestGCPScriptNamesMatchGo(t *testing.T) {
+	bash := needBash(t)
+	out, err := exec.Command(bash, "-c", `source setup/gcp.sh
+echo "SERVICE=$SERVICE JOB=$JOB SCHEDULER_JOB=$SCHEDULER_JOB PROXY_REPO=$PROXY_REPO SCHEDULER_ACCOUNT=$SCHEDULER_ACCOUNT"
+echo "CONFIG_SECRET=$CONFIG_SECRET CONFIG_VERSION_SECRET=$CONFIG_VERSION_SECRET CONFIG_VERSION_SECRET_VAR=$CONFIG_VERSION_SECRET_VAR"
+echo "RECEIVER_SECRET=$RECEIVER_SECRET RECEIVER_SECRET_PREVIOUS=$RECEIVER_SECRET_PREVIOUS SAVE_BUDGET_SECONDS=$SAVE_BUDGET_SECONDS"
+for v in $KEY_VARIABLES; do echo "key $v=$(secret_for "$v")"; done`).CombinedOutput()
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	got := map[string]string{}
+	keys := map[string]string{}
+	for _, f := range strings.Fields(strings.ReplaceAll(string(out), "key ", "key:")) {
+		k, v, _ := strings.Cut(f, "=")
+		if name, ok := strings.CutPrefix(k, "key:"); ok {
+			keys[name] = v
+			continue
+		}
+		got[k] = v
+	}
+	want := map[string]string{
+		"SERVICE": hosting.ServiceName, "JOB": hosting.JobName, "SCHEDULER_JOB": hosting.SchedulerJobName,
+		"PROXY_REPO": hosting.ProxyRepository, "SCHEDULER_ACCOUNT": hosting.SchedulerAccount,
+		"CONFIG_SECRET": hosting.ConfigSecret, "CONFIG_VERSION_SECRET": hosting.ConfigVersionSecret,
+		"CONFIG_VERSION_SECRET_VAR": hosting.ConfigVersionVariable,
+		"RECEIVER_SECRET":           hosting.ReceiverSecret, "RECEIVER_SECRET_PREVIOUS": hosting.ReceiverSecretPrevious,
+		"SAVE_BUDGET_SECONDS": strconv.Itoa(int(config.SaveBudget / time.Second)),
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("setup/gcp.sh %s = %q, Go has %q", k, got[k], v)
+		}
+	}
+	if len(keys) != len(hosting.KeySecrets) {
+		t.Errorf("script keys %v, Go %v", keys, hosting.KeySecrets)
+	}
+	for v, secret := range hosting.KeySecrets {
+		if keys[v] != secret {
+			t.Errorf("setup/gcp.sh stores %s in %q, Go reads %q", v, keys[v], secret)
 		}
 	}
 }
@@ -419,11 +504,13 @@ func TestGCPExampleConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// setup/gcp.sh accounts adds the hosting block.
+	data = append(data, "hosting: { project: team-proj, region: asia-south1 }\n"...)
 	c, err := config.Parse(data, "/config", func(string) string { return "" })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Store.Type != "sheets" || c.Replies != "receiver" || c.PushesEnabled || c.Store.LeaseBucket == "" {
+	if c.Store.Type != "sheets" || c.Replies != "receiver" || c.PushesEnabled || c.Store.LeaseBucket != "team-proj-leadscore-lease" {
 		t.Errorf("store %q, replies %q, pushes %v, lease bucket %q", c.Store.Type, c.Replies, c.PushesEnabled, c.Store.LeaseBucket)
 	}
 	if err := hosting.CheckSchedule(c); err != nil {

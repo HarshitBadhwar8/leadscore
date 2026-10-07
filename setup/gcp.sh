@@ -10,11 +10,14 @@
 #   accounts [--project P] [--region R]   enable the APIs, create the run and
 #                                         receiver accounts, write `hosting`,
 #                                         and end with the impersonated login
-#   bucket                                create the lease bucket (store.lease_bucket)
+#   bucket                                create the lease bucket (store.lease_bucket,
+#                                         by default <project>-leadscore-lease)
 #   secrets                               create the secrets and add the keys
 #   deploy <image>                        deploy the receiver service and the run job
-#   redeploy                              deploy again with hosting.image (after
-#                                         rotating a secret or changing the deadline)
+#   redeploy [--finish-rotation]          deploy again with hosting.image (after
+#                                         adding a key, rotating a secret or changing
+#                                         the deadline); --finish-rotation detaches
+#                                         the previous receiver secret
 #   schedule                              create the scheduler account and job
 #
 # --dry-run (or LEADSCORE_GCP_DRY_RUN=1) prints every command that would
@@ -39,6 +42,9 @@ SCHEDULER_JOB=leadscore-schedule
 PROXY_REPO=ghcr-proxy
 SCHEDULER_ACCOUNT=leadscore-scheduler
 CONFIG_SECRET=leadscore-config
+CONFIG_VERSION_SECRET=leadscore-config-version
+# The variable the run job reads the bundle's version number into.
+CONFIG_VERSION_SECRET_VAR=LEADSCORE_CONFIG_VERSION
 RECEIVER_SECRET=receiver-secret
 RECEIVER_SECRET_PREVIOUS=receiver-secret-previous
 DEFAULT_REGION=asia-south1
@@ -189,9 +195,13 @@ ensure_secret() {
   fi
 }
 
-# has_version: the secret has an enabled version.
+# has_version: the secret has an enabled version. A list that fails (no
+# access, no network) stops the script rather than reading as "no version".
 has_version() {
-  [[ -n $(gc secrets versions list "$1" --project "$PROJECT" --filter "state=ENABLED" --limit 1 --format "value(name)" 2>/dev/null || true) ]]
+  local out
+  out=$(gc secrets versions list "$1" --project "$PROJECT" --filter "state=ENABLED" --limit 1 --format "value(name)") ||
+    die "cannot list the versions of secret $1 (see gcloud's error above)"
+  [[ -n $out ]]
 }
 
 grant_secret() { # <secret> <account email> <role>
@@ -211,9 +221,9 @@ check_timing() {
 }
 
 step_accounts() {
+  # Never gcloud's active project: setting up the wrong project is costly.
   PROJECT=${OPT_PROJECT:-$(cfg hosting.project)}
-  [[ -n $PROJECT ]] || PROJECT=$(gc config get-value project 2>/dev/null || true)
-  [[ -n $PROJECT ]] || die "no project: pass --project <id>"
+  [[ -n $PROJECT ]] || die "hosting.project is not set: pass --project <id>"
   REGION=${OPT_REGION:-$(cfg hosting.region)}
   REGION=${REGION:-$DEFAULT_REGION}
   local run_name recv_name person member
@@ -254,6 +264,8 @@ step_accounts() {
 
   say "signing your local commands in as the run account (a browser opens)"
   run gc auth application-default login --impersonate-service-account "$RUN_SA"
+  say "note: Google's application-default login on this machine now acts as $RUN_SA for every program that uses it;"
+  say "  undo it with: gcloud auth application-default revoke"
   say "next: setup/gcp.sh bucket"
 }
 
@@ -261,13 +273,15 @@ step_bucket() {
   load_hosting
   [[ $(cfg store.type) == sheets ]] || die "the lease bucket is for the Sheets store, and store.type is $(cfg store.type); Google Cloud needs store.type: sheets"
   local bucket
+  # Defaults to <project>-leadscore-lease (contracts section 3).
   bucket=$(cfg store.lease_bucket)
-  [[ -n $bucket ]] || die "store.lease_bucket is not set; add it to the store block in leadscore.yml (bucket names are global, for example lease_bucket: $PROJECT-leadscore-lease) and run this again"
+  [[ -n $bucket ]] || die "store.lease_bucket is empty; set it to a bucket name of your own"
   if gc storage buckets describe "gs://$bucket" --project "$PROJECT" >/dev/null 2>&1; then
     say "bucket gs://$bucket exists"
   else
     run gc storage buckets create "gs://$bucket" --project "$PROJECT" --location "$REGION" \
-      --uniform-bucket-level-access --public-access-prevention
+      --uniform-bucket-level-access --public-access-prevention ||
+      die "could not create gs://$bucket. Bucket names are global: if another project has taken it, set store.lease_bucket in leadscore.yml to another name and run this again"
   fi
   run gc storage buckets add-iam-policy-binding "gs://$bucket" \
     --member "serviceAccount:$RUN_SA" --role roles/storage.objectAdmin
@@ -297,15 +311,17 @@ secret_for() {
 step_secrets() {
   load_hosting
   local s var secret value
-  for s in "$CONFIG_SECRET" apollo-api-key hubspot-token "$RECEIVER_SECRET" "$RECEIVER_SECRET_PREVIOUS"; do
+  for s in "$CONFIG_SECRET" "$CONFIG_VERSION_SECRET" apollo-api-key hubspot-token "$RECEIVER_SECRET" "$RECEIVER_SECRET_PREVIOUS"; do
     ensure_secret "$s"
   done
 
   # Contracts section 9, the role table.
-  for s in apollo-api-key hubspot-token "$CONFIG_SECRET"; do
+  for s in apollo-api-key hubspot-token "$CONFIG_SECRET" "$CONFIG_VERSION_SECRET"; do
     grant_secret "$s" "$RUN_SA" roles/secretmanager.secretAccessor
   done
-  grant_secret "$CONFIG_SECRET" "$RUN_SA" roles/secretmanager.secretVersionAdder
+  for s in "$CONFIG_SECRET" "$CONFIG_VERSION_SECRET"; do
+    grant_secret "$s" "$RUN_SA" roles/secretmanager.secretVersionAdder
+  done
   for s in "$RECEIVER_SECRET" "$RECEIVER_SECRET_PREVIOUS" "$CONFIG_SECRET"; do
     grant_secret "$s" "$RECEIVER_SA" roles/secretmanager.secretAccessor
   done
@@ -322,6 +338,9 @@ step_secrets() {
       continue
     fi
     run_with_secret "$value" gc secrets versions add "$secret" --project "$PROJECT" --data-file=-
+    if gc run jobs describe "$JOB" --region "$REGION" --project "$PROJECT" >/dev/null 2>&1; then
+      say "added $var: the run job is already deployed, so run setup/gcp.sh redeploy to give it the key"
+    fi
   done
 
   if has_version "$RECEIVER_SECRET"; then
@@ -338,17 +357,17 @@ step_secrets() {
 }
 
 step_deploy() {
-  local image=$1 deploy_image ver name
+  local image=$1 finish_rotation=${2:-} deploy_image
   load_hosting
   [[ -n $image ]] || die "usage: setup/gcp.sh deploy <image>"
   check_timing
 
-  # The bundle each run reads; its version is what runs record.
-  # S0 confirms (open question): the job mounts the latest bundle, while this
-  # version is fixed at deploy time.
-  name=$(gc secrets versions describe latest --secret "$CONFIG_SECRET" --project "$PROJECT" --format "value(name)" 2>/dev/null || true)
-  ver=${name##*/}
-  [[ -n $ver ]] || die "$CONFIG_SECRET has no version yet; run leadscore config push first"
+  # The bundle each run reads, and its version number, which runs record:
+  # both are read at :latest when an execution starts (S0 confirms), so a
+  # config push needs no redeploy.
+  if ! has_version "$CONFIG_SECRET" || ! has_version "$CONFIG_VERSION_SECRET"; then
+    die "$CONFIG_SECRET or $CONFIG_VERSION_SECRET has no version yet; run leadscore config push first"
+  fi
 
   deploy_image=$image
   case $image in
@@ -370,13 +389,20 @@ step_deploy() {
   esac
 
   # The receiver: its own account, at most one instance, no sign-in check
-  # (Apollo cannot sign in), the receiver secrets and the bundle. The previous
-  # secret is attached only while it has an enabled version (rotation).
+  # (Apollo cannot sign in; S0 confirms --no-invoker-iam-check works under
+  # common organization policies), the receiver secrets and the bundle. The
+  # previous secret is attached while it has an enabled version, until
+  # --finish-rotation detaches it (contracts section 5.1). Detach before
+  # disabling: S0 confirms a disabled version attached at :latest stops a new
+  # instance from starting.
   local recv_secrets="LEADSCORE_RECEIVER_SECRET=$RECEIVER_SECRET:latest"
   has_version "$RECEIVER_SECRET" || say "warning: $RECEIVER_SECRET has no version, so every webhook gets 401; run setup/gcp.sh secrets"
-  if has_version "$RECEIVER_SECRET_PREVIOUS"; then
+  if [[ -n $finish_rotation ]]; then
+    say "detaching $RECEIVER_SECRET_PREVIOUS; once this deploy is done, disable its versions:"
+    say "  gcloud secrets versions disable latest --secret $RECEIVER_SECRET_PREVIOUS --project $PROJECT"
+  elif has_version "$RECEIVER_SECRET_PREVIOUS"; then
     recv_secrets="$recv_secrets,LEADSCORE_RECEIVER_SECRET_PREVIOUS=$RECEIVER_SECRET_PREVIOUS:latest"
-    say "attaching $RECEIVER_SECRET_PREVIOUS: finish the rotation by disabling its versions, then redeploy"
+    say "attaching $RECEIVER_SECRET_PREVIOUS: once every Apollo workflow sends the new secret, run setup/gcp.sh redeploy --finish-rotation"
   fi
   recv_secrets="$recv_secrets,/config/bundle.yaml=$CONFIG_SECRET:latest"
   run gc run deploy "$SERVICE" --project "$PROJECT" --region "$REGION" --image "$deploy_image" \
@@ -393,25 +419,25 @@ step_deploy() {
       job_secrets="$job_secrets$var=$secret:latest,"
     fi
   done
-  job_secrets="$job_secrets/config/bundle.yaml=$CONFIG_SECRET:latest"
+  job_secrets="$job_secrets$CONFIG_VERSION_SECRET_VAR=$CONFIG_VERSION_SECRET:latest,/config/bundle.yaml=$CONFIG_SECRET:latest"
   # Memory: S14b's live check measures what a large Sheet needs.
   run gc run jobs deploy "$JOB" --project "$PROJECT" --region "$REGION" --image "$deploy_image" \
     --service-account "$RUN_SA" --args run --tasks 1 --parallelism 1 --max-retries 0 \
-    --task-timeout "${TASK_TIMEOUT}s" --memory 1Gi --set-secrets "$job_secrets" \
-    --set-env-vars "LEADSCORE_CONFIG_VERSION=$ver" --quiet
+    --task-timeout "${TASK_TIMEOUT}s" --memory 1Gi --set-secrets "$job_secrets" --quiet
 
   set_hosting "image=$image"
   local url
   url=$(gc run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" --format "value(status.url)" 2>/dev/null || true)
   say "receiver: ${url:-<the service URL>}"
-  say "next: set receiver.public_url to that address, create the Apollo workflows from setup/apollo/, then setup/gcp.sh schedule"
+  say "next: set receiver.public_url to that address in leadscore.yml and run leadscore config push again;"
+  say "  create the Apollo workflows from setup/apollo/ pointing at it; then setup/gcp.sh schedule"
 }
 
 step_redeploy() {
   local image
   image=$(cfg hosting.image)
   [[ -n $image ]] || die "hosting.image is not set; run setup/gcp.sh deploy <image> first"
-  step_deploy "$image"
+  step_deploy "$image" "${1:-}"
 }
 
 step_schedule() {
@@ -422,6 +448,8 @@ step_schedule() {
   ensure_service_account "$sched_sa" "leadscore scheduler"
   run gc run jobs add-iam-policy-binding "$JOB" --project "$PROJECT" --region "$REGION" \
     --member "serviceAccount:$sched_sa" --role roles/run.invoker --quiet
+  # Cloud Scheduler calls the job's :run endpoint as its own account (S0
+  # confirms), in the Cloud Run region (S0 confirms Scheduler is offered there).
   uri="https://run.googleapis.com/v2/projects/$PROJECT/locations/$REGION/jobs/$JOB:run"
   local verb=create
   if gc scheduler jobs describe "$SCHEDULER_JOB" --location "$REGION" --project "$PROJECT" >/dev/null 2>&1; then
@@ -442,6 +470,7 @@ usage() {
 main() {
   OPT_PROJECT=
   OPT_REGION=
+  local finish_rotation=
   local step=
   local args=()
   while (($#)); do
@@ -451,6 +480,7 @@ main() {
       --config=*) CONFIG=${1#--config=} ;;
       --project) OPT_PROJECT=${2:?--project needs a value}; shift ;;
       --region) OPT_REGION=${2:?--region needs a value}; shift ;;
+      --finish-rotation) finish_rotation=1 ;;
       -h | --help | help) usage; return 0 ;;
       -*) die "unknown flag $1" ;;
       *)
@@ -461,13 +491,17 @@ main() {
   done
   command -v "$GCLOUD" >/dev/null 2>&1 || die "gcloud is not installed (https://cloud.google.com/sdk/docs/install)"
   command -v "$LEADSCORE" >/dev/null 2>&1 || die "the leadscore CLI is not installed (see the README)"
+  [[ -z $finish_rotation || $step == redeploy ]] || die "--finish-rotation goes with redeploy"
+  # Once, first: leadscore.yml must load, or every value read below is empty.
+  local loaded
+  loaded=$(ls_config config get version 2>&1) || die "leadscore.yml does not load: $loaded"
   [[ -z $DRY_RUN ]] || say "dry run: printing every change instead of making it"
   case $step in
     accounts) step_accounts ;;
     bucket) step_bucket ;;
     secrets) step_secrets ;;
     deploy) step_deploy "${args[0]:-}" ;;
-    redeploy) step_redeploy ;;
+    redeploy) step_redeploy "$finish_rotation" ;;
     schedule) step_schedule ;;
     "") usage; return 2 ;;
     *) die "unknown step $step (accounts, bucket, secrets, deploy, redeploy, schedule)" ;;

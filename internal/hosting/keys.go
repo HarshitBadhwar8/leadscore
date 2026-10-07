@@ -29,8 +29,9 @@ func (f Connector) Open(ctx context.Context) (*Client, error) {
 // It does nothing unless hosting.project is set, and nothing inside Cloud Run,
 // where the service and job get their keys as environment variables from
 // secret references. Only the keys a configured adapter needs are read, as
-// the run account (the impersonated login setup/gcp.sh ends with). Each value
-// is masked in logs (logredact) before it is set, so nothing can log it.
+// the run account (the impersonated login setup/gcp.sh ends with). Each key
+// variable is in logredact.SecretVariables, so masking the environment again
+// right after setting it masks the value before anything can log it.
 //
 // A key that cannot be read is left empty and named in the returned error; the
 // `secrets` check then reports it, so a caller may go on without it. With
@@ -70,14 +71,16 @@ func LoadKeys(ctx context.Context, c *config.Config, getenv func(string) string,
 		}
 		if err := setenv(v, val); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", v, err))
+			continue
 		}
+		logredact.MaskEnvSecrets(getenv)
 	}
 	return errors.Join(errs...)
 }
 
-// ReadKey reads one key secret's latest value, masks it in logs and returns
-// it with surrounding whitespace removed (a value added with `echo` ends in a
-// newline).
+// ReadKey reads one key secret's latest value and returns it with surrounding
+// whitespace removed (a value added with `echo` ends in a newline). The caller
+// sets it as its variable and masks it, or drops it.
 func ReadKey(ctx context.Context, client *Client, project, secret string) (string, error) {
 	data, _, err := client.AccessSecret(ctx, project, secret)
 	if err != nil {
@@ -87,6 +90,5 @@ func ReadKey(ctx context.Context, client *Client, project, secret string) (strin
 	if val == "" {
 		return "", fmt.Errorf("secret %s is empty", secret)
 	}
-	logredact.AddSecretValues(val)
 	return val, nil
 }

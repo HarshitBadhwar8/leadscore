@@ -9,10 +9,8 @@ package logredact
 
 import (
 	"regexp"
-	"slices"
 	"sort"
 	"strings"
-	"sync"
 	"sync/atomic"
 )
 
@@ -64,6 +62,26 @@ func Redact(s string) string {
 	return s
 }
 
+// ContainsSecret reports whether s holds a known secret format (a token
+// pattern Redact masks) or a value MaskEnvSecrets registered. Unlike
+// comparing Redact(s) with s, it ignores emails and home paths, which are
+// personal data but not keys.
+func ContainsSecret(s string) bool {
+	if vals := secretValues.Load(); vals != nil {
+		for _, v := range *vals {
+			if strings.Contains(s, v) {
+				return true
+			}
+		}
+	}
+	for _, p := range tokenPatterns {
+		if p.MatchString(s) {
+			return true
+		}
+	}
+	return false
+}
+
 // SecretVariables are the environment variables whose exact values Redact
 // masks once MaskEnvSecrets has run (RFC 6.13's key variables).
 var SecretVariables = []string{
@@ -76,19 +94,12 @@ var SecretVariables = []string{
 // minSecretLen keeps a tiny or placeholder value from masking ordinary text.
 const minSecretLen = 6
 
-var (
-	secretMu    sync.Mutex
-	envValues   []string // from MaskEnvSecrets
-	extraValues []string // from AddSecretValues
-	// secretValues is envValues and extraValues together, longest first, read
-	// by Redact without a lock.
-	secretValues atomic.Pointer[[]string]
-)
+var secretValues atomic.Pointer[[]string]
 
 // MaskEnvSecrets makes Redact mask the exact values of SecretVariables, read
 // through getenv (os.Getenv at startup). Patterns cannot recognise an Apollo
 // key or a receiver secret, so their values are masked literally. Calling it
-// again replaces the values it set; those added with AddSecretValues stay.
+// again replaces the set.
 func MaskEnvSecrets(getenv func(string) string) {
 	var vals []string
 	for _, name := range SecretVariables {
@@ -96,38 +107,6 @@ func MaskEnvSecrets(getenv func(string) string) {
 			vals = append(vals, v)
 		}
 	}
-	secretMu.Lock()
-	defer secretMu.Unlock()
-	envValues = vals
-	publishSecrets()
-}
-
-// AddSecretValues makes Redact mask these exact values too, on top of the
-// environment's: a key read from Secret Manager rather than the environment
-// (contracts section 3) must be masked before anything can log it. Values
-// shorter than six characters are ignored, as for MaskEnvSecrets.
-func AddSecretValues(vals ...string) {
-	secretMu.Lock()
-	defer secretMu.Unlock()
-	for _, v := range vals {
-		if v = strings.TrimSpace(v); len(v) >= minSecretLen && !slices.Contains(extraValues, v) {
-			extraValues = append(extraValues, v)
-		}
-	}
-	publishSecrets()
-}
-
-// ResetSecretValues forgets every value AddSecretValues added (tests).
-func ResetSecretValues() {
-	secretMu.Lock()
-	defer secretMu.Unlock()
-	extraValues = nil
-	publishSecrets()
-}
-
-// publishSecrets stores the combined set; secretMu is held.
-func publishSecrets() {
-	vals := append(append([]string(nil), envValues...), extraValues...)
 	// Longest first, so a secret that contains another is masked whole.
 	sort.Slice(vals, func(i, j int) bool { return len(vals[i]) > len(vals[j]) })
 	secretValues.Store(&vals)

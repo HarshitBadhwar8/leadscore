@@ -6,10 +6,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/check"
 	"github.com/HarshitBadhwar8/leadscore/internal/config"
 	"github.com/HarshitBadhwar8/leadscore/internal/hosting"
+	"github.com/HarshitBadhwar8/leadscore/internal/logredact"
 	"github.com/HarshitBadhwar8/leadscore/internal/rules"
 )
 
@@ -91,6 +95,9 @@ func runConfigPush(inv *invocation) int {
 	if _, err := rules.Compile(rubricText); err != nil {
 		return inv.fail(fmt.Errorf("the rubric does not compile (leadscore rules check lists every error): %w", err))
 	}
+	if err := keysInBundle(c, configText, rubricText); err != nil {
+		return inv.fail(err)
+	}
 	bundle, err := config.MakeBundle(configText, rubricText)
 	if err != nil {
 		return inv.fail(err)
@@ -112,11 +119,80 @@ func runConfigPush(inv *invocation) int {
 	if err != nil {
 		return inv.fail(err)
 	}
+	// The bundle first, then its version number, which the run job reads
+	// into LEADSCORE_CONFIG_VERSION (contracts section 3).
 	v, err := client.AddSecretVersion(ctx, c.Hosting.Project, hosting.ConfigSecret, bundle)
 	if err != nil {
 		return inv.fail(err)
 	}
+	if _, err := client.AddSecretVersion(ctx, c.Hosting.Project, hosting.ConfigVersionSecret, []byte(v)); err != nil {
+		return inv.fail(fmt.Errorf("uploaded %s version %s, but recording its number in %s failed, so runs would record the wrong version: "+
+			"run `leadscore config push` again (%w)", hosting.ConfigSecret, v, hosting.ConfigVersionSecret, err))
+	}
 	fmt.Fprintf(inv.stdout, "pushed %s and %s as %s version %s; the next run uses them\n",
 		filepath.Base(path), filepath.Base(c.RubricPath), hosting.ConfigSecret, v)
 	return exitOK
+}
+
+// keyName is an adapter-block key that names a credential.
+var keyName = regexp.MustCompile(`(?i)key|token|secret|password`)
+
+// keysInBundle refuses a bundle that carries a key: Secret Manager's
+// leadscore-config is readable by the receiver account and shown in the
+// console, while keys belong in their own secrets (setup/gcp.sh secrets).
+func keysInBundle(c *config.Config, texts ...[]byte) error {
+	fix := "; keys go in Secret Manager with `setup/gcp.sh secrets`, never in leadscore.yml or the rubric"
+	for _, t := range texts {
+		for _, name := range logredact.SecretVariables {
+			if v := strings.TrimSpace(os.Getenv(name)); len(v) >= 6 && strings.Contains(string(t), v) { // as logredact, a tiny value is no key
+				return errors.New("leadscore.yml or the rubric holds the value of " + name + fix)
+			}
+		}
+		if logredact.ContainsSecret(string(t)) {
+			return errors.New("leadscore.yml or the rubric holds what looks like a key or token" + fix)
+		}
+	}
+	blocks := map[string]any{"store": map[string]any(c.Store.Block)}
+	for _, src := range c.Sources {
+		blocks["sources."+src.ID] = map[string]any(src.Block)
+	}
+	if c.Enrich != nil {
+		blocks["enrich"] = map[string]any(c.Enrich.Block)
+	}
+	for typ, b := range c.Sinks {
+		blocks["sinks."+typ] = map[string]any(b)
+	}
+	for where, b := range blocks {
+		if k := credentialKey(b); k != "" {
+			return fmt.Errorf("%s has a key named %q, which looks like a credential%s", where, k, fix)
+		}
+	}
+	return nil
+}
+
+// credentialKey returns the first key, at any depth, whose name matches keyName.
+func credentialKey(v any) string {
+	switch t := v.(type) {
+	case map[string]any:
+		keys := make([]string, 0, len(t))
+		for k := range t {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			if keyName.MatchString(k) {
+				return k
+			}
+			if found := credentialKey(t[k]); found != "" {
+				return found
+			}
+		}
+	case []any:
+		for _, x := range t {
+			if found := credentialKey(x); found != "" {
+				return found
+			}
+		}
+	}
+	return ""
 }
