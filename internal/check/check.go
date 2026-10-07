@@ -11,6 +11,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/config"
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
+	"github.com/HarshitBadhwar8/leadscore/internal/rules"
 )
 
 type Check interface {
@@ -27,6 +28,14 @@ type Env struct {
 	Model  *model.Model // nil when doctor could not load the store
 	Store  api.Backend
 	Events api.EventLog
+	// Columns are the raw input headers the run fetched this time, so the
+	// rubric check counts a column every row leaves empty as loaded. Nil in
+	// doctor, which reads only the model.
+	Columns []string
+	// Rubric is the rubric the run is scoring with, so the rubric check judges
+	// that one even if the file changed since the run read it. Nil in doctor,
+	// which compiles the file.
+	Rubric *rules.Rubric
 }
 
 // Problem is written to Health under Key as given, and cleared when a later run

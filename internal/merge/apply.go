@@ -403,7 +403,7 @@ func (a *applier) inputFact(domain, fact, v string) {
 // A companies_tab fact whose cell was emptied, or whose row is gone, moves to
 // `previous` and leaves `facts`, so a lower origin can fill it again.
 func (a *applier) companiesTab() {
-	table := aliasTable(a.c.Aliases)
+	table := AliasTable(a.c.Aliases)
 	tab := map[string]map[string]string{} // domain -> fact -> value
 	var order []string
 	for _, row := range a.m.Companies {
@@ -416,7 +416,7 @@ func (a *applier) companiesTab() {
 		facts := map[string]string{}
 		for _, h := range cols {
 			v := strings.TrimSpace(row[h])
-			name := resolveHeader(table, h)
+			name := ResolveHeader(table, h)
 			switch {
 			case name == FieldDomain:
 				if domain == "" || api.SquashHeader(h) == "domain" {

@@ -53,7 +53,7 @@ var commands = []*command{
 		flags: map[string]flagKind{"dry-run": boolFlag},
 		args:  "[--dry-run]",
 		help:  "one full run",
-		slice: "S10a",
+		run:   runRun,
 	},
 	{
 		path:    []string{"explain"},
@@ -61,7 +61,7 @@ var commands = []*command{
 		minArgs: 1,
 		maxArgs: 1,
 		help:    "a lead's verdict and reasons",
-		slice:   "S10a",
+		run:     runExplain,
 	},
 	{
 		path:  []string{"doctor"},
@@ -73,7 +73,7 @@ var commands = []*command{
 		flags: map[string]flagKind{"csv": boolFlag},
 		args:  "[--csv]",
 		help:  "print every lead's verdict, or write it as CSV",
-		slice: "S10a",
+		run:   runRanked,
 	},
 	{
 		path:  []string{"serve"},
@@ -83,9 +83,9 @@ var commands = []*command{
 		slice: "S14a",
 	},
 	{
-		path:  []string{"status"},
-		help:  "print the Health table",
-		slice: "S10a",
+		path: []string{"status"},
+		help: "print the Health table",
+		run:  runStatus,
 	},
 	{
 		path:    []string{"set-status"},

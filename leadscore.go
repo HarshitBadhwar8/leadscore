@@ -13,11 +13,12 @@ package leadscore
 
 import (
 	"context"
-	"errors"
 	"os"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/cli"
+	"github.com/HarshitBadhwar8/leadscore/internal/engine"
+	"github.com/HarshitBadhwar8/leadscore/internal/logredact"
 
 	// The built-in stores register here: their packages are internal, so a
 	// custom build cannot import them, and every build gets them this way.
@@ -254,12 +255,14 @@ func RegisterBackend(typ string, f func(Config) (Backend, EventLog, error)) {
 	api.RegisterBackend(typ, f)
 }
 
-// errRunNotBuilt is what Run returns until the run loop exists.
-var errRunNotBuilt = errors.New("leadscore: Run is not built yet (slice S10a)")
-
 // Run executes one run, as `leadscore run` does, with the production hooks.
+// It prints the run's summary line (and, on a dry run, the report) to stdout.
+// The error is non-nil when the run failed; a run that finished unhealthy
+// returns a nil error with Healthy false.
 func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
-	return RunResult{}, errRunNotBuilt
+	// As the CLI does: mask the exact key values before anything can log.
+	logredact.MaskEnvSecrets(os.Getenv)
+	return engine.RunTo(ctx, opts, os.Stdout)
 }
 
 // Main is the CLI entry point.
