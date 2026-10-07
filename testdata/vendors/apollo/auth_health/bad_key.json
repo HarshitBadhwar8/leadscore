@@ -1,0 +1,21 @@
+{
+  "provisional": true,
+  "note": "S0 confirms: 401 (or 403) for a bad key, sent in the X-Api-Key header",
+  "method": "GET",
+  "path": "/v1/auth/health",
+  "query": {},
+  "request_headers": [
+    "Accept",
+    "Cache-Control",
+    "X-Api-Key"
+  ],
+  "request_body": null,
+  "status": 401,
+  "response_headers": {
+    "Content-Type": "application/json; charset=utf-8"
+  },
+  "response_body": {
+    "error": "Invalid access credentials.",
+    "error_code": "INVALID_API_KEY"
+  }
+}
