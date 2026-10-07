@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"strings"
 	"testing"
@@ -297,4 +298,44 @@ func TestUsesProxy(t *testing.T) {
 	if got := hosting.AccountEmail("leadscore-run", "p"); got != "leadscore-run@p.iam.gserviceaccount.com" {
 		t.Errorf("AccountEmail = %s", got)
 	}
+}
+
+// A redirect is never followed: Google's sign-in transport adds the token to
+// every request, so a redirect would carry it to another host. The caller's
+// client is left alone.
+func TestCallDoesNotFollowRedirects(t *testing.T) {
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("followed a redirect to %s", r.URL.Path)
+	}))
+	defer other.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/steal", http.StatusFound)
+	}))
+	defer srv.Close()
+	for _, cfg := range []api.Config{
+		{"base_url": srv.URL, "_http_client": srv.Client()},
+		{"_http_client": &http.Client{Transport: rewrite{srv.URL}}},
+	} {
+		c, err := hosting.Connect(context.Background(), cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := c.AccessSecret(context.Background(), "p", "s"); err == nil || !strings.Contains(err.Error(), "302") {
+			t.Errorf("a redirect answer: %v", err)
+		}
+		if cfg["_http_client"].(*http.Client).CheckRedirect != nil {
+			t.Error("the caller's client was changed")
+		}
+	}
+}
+
+// rewrite sends every request to one test server, as a signed-in client
+// without base_url would send it to Google.
+type rewrite struct{ base string }
+
+func (r rewrite) RoundTrip(req *http.Request) (*http.Response, error) {
+	u, _ := url.Parse(r.base)
+	req = req.Clone(req.Context())
+	req.URL.Scheme, req.URL.Host = u.Scheme, u.Host
+	return http.DefaultTransport.RoundTrip(req)
 }

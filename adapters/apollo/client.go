@@ -16,6 +16,7 @@ import (
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/logredact"
+	"github.com/HarshitBadhwar8/leadscore/internal/vendorhttp"
 )
 
 // The client (contracts sections 6 and 12.1). Everything this package sends
@@ -81,31 +82,18 @@ func NewClientWithKey(cfg api.Config, key string) (*Client, error) {
 	if key == "" {
 		return nil, fmt.Errorf("apollo: %s is not set", KeyVariable)
 	}
-	hc := &http.Client{Timeout: CallTimeout}
-	testClient := false
-	if v, ok := cfg["_http_client"]; ok && v != nil {
-		given, isClient := v.(*http.Client)
-		if !isClient {
-			return nil, errors.New("apollo: `_http_client` must be an *http.Client")
-		}
-		if given != nil { // a typed nil is no client: the default is kept
-			copied := *given // a copy, so the redirect rule below leaves the caller's client alone
-			hc, testClient = &copied, true
-		}
+	base, given, err := vendorhttp.Overrides(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("apollo: %w", err)
 	}
-	// The key header must never follow a redirect to another host: a 3xx is
-	// returned as the reply, which is then a StatusError.
-	hc.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	c := &Client{key: key, baseURL: DefaultBaseURL, http: hc}
-	if v, ok := cfg["base_url"]; ok && v != nil {
-		s, isStr := v.(string)
-		if !isStr || s == "" {
-			return nil, errors.New("apollo: `base_url` must be a URL")
-		}
-		if !testClient {
-			return nil, errors.New("apollo: `base_url` is for tests only and needs a test HTTP client; remove it from leadscore.yml")
-		}
-		c.baseURL = strings.TrimRight(s, "/")
+	if given == nil {
+		given = &http.Client{Timeout: CallTimeout}
+	}
+	// A copy that never follows a redirect, so the key header never leaves
+	// for another host: a 3xx is returned as the reply, a StatusError.
+	c := &Client{key: key, baseURL: DefaultBaseURL, http: vendorhttp.NewClient(given)}
+	if base != "" {
+		c.baseURL = base
 	}
 	return c, nil
 }
@@ -159,11 +147,11 @@ func IsStatus(err error, codes ...int) bool {
 // failure or timeout is returned wrapped, so errors.Is finds
 // context.DeadlineExceeded.
 func (c *Client) Do(ctx context.Context, req Request, out any) error {
-	resp, err := c.attempt(ctx, req)
+	reply, err := c.attempt(ctx, req)
 	if err != nil {
 		return err
 	}
-	return c.finish(resp, out)
+	return c.finish(reply, out)
 }
 
 // DoRetrying is Do, but a 429 is retried: up to three attempts in all,
@@ -174,14 +162,14 @@ func (c *Client) Do(ctx context.Context, req Request, out any) error {
 // than a blip. The wait ends early when ctx is done.
 func (c *Client) DoRetrying(ctx context.Context, req Request, out any) error {
 	for n := 1; ; n++ {
-		resp, err := c.attempt(ctx, req)
+		reply, err := c.attempt(ctx, req)
 		if err != nil {
 			return err
 		}
-		if resp.StatusCode != http.StatusTooManyRequests || n >= retryAttempts {
-			return c.finish(resp, out)
+		if reply.Status != http.StatusTooManyRequests || n >= retryAttempts {
+			return c.finish(reply, out)
 		}
-		wait := retryWait(resp.Header.Get("Retry-After"), n-1)
+		wait := retryWait(reply.Header.Get("Retry-After"), n-1)
 		t := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
@@ -195,14 +183,16 @@ func (c *Client) DoRetrying(ctx context.Context, req Request, out any) error {
 	}
 }
 
-// attempt sends one request under the per-call timeout. The body is read
-// before the timeout's context is cancelled, so the reply is complete.
-func (c *Client) attempt(ctx context.Context, req Request) (*http.Response, error) {
+// attempt sends one request under the per-call timeout, reading the whole
+// reply (vendorhttp.Do). A reply whose body was cut short still counts by its
+// status when the shared rule decides it (429, 401, 403, 5xx), so a refused
+// key is never read as a passing network failure.
+func (c *Client) attempt(ctx context.Context, req Request) (vendorhttp.Reply, error) {
 	var body io.Reader
 	if req.Body != nil {
 		b, err := json.Marshal(req.Body)
 		if err != nil {
-			return nil, fmt.Errorf("apollo: encoding the request: %w", err)
+			return vendorhttp.Reply{}, fmt.Errorf("apollo: encoding the request: %w", err)
 		}
 		body = bytes.NewReader(b)
 	}
@@ -210,11 +200,9 @@ func (c *Client) attempt(ctx context.Context, req Request) (*http.Response, erro
 	if len(req.Query) > 0 {
 		u += "?" + req.Query.Encode()
 	}
-	ctx, cancel := context.WithTimeout(ctx, CallTimeout)
-	defer cancel()
 	hr, err := http.NewRequestWithContext(ctx, req.Method, u, body)
 	if err != nil {
-		return nil, fmt.Errorf("apollo: building the request: %w", err)
+		return vendorhttp.Reply{}, fmt.Errorf("apollo: building the request: %w", err)
 	}
 	hr.Header.Set("X-Api-Key", c.key) // S0 confirms: the key goes in this header
 	hr.Header.Set("Accept", "application/json")
@@ -222,38 +210,21 @@ func (c *Client) attempt(ctx context.Context, req Request) (*http.Response, erro
 	if body != nil {
 		hr.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := c.http.Do(hr) //nolint:gosec // the URL is the configured base plus a fixed path
-	if err != nil {
-		// A *url.Error's text holds the whole URL, query included, and a
-		// query may carry an email; report only its operation and cause.
-		var ue *url.Error
-		if errors.As(err, &ue) {
-			err = fmt.Errorf("%s: %w", ue.Op, ue.Err)
-		}
-		return nil, fmt.Errorf("apollo: %s %s: %w", req.Method, req.Path, err)
+	reply, err := vendorhttp.Do(c.http, hr, CallTimeout, maxReplyBytes)
+	if err != nil && vendorhttp.Class(reply.Status) == nil {
+		return vendorhttp.Reply{}, fmt.Errorf("apollo: %s %s: %w", req.Method, req.Path, err)
 	}
-	// Read the whole reply now, while the attempt's context is live.
-	raw, rerr := io.ReadAll(io.LimitReader(resp.Body, maxReplyBytes+1))
-	resp.Body.Close()
-	if rerr != nil {
-		return nil, fmt.Errorf("apollo: %s %s: reading the reply: %w", req.Method, req.Path, rerr)
-	}
-	if len(raw) > maxReplyBytes {
-		return nil, fmt.Errorf("apollo: %s %s: the reply is over %d bytes", req.Method, req.Path, maxReplyBytes)
-	}
-	resp.Body = io.NopCloser(bytes.NewReader(raw))
-	return resp, nil
+	return reply, nil
 }
 
 // finish turns a reply into the call's result.
-func (c *Client) finish(resp *http.Response, out any) error {
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body) // already in memory
+func (c *Client) finish(reply vendorhttp.Reply, out any) error {
+	raw := reply.Body
 	switch {
-	case resp.StatusCode == http.StatusTooManyRequests:
+	case reply.Status == http.StatusTooManyRequests:
 		return fmt.Errorf("apollo: %w (429)", api.ErrRateLimited)
-	case resp.StatusCode < 200 || resp.StatusCode > 299:
-		return &StatusError{Status: resp.StatusCode, Detail: logredact.VendorErrorDetail(raw), body: raw}
+	case reply.Status < 200 || reply.Status > 299:
+		return &StatusError{Status: reply.Status, Detail: logredact.VendorErrorDetail(raw), body: raw}
 	}
 	if out == nil || len(bytes.TrimSpace(raw)) == 0 {
 		return nil
@@ -286,7 +257,8 @@ var ErrKeyRefused = errors.New("apollo: the key does not sign in (is_logged_in i
 // or ErrKeyRefused. S0 confirms which of 401 and 403 Apollo uses for a bad
 // key; both count.
 func KeyRefused(err error) bool {
-	return errors.Is(err, ErrKeyRefused) || IsStatus(err, http.StatusUnauthorized, http.StatusForbidden)
+	var se *StatusError
+	return errors.Is(err, ErrKeyRefused) || errors.As(err, &se) && vendorhttp.KeyRefused(se.Status)
 }
 
 // AuthHealth calls Apollo's free auth-health endpoint and reports whether the
