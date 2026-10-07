@@ -24,7 +24,7 @@ func init() {
 
 // storeCheck is the `store` check (contracts section 10). S4 owns the schema
 // version and SQLite cases; S10a the Cloud Run case; S5 adds the Sheets cases
-// and S10b the ledger case.
+// and S10b the ledger case (ledger_shrank).
 type storeCheck struct {
 	getenv      func(string) string
 	inContainer func() bool
@@ -65,6 +65,14 @@ func (c storeCheck) Run(ctx context.Context, env Env) []Problem {
 			out = append(out, Problem{Key: "store:bad_schema_version",
 				Message: "State.schema_version is " + strconv.Quote(v) + ", not a major.minor version",
 				Fix:     "restore the State row from a backup, or set it to the version that wrote the store"})
+		}
+	}
+	// The ledger case (S10b): a ledger with fewer rows than the highest
+	// count ever committed lost rows, so it cannot say who was already
+	// contacted; the run pushes nothing until they are restored.
+	if env.Model != nil {
+		if saved, err := strconv.Atoi(state["ledger_rows"]); err == nil && len(env.Model.Pushes) < saved {
+			out = append(out, LedgerShrank(len(env.Model.Pushes), saved))
 		}
 	}
 	if env.Config != nil && c.getenv != nil {

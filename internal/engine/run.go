@@ -427,6 +427,7 @@ func (x *exec) resetAttempt() {
 	r := x.run
 	r.NoPush, r.SourceEvents, r.EventsShrank = "", nil, false
 	r.Input, r.Result = rules.Input{}, rules.Result{}
+	r.lv, r.pushing = nil, nil
 	x.columns, x.merged, x.backlog, x.cursors = nil, 0, 0, nil
 	x.scored, x.cutShort = false, false
 	x.oldRanked, x.tierLogs = nil, nil
@@ -456,7 +457,7 @@ func (x *exec) prepare() {
 		if l.Sink == "export" {
 			continue // export lanes are written by the engine, not a sink
 		}
-		if _, ok := api.SinkFactory(l.Sink); !ok {
+		if _, ok := sinkFactory(l.Sink); !ok {
 			x.problem("lane_sink_unregistered:"+l.ID,
 				fmt.Sprintf("lane %s pushes to %s, but this build has no %q sink, so the lane cannot push", l.ID, l.Push, l.Sink),
 				fmt.Sprintf("use a build that includes the %s sink, or change the lane's push", l.Sink), false)
@@ -566,7 +567,7 @@ func (x *exec) commit(name string, writes []api.TableWrite, phase1 bool) error {
 	if errors.Is(err, api.ErrCommittedWithProblems) {
 		// Every write landed; only a people tab needs a person. Resending
 		// would fail (keys already appended), so take it as committed.
-		x.problem("people_tab_check", err.Error(), "open the tab the message names and check its rows", true)
+		x.problem("people_tab_check", errText(err), "open the tab the message names and check its rows", true)
 		err = nil
 	}
 	if err != nil && !x.lost && r.Ctx.Err() == nil && !(phase1 && errors.Is(err, api.ErrTooLarge)) {

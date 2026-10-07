@@ -14,6 +14,7 @@ import (
 
 	"github.com/HarshitBadhwar8/leadscore"
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
+	fakesink "github.com/HarshitBadhwar8/leadscore/internal/fakes/sink"
 	"github.com/HarshitBadhwar8/leadscore/sinktest"
 	"github.com/HarshitBadhwar8/leadscore/storetest"
 )
@@ -252,10 +253,14 @@ func TestConformanceSuitesAreDeclared(t *testing.T) {
 	// storetest is filled (S4) and runs against real stores; here only its
 	// signature is held, since the stubs store nothing.
 	var _ func(*testing.T, func(*testing.T) (leadscore.Backend, leadscore.EventLog)) = storetest.Run
+	// sinktest is filled (S10b): it runs here against the fake vendor through
+	// the root's names, as an adopter's sink package would call it.
 	t.Run("sinktest", func(t *testing.T) {
+		v := fakesink.New(map[string][]string{"sequence/x": {"contact", "enroll"}})
 		sinktest.Run(t, sinktest.Harness{
-			New:   func(leadscore.Config) (leadscore.Sink, error) { return stubSink{}, nil },
-			Dests: []string{"sequence/x"},
+			New:    func(leadscore.Config) (leadscore.Sink, error) { return v.Sink(), nil },
+			Vendor: v,
+			Dests:  []string{"sequence/x"},
 		})
 	})
 	_ = []sinktest.FailKind{sinktest.RateLimited, sinktest.Transient, sinktest.Refused, sinktest.Other}
