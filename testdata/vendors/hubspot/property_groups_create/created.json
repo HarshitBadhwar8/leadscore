@@ -1,0 +1,25 @@
+{
+  "method": "POST",
+  "path": "/crm/v3/properties/contacts/groups",
+  "query": "",
+  "request_headers": [
+    "Authorization",
+    "Content-Type"
+  ],
+  "request_body": {
+    "name": "leadscore",
+    "label": "leadscore",
+    "displayOrder": -1
+  },
+  "status": 201,
+  "response_headers": {
+    "Content-Type": "application/json;charset=utf-8"
+  },
+  "response_body": {
+    "name": "leadscore",
+    "label": "leadscore",
+    "displayOrder": -1,
+    "archived": false
+  },
+  "provisional": true
+}

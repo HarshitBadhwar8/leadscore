@@ -1,0 +1,23 @@
+{
+  "method": "POST",
+  "path": "/crm/v3/objects/deals",
+  "query": "",
+  "request_headers": [
+    "Authorization",
+    "Content-Type"
+  ],
+  "request_body": {
+    "properties": {}
+  },
+  "status": 503,
+  "response_headers": {
+    "Content-Type": "application/json;charset=utf-8"
+  },
+  "response_body": {
+    "status": "error",
+    "message": "Service unavailable",
+    "correlationId": "0b5f0c1e-3c2a-4b7e-9f00-000000000001",
+    "category": "SERVICE_UNAVAILABLE"
+  },
+  "provisional": true
+}

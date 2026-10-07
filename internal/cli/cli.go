@@ -125,9 +125,9 @@ var commands = []*command{
 		slice: "S14b",
 	},
 	{
-		path:  []string{"setup", "hubspot"},
-		help:  "create custom properties, resolve pipeline and stage",
-		slice: "S11",
+		path: []string{"setup", "hubspot"},
+		help: "create custom properties, resolve pipeline and stage",
+		run:  runSetupHubSpot,
 	},
 	{
 		path:    []string{"rules", "check"},

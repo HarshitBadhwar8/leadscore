@@ -1,0 +1,45 @@
+{
+  "method": "POST",
+  "path": "/crm/v4/associations/deals/companies/batch/read",
+  "query": "",
+  "request_headers": [
+    "Authorization",
+    "Content-Type"
+  ],
+  "request_body": {
+    "inputs": [
+      {
+        "id": "201"
+      }
+    ]
+  },
+  "status": 200,
+  "response_headers": {
+    "Content-Type": "application/json;charset=utf-8"
+  },
+  "response_body": {
+    "status": "COMPLETE",
+    "results": [
+      {
+        "from": {
+          "id": "201"
+        },
+        "to": [
+          {
+            "toObjectId": 301,
+            "associationTypes": [
+              {
+                "category": "HUBSPOT_DEFINED",
+                "typeId": 5,
+                "label": null
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "startedAt": "2026-01-01T00:00:00.000Z",
+    "completedAt": "2026-01-01T00:00:00.100Z"
+  },
+  "provisional": true
+}

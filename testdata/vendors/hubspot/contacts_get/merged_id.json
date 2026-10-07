@@ -1,0 +1,25 @@
+{
+  "method": "GET",
+  "path": "/crm/v3/objects/contacts/101",
+  "query": "properties=email,hs_email_optout",
+  "request_headers": [
+    "Authorization"
+  ],
+  "request_body": null,
+  "status": 200,
+  "response_headers": {
+    "Content-Type": "application/json;charset=utf-8"
+  },
+  "response_body": {
+    "id": "102",
+    "properties": {
+      "hs_object_id": "102",
+      "email": "ana@example.com",
+      "hs_email_optout": "true"
+    },
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "updatedAt": "2026-01-01T00:00:00.000Z",
+    "archived": false
+  },
+  "provisional": true
+}

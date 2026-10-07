@@ -87,7 +87,9 @@ func lookups(r *Run, v *view, provisional map[api.LeadID]bool, st *pushRun) erro
 		}
 		refs := make([]api.LeadRef, 0, len(ids))
 		for _, id := range ids {
-			refs = append(refs, v.leadRef(id))
+			ref := v.leadRef(id)
+			ref.Done = v.doneSteps(id, typ)
+			refs = append(refs, ref)
 		}
 		evs, bad, err := lookupOne(r.PushCtx, typ, r.Config.Sinks[typ], refs)
 		if err != nil {
@@ -107,7 +109,9 @@ func lookups(r *Run, v *view, provisional map[api.LeadID]bool, st *pushRun) erro
 			r.Problem("lookup_failed:"+typ, fmt.Sprintf("the %s lookup failed for %d lead(s); they wait for the next run", typ, len(bad)),
 				"see the Log's lookup_failed lines; the next run looks them up again", true)
 		}
-		applyLookupEvents(r, typ, evs, bad)
+		for _, id := range applyLookupEvents(r, typ, evs, bad) {
+			failed[id] = true
+		}
 	}
 	for id := range provisional {
 		if !failed[id] && (pushing || len(types) == 0) {
@@ -214,15 +218,21 @@ func (v *view) leadRef(id api.LeadID) api.LeadRef {
 //
 // A lookup that failed for some leads may have read their companies only in
 // part: its deal_lost for a domain with a failed lead is dropped, so a
-// company is never released on an incomplete answer.
-func applyLookupEvents(r *Run, typ string, evs []api.Event, failed map[api.LeadID]error) {
+// company is never released on an incomplete answer. A deal_lost for a
+// company whose deal step was called less than dealSearchLag ago with no
+// deal id back is dropped too, since that deal may not show in search yet;
+// the company's live leads are returned, to wait as if their lookup failed.
+func applyLookupEvents(r *Run, typ string, evs []api.Event, failed map[api.LeadID]error) []api.LeadID {
 	origin := events.LookupOrigin(typ)
+	v := r.view()
 	unread := map[string]bool{}
 	for id := range failed {
 		if d := r.Model.People[model.Key(merge.Live(r.Model, id))].Fields[model.CompanyDomainField].Value; d != "" {
 			unread[d] = true
 		}
 	}
+	var wait []api.LeadID
+	held := map[string]bool{}
 	for _, e := range evs {
 		e = merge.NormalizeEventKeys(e)
 		e.Kind = strings.ToLower(e.Kind)
@@ -243,7 +253,21 @@ func applyLookupEvents(r *Run, typ string, evs []api.Event, failed map[api.LeadI
 			r.log("info", "event_ignored", "", fmt.Sprintf("the %s lookup failed for a lead at a company it reported without a deal; the company stays held until a full lookup", typ))
 			continue
 		}
+		if e.Kind == "deal_lost" && e.Domain != "" && v.recentDealCall(e.Domain, r.Now()) {
+			if !held[e.Domain] {
+				held[e.Domain] = true
+				for _, id := range v.companyLeads(e.Domain) {
+					if r.Model.People[model.Key(id)].MergedInto == "" {
+						wait = append(wait, id)
+						r.log("info", logLookupFailed, id, fmt.Sprintf("the %s lookup found no open deal at this lead's company, but a deal step there was called "+
+							"less than %s ago and its deal may not show in search yet: the company stays held and the lead waits", typ, dealSearchLag))
+					}
+				}
+			}
+			continue
+		}
 		lead, _ := merge.FindPerson(r.Model, e)
 		events.Apply(r.Model, lead, e, r.Config.ReplyLabels)
 	}
+	return wait
 }

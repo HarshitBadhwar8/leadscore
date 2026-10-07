@@ -1,0 +1,62 @@
+{
+  "method": "POST",
+  "path": "/crm/v4/associations/contacts/deals/batch/read",
+  "query": "",
+  "request_headers": [
+    "Authorization",
+    "Content-Type"
+  ],
+  "request_body": {
+    "inputs": [
+      {
+        "id": "101"
+      },
+      {
+        "id": "102"
+      }
+    ]
+  },
+  "status": 207,
+  "response_headers": {
+    "Content-Type": "application/json;charset=utf-8"
+  },
+  "response_body": {
+    "status": "COMPLETE",
+    "results": [
+      {
+        "from": {
+          "id": "101"
+        },
+        "to": [
+          {
+            "toObjectId": 201,
+            "associationTypes": [
+              {
+                "category": "HUBSPOT_DEFINED",
+                "typeId": 4,
+                "label": null
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "numErrors": 1,
+    "errors": [
+      {
+        "status": "error",
+        "category": "NO_ASSOCIATIONS_FOUND",
+        "subCategory": "crm.associations.NO_ASSOCIATIONS_FOUND",
+        "message": "No deal is associated with contact 102.",
+        "context": {
+          "fromObjectId": [
+            "102"
+          ]
+        }
+      }
+    ],
+    "startedAt": "2026-01-01T00:00:00.000Z",
+    "completedAt": "2026-01-01T00:00:00.100Z"
+  },
+  "provisional": true
+}
