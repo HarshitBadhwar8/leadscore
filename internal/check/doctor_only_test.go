@@ -108,10 +108,16 @@ func TestRubricVersionCheck(t *testing.T) {
 
 func TestReceiversCheck(t *testing.T) {
 	ck := doctorOnly(t, "receivers")
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer elsewhere.Close()
 	status := http.StatusOK
 	var path string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path = r.URL.Path
+		if status == http.StatusMovedPermanently {
+			http.Redirect(w, r, elsewhere.URL+"/healthz", status)
+			return
+		}
 		w.WriteHeader(status)
 	}))
 	defer srv.Close()
@@ -134,6 +140,7 @@ func TestReceiversCheck(t *testing.T) {
 			"receivers:unreachable"},
 		{"reachable but unhealthy", cfg("receiver: { public_url: " + srv.URL + " }\n"), 503, "receivers:unhealthy(warning)"},
 		{"something else answers", cfg("receiver: { public_url: " + srv.URL + " }\n"), 404, "receivers:unreachable"},
+		{"a redirect is not followed", cfg("receiver: { public_url: " + srv.URL + " }\n"), 301, "receivers:unreachable"},
 		{"nothing answers", cfg("receiver: { public_url: " + closed.URL + " }\n"), 200, "receivers:unreachable"},
 		{"not a web address", cfg("receiver: { public_url: \"leads.example.com\" }\n"), 200, "receivers:public_url"},
 	}
@@ -229,8 +236,13 @@ func TestPushesEnabledCheck(t *testing.T) {
 			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
 		}
 	}
-	hosted := loadIn(t, "version: 1\nstore: { type: sqlite }\nhosting: { project: p }\n", doctorRubric)
-	if ps := ck.Run(context.Background(), Env{Config: hosted}); len(ps) != 1 || !strings.Contains(ps[0].Fix, "config push") {
+	hosted := loadIn(t, "version: 1\nstore: { type: sqlite }\nhosting: { project: p }\nsinks: { hubspot: {} }\n", doctorRubric)
+	if ps := ck.Run(context.Background(), Env{Config: hosted}); len(ps) != 1 || !strings.Contains(ps[0].Fix, "config push") ||
+		strings.HasPrefix(ps[0].Fix, "nothing to do") {
 		t.Errorf("hosted fix: %+v", ps)
+	}
+	csvOnly := loadIn(t, "version: 1\nstore: { type: sqlite }\n", doctorRubric)
+	if ps := ck.Run(context.Background(), Env{Config: csvOnly}); len(ps) != 1 || !strings.HasPrefix(ps[0].Fix, "nothing to do while no sinks block") {
+		t.Errorf("a CSV-only install is told to turn pushes on: %+v", ps)
 	}
 }

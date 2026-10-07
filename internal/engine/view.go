@@ -45,7 +45,8 @@ func writeView(r *Run) error {
 	if err := copyToView(r, id); err != nil {
 		r.Problem(viewProblem, "the Sheet view "+id+" was not updated: "+errText(err),
 			"see the message; if the view cannot be opened, share it with the service account as an editor "+
-				"(`leadscore setup sheet --repair`); the next run tries again", true)
+				"(`leadscore setup sheet --repair`); if it was deleted, remove store.view_spreadsheet from leadscore.yml "+
+				"and run `leadscore setup sheet --view` to make a new one; the next run tries again", true)
 	}
 	return nil
 }
@@ -56,6 +57,18 @@ func copyToView(r *Run, id string) error {
 	svc, err := sheets.Connect(ctx, sheets.ViewConfig(r.Config.Store.Block, id))
 	if err != nil {
 		return err
+	}
+	// A spreadsheet with a State tab is a Sheets store, not a view: never
+	// overwrite a store's Ranked and Health with this one's.
+	info, err := sheets.Inspect(ctx, svc, id)
+	if err != nil {
+		return err
+	}
+	for _, tab := range info.Tabs {
+		if tab.Name == model.TableState {
+			return fmt.Errorf("spreadsheet %s has a State tab, so it is a Sheets store, not a view; refusing to write to it "+
+				"(set store.view_spreadsheet to the view `leadscore setup sheet --view` made)", id)
+		}
 	}
 	view := sheets.New(svc, id, "")
 	tables := []string{model.TableRanked}

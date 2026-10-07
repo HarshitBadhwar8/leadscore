@@ -19,14 +19,18 @@ import (
 // their problem keys never reach Health.
 func init() {
 	Register(rubricVersion{})
-	Register(receivers{client: &http.Client{Timeout: 10 * time.Second}})
+	// Redirects are not followed: Apollo posts to public_url itself, so an
+	// address that answers with a redirect is not one Apollo can deliver to.
+	Register(receivers{client: &http.Client{Timeout: 10 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}})
 	Register(leaseCheck{})
 	Register(pushesEnabled{})
 }
 
-// envRubric is the rubric a check judges: the run's, else the local file
-// compiled; nil when it does not compile (the rubric check says why).
-func envRubric(env Env) *rules.Rubric {
+// RubricFor is the rubric a check judges: the run's (Env.Rubric), else, in
+// doctor, the local file compiled (contracts section 12.4); nil when it does
+// not compile (the rubric check says why).
+func RubricFor(env Env) *rules.Rubric {
 	if env.Rubric != nil {
 		return env.Rubric
 	}
@@ -57,7 +61,7 @@ func (rubricVersion) Run(_ context.Context, env Env) []Problem {
 		return nil
 	}
 	stored := env.Model.Health[model.K("result", "rubric_version")].Value
-	r := envRubric(env)
+	r := RubricFor(env)
 	if stored == "" || r == nil || stored == r.Version() {
 		return nil
 	}
@@ -186,11 +190,15 @@ func (pushesEnabled) Run(_ context.Context, env Env) []Problem {
 		if c.Hosted() {
 			fix += " and `leadscore config push`"
 		}
+		if len(c.Sinks) == 0 {
+			// A CSV-only install has nothing to push: no advice to turn it on.
+			fix = "nothing to do while no sinks block is set up (a CSV-only install); once one is, " + fix
+		}
 		out = append(out, Problem{Key: "pushes-enabled:off", Warning: true,
 			Message: "pushes_enabled is false: runs score leads and keep the export lists, and push nothing",
 			Fix:     fix})
 	}
-	if r := envRubric(env); r != nil {
+	if r := RubricFor(env); r != nil {
 		for _, l := range r.Lanes() {
 			if l.Kind != "cold" {
 				continue

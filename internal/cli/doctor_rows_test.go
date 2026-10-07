@@ -23,6 +23,9 @@ type doctorRow struct {
 const coldApolloRubric = doctorRubric + `  - { id: intro, kind: cold, priority: 5, when: { field: receiver_only, eq: false }, push: "apollo:sequence/Intro" }
 `
 
+const dealsRubric = doctorRubric + `  - { id: warm, kind: non-cold, priority: 9, when: { field: status, eq: replied_positive }, push: "hubspot:deals" }
+`
+
 // ran is a CSV-only install after one run, then changed by f.
 func ran(t *testing.T, extra string, f func(m *model.Model)) string {
 	t.Helper()
@@ -65,9 +68,11 @@ var doctorRows = map[string]doctorRow{
 		return doctorInstallStore(t, "view_spreadsheet: \""+id+"\", base_url: "+url, "", doctorRubric)
 	}, "FAIL  sheets: sheets:timezone:"},
 	"hubspot": {func(t *testing.T) string {
-		t.Setenv("HUBSPOT_TOKEN", "pat-test")
-		return doctorInstall(t, "sinks: { hubspot: { pipeline: 123 } }\n", doctorRubric)
-	}, "FAIL  hubspot: hubspot:config:"},
+		// doctor compiles the rubric file for the check (check.RubricFor), so
+		// it sees the deals lane and the missing pipeline.
+		_, url := fakeHubSpot(t)
+		return doctorInstall(t, "sinks: { hubspot: { base_url: \""+url+"\" } }\n", dealsRubric)
+	}, "FAIL  hubspot: hubspot:pipeline:"},
 	"apollo-key": {func(t *testing.T) string {
 		t.Setenv("APOLLO_API_KEY", "test-key")
 		return doctorInstall(t, "enrich: { type: apollo, base_url: \"http://127.0.0.1:1\" }\n", doctorRubric)

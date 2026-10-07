@@ -46,7 +46,17 @@ func (rubric) Run(_ context.Context, env Env) []Problem {
 	if env.Model == nil {
 		return nil
 	}
-	return UnknownFields(r, env.Model, env.Columns)
+	out := UnknownFields(r, env.Model, env.Columns)
+	if env.Doctor {
+		// Doctor fetches no input rows, so a column whose every cell is
+		// empty (stored nowhere) looks unknown here; the run judges it with
+		// the headers it fetched.
+		for i := range out {
+			out[i].Warning = true
+			out[i].Message += " (doctor reads no input headers, so this may be a column whose every cell is empty; the next run decides)"
+		}
+	}
+	return out
 }
 
 // UnknownFieldKind is the Health key kind of a rubric field no input carries:

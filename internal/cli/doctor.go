@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"strings"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/hosting"
 	"github.com/HarshitBadhwar8/leadscore/internal/logredact"
 	"github.com/HarshitBadhwar8/leadscore/internal/store/codec"
+	"github.com/HarshitBadhwar8/leadscore/internal/store/sqlite"
 )
 
 // DoctorOrder is contracts section 10's table, in its order: doctor prints
@@ -30,6 +32,9 @@ var DoctorOrder = []string{
 var modelChecks = map[string]bool{
 	"rubric-version": true, "receiver-silence": true, "pushes": true, "overrides": true, "duplicates": true,
 }
+
+// storeChecks need the open store: without it doctor prints them as skipped.
+var storeChecks = map[string]bool{"lease": true}
 
 // runDoctor is `leadscore doctor` (contracts section 10): one line per check,
 // each problem with its suggested fix. It exits 0 when no check fails
@@ -53,7 +58,7 @@ func runDoctor(inv *invocation) int {
 	}
 	addTestClients(c)
 
-	env := check.Env{Config: c}
+	env := check.Env{Config: c, Doctor: true}
 	extra := map[string][]check.Problem{} // problems doctor itself finds, shown under a check
 	skipped := ""                         // why the model checks did not run
 	if c.Store.Type == "sqlite" && !fileExists(c.Store.Path) {
@@ -66,7 +71,7 @@ func runDoctor(inv *invocation) int {
 		extra["store"] = append(extra["store"], check.Problem{Key: "store:unregistered",
 			Message: fmt.Sprintf("store type %q is not registered in this build", c.Store.Type),
 			Fix:     "use sqlite or sheets, or a build that registers the store"})
-	} else if b, ev, err := open(c.Store.Block); err != nil {
+	} else if b, ev, err := openReadOnly(c, open); err != nil {
 		skipped = "the store did not open"
 		extra["store"] = append(extra["store"], check.Problem{Key: "store:open",
 			Message: "the store cannot be opened: " + err.Error(), Fix: "check the store block in leadscore.yml and its access"})
@@ -93,7 +98,7 @@ func runDoctor(inv *invocation) int {
 	for _, ck := range doctorChecks() {
 		name := ck.Name()
 		probs := extra[name]
-		if env.Model == nil && modelChecks[name] {
+		if (env.Model == nil && modelChecks[name]) || (env.Store == nil && storeChecks[name]) {
 			fmt.Fprintf(w, "skip  %s (%s)\n", name, skipped)
 			continue
 		}
@@ -122,6 +127,20 @@ func runDoctor(inv *invocation) int {
 		return exitFail
 	}
 	return exitOK
+}
+
+// openReadOnly opens the store for doctor: the SQLite file in SQLite's
+// read-only mode (no chmod, no journal change, no WAL folded in), any other
+// store through its factory, whose opening reads only.
+func openReadOnly(c *config.Config, open func(api.Config) (api.Backend, api.EventLog, error)) (api.Backend, api.EventLog, error) {
+	if c.Store.Type == "sqlite" {
+		s, err := sqlite.OpenReadOnly(c.Store.Path)
+		if err != nil {
+			return nil, nil, err
+		}
+		return s, s, nil
+	}
+	return open(c.Store.Block)
 }
 
 // doctorChecks are every registered check, section 10's in its order first.
@@ -161,20 +180,20 @@ func fileExists(path string) bool {
 	return !errors.Is(err, fs.ErrNotExist)
 }
 
-// addTestClients gives the Google blocks the test HTTP client when a test
-// points them at a fake with base_url; outside tests testGoogleClient is nil,
-// so a base_url in a real file is still refused.
+// addTestClients gives the Google and HubSpot blocks the test HTTP clients
+// when a test points them at a fake with base_url; outside tests the clients
+// are nil, so a base_url in a real file is still refused.
 func addTestClients(c *config.Config) {
-	if testGoogleClient == nil {
-		return
-	}
-	set := func(b api.Config) {
-		if base, _ := b["base_url"].(string); base != "" {
-			b["_http_client"] = testGoogleClient
+	set := func(b api.Config, client *http.Client) {
+		if base, _ := b["base_url"].(string); base != "" && client != nil {
+			b["_http_client"] = client
 		}
 	}
-	set(c.Store.Block)
+	set(c.Store.Block, testGoogleClient)
 	for _, s := range c.Sources {
-		set(s.Block)
+		set(s.Block, testGoogleClient)
+	}
+	if b, ok := c.Sinks["hubspot"]; ok && b != nil {
+		set(b, testHubSpotClient)
 	}
 }

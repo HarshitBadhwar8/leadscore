@@ -12,6 +12,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -95,6 +96,31 @@ func Open(path string) (*Store, error) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("sqlite store %s: %w", path, err)
+	}
+	return &Store{db: db, now: time.Now}, nil
+}
+
+// OpenReadOnly opens an existing database file for reading only, as doctor
+// does: SQLite's read-only mode, no chmod and no journal pragma, so it never
+// creates the file, changes its mode, switches its journal, folds a leftover
+// WAL into it or rolls back a hot journal. A file that needs one of those
+// fails to open (or to read) instead of being changed.
+func OpenReadOnly(path string) (*Store, error) {
+	if path == "" || strings.ContainsAny(path, "?#") || strings.HasPrefix(strings.ToLower(path), "file:") {
+		return nil, fmt.Errorf("sqlite store: %q is not a plain file path (no \"?\", no \"#\", no \"file:\")", path)
+	}
+	if _, err := os.Stat(path); err != nil {
+		return nil, fmt.Errorf("sqlite store %s: %w", path, err)
+	}
+	u := url.URL{Scheme: "file", Path: path}
+	dsn := u.String() + "?mode=ro" + fmt.Sprintf("&_pragma=busy_timeout(%d)", busyTimeout.Milliseconds())
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite store %s: %w", path, err)
+	}
+	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("sqlite store %s: %w", path, err)
 	}

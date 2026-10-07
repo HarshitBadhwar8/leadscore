@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -119,7 +120,7 @@ func TestDoctorCSVOnlyIsGreen(t *testing.T) {
 		t.Fatalf("doctor: %d\n%s%s", code, out, errb)
 	}
 	for _, want := range []string{"ok    rubric\n", "ok    store\n", "warn  pushes-enabled: pushes-enabled:off:",
-		"      fix: review `leadscore run --dry-run`", "warn  receivers: receivers:no_public_url:", "doctor: 0 failed, 2 warnings,"} {
+		"      fix: nothing to do while no sinks block is set up", "warn  receivers: receivers:no_public_url:", "doctor: 0 failed, 2 warnings,"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("doctor output lacks %q:\n%s", want, out)
 		}
@@ -248,4 +249,161 @@ func healthyReceiver(t *testing.T) string {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	t.Cleanup(srv.Close)
 	return srv.URL
+}
+
+// Every DoctorOrder name has a doctorRows test (the root test checks the
+// contracts table; this one checks the order list doctor prints from).
+func TestEveryDoctorCheckHasARowTest(t *testing.T) {
+	for _, name := range DoctorOrder {
+		if _, ok := doctorRows[name]; !ok {
+			t.Errorf("doctorRows has no test for %s", name)
+		}
+	}
+	if len(doctorRows) != len(DoctorOrder) {
+		t.Errorf("doctorRows has %d entries, DoctorOrder %d", len(doctorRows), len(DoctorOrder))
+	}
+}
+
+// fileBytes reads every file of the store: the database and its -wal and
+// -journal companions, and the -shm index's mode, with their modes.
+func fileBytes(t *testing.T, db string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, suffix := range []string{"", "-wal", "-shm", "-journal"} {
+		info, err := os.Stat(db + suffix)
+		if os.IsNotExist(err) {
+			continue
+		}
+		data, err := os.ReadFile(db + suffix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if suffix == "-shm" {
+			// The WAL index is shared memory every reader updates; it holds
+			// no data, so only its mode counts.
+			data = nil
+		}
+		out[suffix] = info.Mode().String() + ":" + string(data)
+	}
+	return out
+}
+
+// copyStore copies the store's files into the folder of another install's
+// config, as a backup taken while a process held them would be.
+func copyStore(t *testing.T, from, toCfg string) string {
+	t.Helper()
+	to := filepath.Join(filepath.Dir(toCfg), "store.db")
+	for _, suffix := range []string{"", "-wal", "-shm", "-journal"} {
+		data, err := os.ReadFile(from + suffix)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(to+suffix, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return to
+}
+
+// doctor opens SQLite read-only: a leftover WAL is not folded into the file,
+// a hot rollback journal is not rolled back, and no file changes its mode.
+func TestDoctorLeavesSQLiteFilesAlone(t *testing.T) {
+	doctorEnv(t)
+	src := doctorInstall(t, "", doctorRubric)
+	if code, out, errb := cli("run", "--config", src); code != 0 {
+		t.Fatalf("run: %d %s %s", code, out, errb)
+	}
+	srcDB := filepath.Join(filepath.Dir(src), "store.db")
+
+	t.Run("leftover WAL", func(t *testing.T) {
+		db, err := sql.Open("sqlite", srcDB+"?_pragma=journal_mode(WAL)&_pragma=wal_autocheckpoint(0)")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		if _, err := db.Exec(`CREATE TABLE crash_left_this (x text); INSERT INTO crash_left_this VALUES ('in the wal')`); err != nil {
+			t.Fatal(err)
+		}
+		cfg := doctorInstall(t, "", doctorRubric)
+		dst := copyStore(t, srcDB, cfg) // the process "crashed": its WAL is left
+		if _, ok := fileBytes(t, dst)["-wal"]; !ok {
+			t.Fatal("setup: no WAL left")
+		}
+		before := fileBytes(t, dst)
+		code, out, _ := cli("doctor", "--config", cfg)
+		if code != exitOK || !strings.Contains(out, "ok    store\n") {
+			t.Errorf("doctor on a store with a WAL: %d\n%s", code, out)
+		}
+		after := fileBytes(t, dst)
+		for k := range before {
+			if before[k] != after[k] {
+				t.Errorf("doctor changed store.db%s (%d -> %d bytes)", k, len(before[k]), len(after[k]))
+			}
+		}
+	})
+
+	t.Run("hot rollback journal", func(t *testing.T) {
+		db, err := sql.Open("sqlite", srcDB+"?_pragma=journal_mode(DELETE)&_pragma=cache_size(1)")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		db.SetMaxOpenConns(1)
+		tx, err := db.Begin()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback()
+		if _, err := tx.Exec(`CREATE TABLE half_done (x text)`); err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < 200; i++ {
+			if _, err := tx.Exec(`INSERT INTO half_done VALUES (?)`, strings.Repeat("x", 2000)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		cfg := doctorInstall(t, "", doctorRubric)
+		dst := copyStore(t, srcDB, cfg) // a crash mid-transaction leaves a hot journal
+		if _, ok := fileBytes(t, dst)["-journal"]; !ok {
+			t.Fatal("setup: no rollback journal left")
+		}
+		before := fileBytes(t, dst)
+		cli("doctor", "--config", cfg)
+		if after := fileBytes(t, dst); !reflect.DeepEqual(before, after) {
+			t.Error("doctor changed the SQLite files (rolled the journal back, or changed a mode)")
+		}
+	})
+}
+
+// Without a store that opened, lease is skipped, not passed.
+func TestDoctorSkipsLeaseWithoutAStore(t *testing.T) {
+	doctorEnv(t)
+	cfg := doctorInstall(t, "", doctorRubric)
+	_, out, _ := cli("doctor", "--config", cfg)
+	if !strings.Contains(out, "skip  lease (no SQLite file yet at ") || strings.Contains(out, "ok    lease") {
+		t.Errorf("doctor output:\n%s", out)
+	}
+}
+
+// doctor has no input headers, so a rubric field no stored row carries is a
+// warning there (the run decides), and says why.
+func TestDoctorUnknownRubricFieldIsAWarning(t *testing.T) {
+	doctorEnv(t)
+	cfg := doctorInstall(t, "", doctorRubric)
+	if code, out, errb := cli("run", "--config", cfg); code != 0 {
+		t.Fatalf("run: %d %s %s", code, out, errb)
+	}
+	// dockdoors is a squashed header no lead row has.
+	rubric := strings.Replace(doctorRubric, "lanes:", "    - { when: { field: dockdoors, present: true }, points: 1 }\nlanes:", 1)
+	if err := os.WriteFile(filepath.Join(filepath.Dir(cfg), "rubric.yml"), []byte(rubric), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, _ := cli("doctor", "--config", cfg)
+	if code != exitOK || !strings.Contains(out, "warn  rubric: rubric_unknown_field:dockdoors:") ||
+		!strings.Contains(out, "doctor reads no input headers") {
+		t.Errorf("doctor: %d\n%s", code, out)
+	}
 }

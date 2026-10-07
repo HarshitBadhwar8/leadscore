@@ -40,6 +40,11 @@ type Env struct {
 	// Now is the run's clock, so a check judging time (receiver-silence)
 	// agrees with the run's other times. Nil in doctor: the wall clock.
 	Now func() time.Time
+	// Doctor is true when `leadscore doctor` runs the check, false inside a
+	// run. A check whose problem is only a warning for the run (the SQLite
+	// view's sheet-access), or that doctor cannot judge fully (the rubric
+	// field part, with no input headers), reads it.
+	Doctor bool
 }
 
 // Clock returns the environment's clock: Now, else the wall clock.

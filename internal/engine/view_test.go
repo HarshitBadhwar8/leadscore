@@ -2,11 +2,13 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/fakes/gcs"
@@ -157,5 +159,102 @@ func TestNoViewNoCalls(t *testing.T) {
 	v.mustRun(v.withClient)
 	if after := v.fs.Calls("batchUpdate") + v.fs.Calls("get") + v.fs.Calls("values"); after != before {
 		t.Errorf("a run with no view made %d Google calls", after-before)
+	}
+}
+
+// A view that cannot be opened at all (deleted, or no longer shared) leaves
+// the run healthy: sheet-access on the view is a warning inside a run, and
+// the write failure is view_write_failed (contracts section 9.2).
+func TestViewThatCannotBeOpenedKeepsTheRunHealthy(t *testing.T) {
+	v := newViewWorld(t, "ana@acme.example,Ana A,Head of Ops,acme.example")
+	v.mustRun(v.withClient)
+	v.fs.Deny(v.sheet, true)
+	res, out := v.mustRun(v.withClient)
+	if !res.Healthy {
+		t.Fatalf("an unreachable view made the run unhealthy: %v\n%s", res.Problems, out)
+	}
+	for _, key := range []string{"sheet-access:" + v.sheet, viewProblem} {
+		if p := healthRow(v.rows(model.TableHealth), "problem", key); p == nil || !strings.HasPrefix(p["value"], "warning: ") {
+			t.Errorf("Health %s: %v, want a warning", key, p)
+		}
+	}
+}
+
+// A run cut short at its deadline still runs AfterSave; when its view write
+// succeeds, an open view_write_failed is cleared, while the problems the run
+// did not re-check stay.
+func TestCutShortRunClearsAResolvedViewFailure(t *testing.T) {
+	shrink(t, 10*time.Second)
+	v := newViewWorld(t, "ana@acme.example,Ana A,Head of Ops,acme.example")
+	fits := sheets.MaxCommitBytes
+	sheets.MaxCommitBytes = 10
+	t.Cleanup(func() { sheets.MaxCommitBytes = fits })
+	v.mustRun(v.withClient)
+	if healthRow(v.rows(model.TableHealth), "problem", viewProblem) == nil {
+		t.Fatal("setup: no view_write_failed")
+	}
+	sheets.MaxCommitBytes = fits
+	v.config("pushes_enabled: false", "pushes_enabled: false\ndeadline: 200ms")
+	hooks := DefaultHooks()
+	hooks.Intake = func(r *Run) error { <-r.PushCtx.Done(); return nil }
+	if _, out, err := v.install.run(hooks, v.withClient); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if p := healthRow(v.rows(model.TableHealth), "problem", viewProblem); p != nil {
+		t.Errorf("a cut-short run whose view write succeeded kept %v", p)
+	}
+	if p := healthRow(v.rows(model.TableHealth), "problem", "deadline_passed"); p == nil {
+		t.Error("setup: the run was not cut short")
+	}
+}
+
+// A view_spreadsheet that is really a Sheets store (it has a State tab) is
+// never written: the store's own Ranked stays as it was.
+func TestViewRefusesASheetsStore(t *testing.T) {
+	v := newViewWorld(t, "ana@acme.example,Ana A,Head of Ops,acme.example")
+	storeID, err := sheets.Create(context.Background(), v.view.Services(), sheets.Template{Title: "a real store",
+		Accounts: sheets.Accounts{Run: "run@p.iam.gserviceaccount.com"}, Now: time.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v.config(`view_spreadsheet: "`+v.sheet+`"`, `view_spreadsheet: "`+storeID+`"`)
+	res, _ := v.mustRun(v.withClient)
+	if !res.Healthy {
+		t.Errorf("unhealthy: %v", res.Problems)
+	}
+	p := healthRow(v.rows(model.TableHealth), "problem", viewProblem)
+	if p == nil || !strings.Contains(p["value"], "State tab") {
+		t.Errorf("Health %v", p)
+	}
+	rows, err := sheets.New(v.view.Services(), storeID, "").ReadTable(context.Background(), model.TableRanked)
+	if err != nil || len(rows) != 0 {
+		t.Errorf("the store's Ranked was written: %v %v", rows, err)
+	}
+}
+
+// A run cut short at its deadline whose AfterSave fails keeps the problems it
+// did not re-check, with their first_seen_at (the late Health write).
+func TestCutShortRunWithFailedAfterSaveKeepsProblems(t *testing.T) {
+	shrink(t, 10*time.Second)
+	in := basicInstall(t)
+	in.config(leadsCSV + "  - { id: broken, type: stub }\n")
+	setStub(t, "broken", &stubOut{err: errors.New("bad file")})
+	if _, _, err := in.run(DefaultHooks()); err != nil {
+		t.Fatal(err)
+	}
+	first := in.problemSince("source_failed:broken")
+
+	in.config(leadsCSV + "deadline: 200ms\n")
+	hooks := DefaultHooks()
+	hooks.Intake = func(r *Run) error { <-r.PushCtx.Done(); return nil }
+	hooks.AfterSave = func(*Run) error { return errors.New("after save broke") }
+	if _, _, err := in.run(hooks); err != nil {
+		t.Fatal(err)
+	}
+	if in.problemSince("step_failed:aftersave") == "" {
+		t.Fatal("setup: AfterSave's failure is not in Health")
+	}
+	if got := in.problemSince("source_failed:broken"); got == "" || got != first {
+		t.Errorf("a cut-short run's late Health write dropped or reset a problem it never re-checked: %q, first seen %q", got, first)
 	}
 }

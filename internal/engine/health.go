@@ -74,14 +74,20 @@ func (x *exec) putHealth(final bool) {
 	for k, p := range raised {
 		put(healthProblem, k, problemValue(p))
 	}
-	if !final {
-		return
-	}
 	for k, row := range m.Health {
 		if row.Kind != healthProblem {
 			continue
 		}
-		if _, open := raised[row.Key]; !open && (x.afterSaved || !afterSaveProblems[row.Key]) {
+		_, open := raised[row.Key]
+		switch {
+		case open:
+		case afterSaveProblems[row.Key]:
+			// Re-checked only once AfterSave ran; then resolved even in a
+			// run cut short, whose AfterSave still ran.
+			if x.afterSaved {
+				m.Delete(model.TableHealth, k.Parts())
+			}
+		case final:
 			m.Delete(model.TableHealth, k.Parts())
 		}
 	}
