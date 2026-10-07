@@ -210,5 +210,5 @@ var (
 		jonas: {"leadscore_lane": "demo-followup", "leadscore_tier": "1", "leadscore_priority": "A", "leadscore_score": "85"},
 	}
 	dealApolloContacts = []string{lea, ines}
-	dealStatusesRun2   = map[string]string{anna: "deal", jonas: "deal", pia: "deal"}
+	dealStatusesRun2   = map[string]string{anna: "deal", jonas: "deal", pia: "deal", lea: "contacted", ines: "contacted"}
 )

@@ -118,6 +118,7 @@ func RunWith(ctx context.Context, opts api.RunOptions, hooks Hooks, now func() t
 
 // RunWithOutput is RunWith writing the run's summary line (and a dry run's
 // report) to out instead of standard output, so a test can log or drop it.
+// A nil out discards it (execute treats it as io.Discard).
 func RunWithOutput(ctx context.Context, opts api.RunOptions, hooks Hooks, now func() time.Time, client *http.Client, out io.Writer) (api.RunResult, error) {
 	return execute(ctx, opts, settings{hooks: hooks, now: now, client: client, out: out, getenv: os.Getenv})
 }

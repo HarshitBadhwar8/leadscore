@@ -954,7 +954,7 @@ func MatchesLane(r *Run, id api.LeadID, laneID string) bool // the lane's `when`
 // block's base_url in its YAML.
 func RunWith(ctx context.Context, opts api.RunOptions, hooks Hooks, now func() time.Time, client *http.Client) (api.RunResult, error)
 // RunWithOutput is RunWith writing the summary line (and a dry run's report)
-// to out instead of standard output; the e2e suite logs it.
+// to out instead of standard output (nil discards it); the e2e suite logs it.
 func RunWithOutput(ctx context.Context, opts api.RunOptions, hooks Hooks, now func() time.Time, client *http.Client, out io.Writer) (api.RunResult, error)
 ```
 
