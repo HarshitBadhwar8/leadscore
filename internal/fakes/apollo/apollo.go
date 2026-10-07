@@ -1,8 +1,9 @@
 // Package apollo is a fake of the Apollo API calls leadscore makes, served
 // from the fixtures in testdata/vendors/apollo (S0's shape; provisional until
-// S0's captures replace them). This part covers what enrichment and the
-// apollo-key check call: auth health and the organization lookup. S12 adds
-// the rest.
+// S0's captures replace them). This file covers what enrichment and the
+// apollo-key check call: auth health and the organization lookup.
+// outreach.go covers the sink, the contact lookup, the reply poller and the
+// apollo-sequences check.
 //
 // The fake checks the X-Api-Key header against its key and answers the
 // fixture's bad_key case when it does not match. It records every call, so a
@@ -12,7 +13,9 @@ package apollo
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -38,7 +41,9 @@ type Fixture struct {
 // Call is one request the fake answered.
 type Call struct {
 	Method, Path string
-	Domain       string // the enrich call's domain query
+	Domain       string     // the enrich call's domain query
+	Query        url.Values // the request's query
+	Body         []byte     // the request's body
 	Status       int
 }
 
@@ -65,11 +70,13 @@ type Server struct {
 	retryAfter *string           // overrides the rate_limited fixture's Retry-After
 	authCase   string            // the auth_health case a good key gets; "ok" by default
 	calls      []Call
+	out        *outreach // the sink, lookup and poller calls (outreach.go)
 }
 
 // New returns a fake that accepts key, knowing no companies.
 func New(key string) *Server {
-	return &Server{key: key, fixtures: loadFixtures(), orgs: map[string]Org{}, cases: map[string]string{}, authCase: "ok"}
+	return &Server{key: key, fixtures: loadFixtures(), orgs: map[string]Org{}, cases: map[string]string{}, authCase: "ok",
+		out: newOutreach()}
 }
 
 // Dir is the folder holding the Apollo fixtures.
@@ -103,13 +110,20 @@ func loadFixtures() map[string]Fixture {
 		"organizations_enrich/status_404", "organizations_enrich/server_error",
 		"organizations_enrich/rate_limited", "organizations_enrich/bad_key",
 	} {
-		f, err := Load(name)
-		if err != nil {
-			panic("fakes/apollo: " + err.Error())
-		}
-		out[name] = f
+		out[name] = mustLoad(name)
+	}
+	for _, name := range outreachFixtures {
+		out[name] = mustLoad(name)
 	}
 	return out
+}
+
+func mustLoad(name string) Fixture {
+	f, err := Load(name)
+	if err != nil {
+		panic("fakes/apollo: " + err.Error())
+	}
+	return f
 }
 
 // AddOrg makes the fake know a company: the enrich call for domain answers
@@ -212,7 +226,17 @@ func (s *Server) answer(r *http.Request) (Call, Fixture, []byte) {
 		callName = "organizations_enrich"
 		call.Domain = r.URL.Query().Get("domain")
 	default:
-		return call, Fixture{Status: http.StatusNotFound}, []byte(`{"error":"not faked"}`)
+		if callName = outreachCall(r); callName == "" {
+			return call, Fixture{Status: http.StatusNotFound}, []byte(`{"error":"not faked"}`)
+		}
+		call.Query = r.URL.Query()
+		call.Body, _ = io.ReadAll(r.Body)
+		if r.Header.Get("X-Api-Key") != s.key {
+			f := s.fixtures["auth_health/bad_key"]
+			return call, f, f.ResponseBody
+		}
+		f, body := s.answerOutreach(callName, r, call.Body)
+		return call, f, body
 	}
 	if r.Header.Get("X-Api-Key") != s.key {
 		f := s.fixtures[callName+"/bad_key"]

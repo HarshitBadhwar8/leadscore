@@ -1,0 +1,27 @@
+{
+  "provisional": true,
+  "documented": true,
+  "method": "GET",
+  "path": "/api/v1/emailer_messages/search",
+  "query": {
+    "emailer_message_stats[]": "replied",
+    "emailer_message_date_range_mode": "completed_at",
+    "emailerMessageDateRange[min]": "2026-08-01",
+    "page": "1",
+    "per_page": "100"
+  },
+  "request_headers": [
+    "Accept",
+    "Cache-Control",
+    "X-Api-Key"
+  ],
+  "request_body": null,
+  "status": 429,
+  "response_headers": {
+    "Content-Type": "application/json; charset=utf-8",
+    "Retry-After": "1"
+  },
+  "response_body": {
+    "message": "The maximum number of api calls allowed for api/v1/emailer_messages/search is 600 times per hour. Please upgrade your plan if you need more."
+  }
+}

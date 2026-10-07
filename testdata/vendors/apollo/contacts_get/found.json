@@ -1,0 +1,40 @@
+{
+  "provisional": true,
+  "note": "S0 confirms: GET by id, and contact_campaign_statuses with emailer_campaign_id and status (active, paused, finished)",
+  "method": "GET",
+  "path": "/api/v1/contacts/contact-0001",
+  "query": {},
+  "request_headers": [
+    "Accept",
+    "Cache-Control",
+    "X-Api-Key"
+  ],
+  "request_body": null,
+  "status": 200,
+  "response_headers": {
+    "Content-Type": "application/json; charset=utf-8"
+  },
+  "response_body": {
+    "contact": {
+      "id": "contact-0001",
+      "first_name": "Dana",
+      "last_name": "Reyes",
+      "name": "Dana Reyes",
+      "title": "Head of Operations",
+      "organization_name": "Acme Robotics",
+      "email": "dana.reyes@acme-robotics.example",
+      "email_status": "verified",
+      "email_unsubscribed": false,
+      "contact_campaign_statuses": [
+        {
+          "id": "ccs-0001",
+          "emailer_campaign_id": "seq-0001",
+          "status": "active",
+          "send_email_from_email_account_id": "mailbox-0001",
+          "added_at": "2026-09-01T10:05:00.000+00:00"
+        }
+      ],
+      "created_at": "2026-09-01T10:00:00.000+00:00"
+    }
+  }
+}

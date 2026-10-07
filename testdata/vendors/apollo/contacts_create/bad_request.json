@@ -1,0 +1,31 @@
+{
+  "provisional": true,
+  "documented": true,
+  "note": "S0 confirms: a 4xx that is no refusal; counts one attempt",
+  "method": "POST",
+  "path": "/api/v1/contacts",
+  "query": {},
+  "request_headers": [
+    "Accept",
+    "Cache-Control",
+    "Content-Type",
+    "X-Api-Key"
+  ],
+  "request_body": {
+    "email": "dana.reyes@acme-robotics.example",
+    "run_dedupe": true,
+    "first_name": "Dana",
+    "last_name": "Reyes",
+    "title": "Head of Operations",
+    "organization_name": "Acme Robotics",
+    "website_url": "https://acme-robotics.example"
+  },
+  "status": 400,
+  "response_headers": {
+    "Content-Type": "application/json; charset=utf-8"
+  },
+  "response_body": {
+    "error": "Invalid parameter: organization_name",
+    "error_code": "INVALID_PARAMETER"
+  }
+}

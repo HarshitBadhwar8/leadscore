@@ -1,0 +1,55 @@
+{
+  "provisional": true,
+  "note": "S0 confirms: the replied filter, the date filter by day on completed_at, the label field (reply_class) and its values, replied_at, and to_email",
+  "method": "GET",
+  "path": "/api/v1/emailer_messages/search",
+  "query": {
+    "emailer_message_stats[]": "replied",
+    "emailer_message_date_range_mode": "completed_at",
+    "emailerMessageDateRange[min]": "2026-08-01",
+    "page": "1",
+    "per_page": "100"
+  },
+  "request_headers": [
+    "Accept",
+    "Cache-Control",
+    "X-Api-Key"
+  ],
+  "request_body": null,
+  "status": 200,
+  "response_headers": {
+    "Content-Type": "application/json; charset=utf-8"
+  },
+  "response_body": {
+    "emailer_messages": [
+      {
+        "id": "msg-0001",
+        "contact_id": "contact-0001",
+        "emailer_campaign_id": "seq-0001",
+        "to_email": "dana.reyes@acme-robotics.example",
+        "to_name": "Dana Reyes",
+        "status": "completed",
+        "reply_class": "willing_to_meet",
+        "completed_at": "2026-09-02T09:00:00.000+00:00",
+        "replied_at": "2026-09-03T14:30:00.000+00:00"
+      },
+      {
+        "id": "msg-0002",
+        "contact_id": "contact-0001",
+        "emailer_campaign_id": "seq-0001",
+        "to_email": "dana.reyes@acme-robotics.example",
+        "to_name": "Dana Reyes",
+        "status": "completed",
+        "reply_class": null,
+        "completed_at": "2026-09-02T09:00:00.000+00:00",
+        "replied_at": "2026-09-04T08:00:00.000+00:00"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "per_page": 100,
+      "total_entries": 2,
+      "total_pages": 1
+    }
+  }
+}

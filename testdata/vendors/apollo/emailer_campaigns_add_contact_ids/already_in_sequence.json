@@ -1,0 +1,33 @@
+{
+  "provisional": true,
+  "documented": true,
+  "note": "S0 confirms: whether Apollo answers a contact already in this sequence with an error; if it does, the enroll is done",
+  "method": "POST",
+  "path": "/api/v1/emailer_campaigns/seq-0001/add_contact_ids",
+  "query": {},
+  "request_headers": [
+    "Accept",
+    "Cache-Control",
+    "Content-Type",
+    "X-Api-Key"
+  ],
+  "request_body": {
+    "emailer_campaign_id": "seq-0001",
+    "contact_ids": [
+      "contact-0001"
+    ],
+    "send_email_from_email_account_id": "mailbox-0001",
+    "sequence_active_in_other_campaigns": false,
+    "sequence_finished_in_other_campaigns": false,
+    "sequence_no_email": false,
+    "sequence_unverified_email": false
+  },
+  "status": 422,
+  "response_headers": {
+    "Content-Type": "application/json; charset=utf-8"
+  },
+  "response_body": {
+    "error": "Contact is already in this sequence",
+    "error_code": "contact_already_exists_in_campaign"
+  }
+}

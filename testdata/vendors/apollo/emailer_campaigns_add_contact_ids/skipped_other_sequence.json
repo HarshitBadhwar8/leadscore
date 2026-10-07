@@ -1,0 +1,43 @@
+{
+  "provisional": true,
+  "documented": true,
+  "note": "S0 confirms: the skip shape and reason for a contact active in another sequence",
+  "method": "POST",
+  "path": "/api/v1/emailer_campaigns/seq-0001/add_contact_ids",
+  "query": {},
+  "request_headers": [
+    "Accept",
+    "Cache-Control",
+    "Content-Type",
+    "X-Api-Key"
+  ],
+  "request_body": {
+    "emailer_campaign_id": "seq-0001",
+    "contact_ids": [
+      "contact-0001"
+    ],
+    "send_email_from_email_account_id": "mailbox-0001",
+    "sequence_active_in_other_campaigns": false,
+    "sequence_finished_in_other_campaigns": false,
+    "sequence_no_email": false,
+    "sequence_unverified_email": false
+  },
+  "status": 200,
+  "response_headers": {
+    "Content-Type": "application/json; charset=utf-8"
+  },
+  "response_body": {
+    "contacts": [],
+    "emailer_campaign": {
+      "id": "seq-0001",
+      "name": "Qualified founders",
+      "active": true,
+      "archived": false,
+      "num_steps": 4,
+      "created_at": "2026-08-01T09:00:00.000+00:00"
+    },
+    "skipped_contact_ids": {
+      "contact-0001": "contacts_active_in_other_campaigns"
+    }
+  }
+}

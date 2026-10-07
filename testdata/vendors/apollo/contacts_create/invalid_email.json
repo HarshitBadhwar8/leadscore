@@ -1,0 +1,31 @@
+{
+  "provisional": true,
+  "documented": true,
+  "note": "S0 confirms: how Apollo refuses a malformed email (status and wording)",
+  "method": "POST",
+  "path": "/api/v1/contacts",
+  "query": {},
+  "request_headers": [
+    "Accept",
+    "Cache-Control",
+    "Content-Type",
+    "X-Api-Key"
+  ],
+  "request_body": {
+    "email": "not-an-email",
+    "run_dedupe": true,
+    "first_name": "Dana",
+    "last_name": "Reyes",
+    "title": "Head of Operations",
+    "organization_name": "Acme Robotics",
+    "website_url": "https://acme-robotics.example"
+  },
+  "status": 422,
+  "response_headers": {
+    "Content-Type": "application/json; charset=utf-8"
+  },
+  "response_body": {
+    "error": "Email is invalid",
+    "error_code": "invalid_email"
+  }
+}

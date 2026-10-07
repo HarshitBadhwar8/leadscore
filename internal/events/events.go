@@ -74,7 +74,8 @@ func Time(e api.Event) time.Time {
 //
 //   - A polled `reply`: its message id plus label (apollo.PolledReplyKey).
 //     With no message id, the person key (contact id first), label and time
-//     (else received time) instead, so two people's replies never collapse.
+//     (else received time) instead, so two people's replies never collapse;
+//     with no vendor time either (no_reply_time), the person key and label.
 //   - A receiver visit: the person key (contact id, else email, else LinkedIn
 //     URL), the kind and the vendor's visit time as sent (before the clamp to
 //     the received time, so a retry keys the same). With no usable visit time,
@@ -98,6 +99,11 @@ func Key(e api.Event) api.EventID {
 		label := strings.ToLower(strings.TrimSpace(e.Attrs[apollo.AttrLabel]))
 		if id := e.Attrs[apollo.AttrMessageID]; id != "" {
 			return apollo.PolledReplyKey(id, label)
+		}
+		if e.Attrs[apollo.AttrNoReplyTime] != "" {
+			// Timed at the poll only: the poll's time would make every poll
+			// a new reply.
+			return join("polled", "person", person(e), label, "untimed")
 		}
 		return join("polled", "person", person(e), label, model.FormatTime(Time(e)))
 	case e.Origin == OriginReceiver && strings.HasPrefix(kind, "visit_"):
