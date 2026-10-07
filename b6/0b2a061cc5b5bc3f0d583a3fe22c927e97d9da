@@ -1,0 +1,63 @@
+internal/engine/enrich.go
+  s_9dab9ff7f2c580::t_06a3dbc07c1866 11,18,21-30,34,37-41,43-56,60-61,66-69,80-82,85-91,94-95,104,108,111-113,121,124,135,137,139,145,148-159,165-229,256-259,261-262,267-273,275-278,284-286,291-295,300,309-316,319-330,338,363-369,371-374,376,378-400
+README.md
+  s_9dab9ff7f2c580::t_b8c651bdd7f512 100-110
+adapters/apollo/client.go
+  s_9dab9ff7f2c580::t_8cc68289e6ef88 70-72,84-96,102-103,105,125,128-131,187-189,216,224-229,253,270-273,278-288,293,303,314-331
+adapters/apollo/client_test.go
+  s_9dab9ff7f2c580::t_3158529196d0be 9,69,72-76,112-113,115-120,190,261-323,341-343,415-444
+adapters/apollo/enrich.go
+  s_9dab9ff7f2c580::t_c732c9b45584e4 6,25-31,48-53,104-106,108-110,113,125,128-129,135,140-143,145-149,163-165,168-169
+docs/design/oss-outbound-engine-contracts.md
+  s_9dab9ff7f2c580::t_afde649e5fa193 61,110-113,472,487,489,491,525,607,745,775,948,979-983,994-995,999-1000,1002-1003,1005,1008-1009
+internal/api/api.go
+  s_9dab9ff7f2c580::t_bca21bf65844b3 65,114-117
+internal/check/apollo.go
+  s_9dab9ff7f2c580::t_87125cd59802d2 18-22,39-40,42,44-49,53,62-68
+internal/check/apollo_test.go
+  s_9dab9ff7f2c580::t_b97e2e93c97ea6 5,29-32,55,87-117
+internal/engine/enrich_test.go
+  s_9dab9ff7f2c580::t_4999c97d31ebfe 4,332-551
+internal/engine/run.go
+  s_9dab9ff7f2c580::t_04c5f79c056e71 263
+internal/fakes/apollo/apollo.go
+  s_9dab9ff7f2c580::t_c4a905bcbdbfd8 35,66,72,100,102-103,126-127,139-149,222
+internal/model/rows.go
+  s_9dab9ff7f2c580::t_3184b5f8a0a665 80-83,269-276,390
+internal/model/tables.go
+  s_9dab9ff7f2c580::t_4edbe85767c3de 58
+leadscore.go
+  s_9dab9ff7f2c580::t_d1d3d401bcf9dd 66-68,106-110
+testdata/vendors/apollo/README.md
+  s_9dab9ff7f2c580::t_c35585df1d4dd4 19-26
+testdata/vendors/apollo/auth_health/bad_key.json
+  s_9dab9ff7f2c580::t_1a6c85b6fbdd31 3,7-11,14-20
+testdata/vendors/apollo/auth_health/not_logged_in.json
+  s_9dab9ff7f2c580::t_abc115843f2474 1-21
+testdata/vendors/apollo/organizations_enrich/bad_key.json
+  s_9dab9ff7f2c580::t_d4eafd44f83c0e 3,6-13,16-22
+testdata/vendors/apollo/organizations_enrich/found.json
+  s_9dab9ff7f2c580::t_fe9007dead9114 3,6-13,16-18
+testdata/vendors/apollo/organizations_enrich/not_found.json
+  s_9dab9ff7f2c580::t_be42b0879fbe7b 3,6-13,15-18
+testdata/vendors/apollo/organizations_enrich/server_error.json
+  s_9dab9ff7f2c580::t_caea063a9868e2 1-23
+testdata/vendors/apollo/organizations_enrich/status_404.json
+  s_9dab9ff7f2c580::t_72bcdb46e3208b 1-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b60b2a061cc5b5bc3f0d583a3fe22c927e97d9da",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
