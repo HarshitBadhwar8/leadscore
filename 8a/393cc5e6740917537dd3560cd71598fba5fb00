@@ -1,0 +1,63 @@
+README.md
+  s_9dab9ff7f2c580::t_40ab69470c06a1 259-265,277-280,284-285,290-291,298,305-327,334
+cloudrun_live_test.go
+  s_9dab9ff7f2c580::t_d3e10f86e1aa90 14,27,29,85,93,102-110,146-147,152-153,164,173,225-256,365-373,376-389,516,529
+docs/design/oss-outbound-engine-contracts.md
+  s_9dab9ff7f2c580::t_a7d9d008ba38ab 426,448,454,554,696,700,710,712,714,747
+docs/design/oss-outbound-engine.md
+  s_9dab9ff7f2c580::t_66828eea68b2c1 621
+examples/leadscore.gcp.yml
+  s_9dab9ff7f2c580::t_c4672f9969fc8c 19-22,34-35
+internal/check/check_test.go
+  s_9dab9ff7f2c580::t_8930cb67c8cf85 85
+internal/check/hosting.go
+  s_9dab9ff7f2c580::t_4a4a2ac11ed5da 7,33-35,56-69,76-92,104-108,111,119,130-137,141-143,147-151,164-165,171-186,191-192
+internal/check/hosting_test.go
+  s_9dab9ff7f2c580::t_19be9ae8ad2733 21-38,44-45,53-54,66-70,79,119,122,126,129,132,145-177,179
+internal/cli/config.go
+  s_9dab9ff7f2c580::t_aa1e00420e310a 9-11,16,98-100,122-123,128-131,136-198
+internal/cli/config_push_test.go
+  s_9dab9ff7f2c580::t_5cb727b2feabdf 65,101-142,184
+internal/config/bundle_test.go
+  s_9dab9ff7f2c580::t_fdd499f6b4349c 44-65
+internal/config/config.go
+  s_9dab9ff7f2c580::t_14fa490ac400fb 368-377,384-386
+internal/engine/run.go
+  s_9dab9ff7f2c580::t_3f041a43304262 21,456
+internal/hosting/cron.go
+  s_9dab9ff7f2c580::t_9f1cd9822607c4 5,40-57,59-61,63-65,68-70
+internal/hosting/hosting.go
+  s_9dab9ff7f2c580::t_8687ade3e67c8f 30-38,45-47
+internal/hosting/hosting_test.go
+  s_9dab9ff7f2c580::t_bc77667b90f167 5,64-66,68,149,217,256-261
+internal/hosting/keys.go
+  s_9dab9ff7f2c580::t_00bca6203495c3 32-34,74,76,81-83
+internal/hosting/resources.go
+  s_9dab9ff7f2c580::t_50993bc3e8e7e9 15-48,54-55,62,79,88-89,97,106-109,111,150-151
+internal/logredact/redact.go
+  s_9dab9ff7f2c580::t_1e0abb2ba52af2 65-84,97,102
+internal/logredact/redact_test.go
+  s_9dab9ff7f2c580::t_59200f50ec1e48 82-83,86,90-99
+setup/gcp.sh
+  s_9dab9ff7f2c580::t_e0f3ad406642ef 13-14,17-20,45-47,198-199,201-204,224,226,267-268,276,278,283-284,314,319,322-324,341-343,360,365-370,392-397,400-403,405,422,426,432-433,440,451-452,473,483,494-497,504
+setup_gcp_test.go
+  s_9dab9ff7f2c580::t_b76fa21d026fe7 179,194-199,222,224-225,230,232,241-242,250,270-274,284-285,289-291,294-306,312-317,336,349,366,393-397,405,415-416,420,430,438,443,445-449,455-499,507-508,513
+testdata/gcloud/gcloud
+  s_9dab9ff7f2c580::t_ab752aee76a70a 7-9,54-61,70-73,103-109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8a393cc5e6740917537dd3560cd71598fba5fb00",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
