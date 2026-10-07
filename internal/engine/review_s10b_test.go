@@ -293,3 +293,42 @@ func TestPluginLookupOptOutSurvivesResubscribe(t *testing.T) {
 		t.Errorf("status %q, calls %v", s, calls(w.fake))
 	}
 }
+
+// Final review 2: two leads at one company never open two deals in one run.
+// Ana's deal step creates the deal, then times out (no id); Ben's deal step
+// waits (pending, never called, not cancelled). The next run finishes Ana's
+// and Ben's then reuses her deal through Related.
+func TestSecondDealStepWaitsForTheFirst(t *testing.T) {
+	w := newWorld(t,
+		"ana@acme.example,Ana A,Clerk,acme.example",
+		"ben@acme.example,Ben B,Clerk,acme.example")
+	w.rubric("{ field: status, eq: replied_positive }", "{ field: status, in: [replied_positive, deal] }")
+	w.hubspot.ReuseRelated("deal")
+	w.pushesOff()
+	w.reply("ana@acme.example", "replied_positive")
+	w.reply("ben@acme.example", "replied_positive")
+	w.hubspot.FailAfter("deal", sinktest.Transient)
+	w.mustRun()
+	if n := w.hubspot.Count("deal"); n != 1 {
+		t.Fatalf("%d deals after run 1, want 1: %v", n, calls(w.hubspot))
+	}
+	first := "ana@acme.example"
+	if r := w.push(first, "warm", "deal"); r["called_at"] == "" {
+		first = "ben@acme.example"
+	}
+	second := "ben@acme.example"
+	if first == second {
+		second = "ana@acme.example"
+	}
+	if r := w.push(second, "warm", "deal"); r["state"] != statePending || r["called_at"] != "" {
+		t.Fatalf("the second deal step should wait: %v", r)
+	}
+	w.mustRun()
+	w.mustRun()
+	if n := w.hubspot.Count("deal"); n != 1 {
+		t.Errorf("%d deals, want 1: %v", n, calls(w.hubspot))
+	}
+	if a, b := w.push(first, "warm", "deal"), w.push(second, "warm", "deal"); a["state"] != stateDone || b["state"] != stateDone || a["vendor_id"] != b["vendor_id"] {
+		t.Errorf("rows %v / %v", a, b)
+	}
+}

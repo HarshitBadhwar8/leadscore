@@ -332,6 +332,7 @@ type company struct {
 	open     bool
 	openID   string    // an open or won deal's id, when one has an id
 	lostAt   time.Time // the latest deal_checked_at with stage lost
+	checked  time.Time // the latest deal_checked_at at any stage
 	closed   map[string]bool
 	dealRows []model.Key
 }
@@ -351,6 +352,9 @@ func (v *view) summarize(leads []api.LeadID) *company {
 			if o.DealCheckedAt.After(c.lostAt) {
 				c.lostAt = o.DealCheckedAt
 			}
+		}
+		if o.DealCheckedAt.After(c.checked) {
+			c.checked = o.DealCheckedAt
 		}
 		if o.DealID != "" && o.DealStage != "" && o.DealStage != "open" {
 			c.closed[o.DealID] = true
@@ -433,19 +437,38 @@ func (v *view) deal(id api.LeadID, exceptLane string) bool {
 	return false
 }
 
-// dealStepRow reports a ledger row of a hubspot:deals lane's `deal` step, the
-// only step that can create a deal. A row of a lane since removed from the
-// rubric counts when its destination is `deals`, since its sink can no
-// longer be told.
-func (v *view) dealStepRow(p model.Push) bool { return p.Step == dealStep && v.dealsLaneRow(p) }
+// dealStepRow reports a ledger row of a deals push's `deal` step, the only
+// step that can create a deal: its own step and destination decide, whatever
+// its lane says now, so editing or removing a deals lane never drops a
+// company's deal hold.
+func (v *view) dealStepRow(p model.Push) bool { return p.Step == dealStep && p.Dest == dealDest }
 
-// dealsLaneRow reports a row of a hubspot:deals lane (or of a removed lane
-// whose destination is `deals`).
-func (v *view) dealsLaneRow(p model.Push) bool {
-	if l, ok := v.lanes[p.LaneID]; ok {
-		return isDealLane(l)
+// dealWaits reports that the lead's deal step must wait (contracts section
+// 8): another lead at its company has a deal step that was called and has no
+// result yet (no deal id; pending, or cancelled after its call), and no
+// lookup has read the company since that call. The deal may exist, so a
+// second deal step would open a second deal; it waits for a later run, when
+// the first has its deal id (passed in Related) or a lookup has the answer.
+func (v *view) dealWaits(id api.LeadID) bool {
+	d := v.domain(id)
+	if d == "" {
+		return false
 	}
-	return p.Dest == dealDest
+	own := map[api.LeadID]bool{}
+	for _, f := range v.family(id) {
+		own[f] = true
+	}
+	c := v.company(d)
+	for _, k := range c.dealRows {
+		p := v.m.Pushes[k]
+		if own[p.LeadID] || p.VendorID != "" || p.CalledAt.IsZero() || (p.State != statePending && p.State != stateCancelled) {
+			continue
+		}
+		if !c.checked.After(p.CalledAt) {
+			return true
+		}
+	}
+	return false
 }
 
 // companyDealID is LeadRef.CompanyDealID: the stored open or won deal at the

@@ -107,7 +107,7 @@ func lookups(r *Run, v *view, provisional map[api.LeadID]bool, st *pushRun) erro
 			r.Problem("lookup_failed:"+typ, fmt.Sprintf("the %s lookup failed for %d lead(s); they wait for the next run", typ, len(bad)),
 				"see the Log's lookup_failed lines; the next run looks them up again", true)
 		}
-		applyLookupEvents(r, typ, evs)
+		applyLookupEvents(r, typ, evs, bad)
 	}
 	for id := range provisional {
 		if !failed[id] && (pushing || len(types) == 0) {
@@ -211,8 +211,18 @@ func (v *view) leadRef(id api.LeadID) api.LeadRef {
 // and deal_*), each to the lead it names, through events.Apply. Lookup events
 // are not de-duplicated: applying them is idempotent. An event with no time
 // takes the run's clock, so an opt-out is never stored at the zero time.
-func applyLookupEvents(r *Run, typ string, evs []api.Event) {
+//
+// A lookup that failed for some leads may have read their companies only in
+// part: its deal_lost for a domain with a failed lead is dropped, so a
+// company is never released on an incomplete answer.
+func applyLookupEvents(r *Run, typ string, evs []api.Event, failed map[api.LeadID]error) {
 	origin := events.LookupOrigin(typ)
+	unread := map[string]bool{}
+	for id := range failed {
+		if d := r.Model.People[model.Key(merge.Live(r.Model, id))].Fields[model.CompanyDomainField].Value; d != "" {
+			unread[d] = true
+		}
+	}
 	for _, e := range evs {
 		e = merge.NormalizeEventKeys(e)
 		e.Kind = strings.ToLower(e.Kind)
@@ -227,6 +237,10 @@ func applyLookupEvents(r *Run, typ string, evs []api.Event) {
 		}
 		if e.Kind != "optout" && !strings.HasPrefix(e.Kind, "deal_") {
 			r.log("warn", "event_ignored", "", fmt.Sprintf("the %s lookup returned a %s event; lookups report only optout and deal_* events", typ, clip(logredact.Redact(e.Kind))))
+			continue
+		}
+		if e.Kind == "deal_lost" && unread[e.Domain] {
+			r.log("info", "event_ignored", "", fmt.Sprintf("the %s lookup failed for a lead at a company it reported without a deal; the company stays held until a full lookup", typ))
 			continue
 		}
 		lead, _ := merge.FindPerson(r.Model, e)

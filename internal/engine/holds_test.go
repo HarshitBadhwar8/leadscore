@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -102,7 +104,7 @@ func TestLookupDealEventStampedWithTheRunClock(t *testing.T) {
 	person(m, "a", "acme.example")
 	r := unitRun(t, m)
 	old := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	applyLookupEvents(r, "hubspot", []api.Event{{Kind: "deal_lost", Domain: "acme.example", At: old, ReceivedAt: old}})
+	applyLookupEvents(r, "hubspot", []api.Event{{Kind: "deal_lost", Domain: "acme.example", At: old, ReceivedAt: old}}, nil)
 	if got := m.Outcomes["a"].DealCheckedAt; !got.Equal(r.Now().Truncate(time.Millisecond)) {
 		t.Errorf("deal_checked_at %v, want the run's clock %v", got, r.Now())
 	}
@@ -123,5 +125,47 @@ func TestRelatedKeepsDealsOfRemovedLanes(t *testing.T) {
 	}
 	if got := v.related("b", apolloSink); len(got) != 0 {
 		t.Errorf("a removed lane's row of an unknown sink: %v", got)
+	}
+}
+
+// Final review 1: a done deal step holds its company even after its lane is
+// edited to push to hubspot:contacts; the row's own step and destination
+// decide, not what the lane says now.
+func TestDealRowSurvivesLaneEdit(t *testing.T) {
+	m := model.New()
+	person(m, "a", "acme.example")
+	person(m, "b", "acme.example")
+	m.Put(model.TablePushes, model.Push{LeadID: "a", LaneID: "warm", Step: "deal", LaneKind: kindNonCold, Dest: "deals",
+		State: stateDone, VendorID: "D1", CalledAt: time.Now().UTC()})
+	r := unitRun(t, m)
+	rb, err := rules.Compile([]byte(strings.Replace(laneRubric, `push: "hubspot:deals"`, `push: "hubspot:contacts"`, 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Rubric = rb
+	if !newView(r).deal("b", "") {
+		t.Error("editing the lane to contacts dropped the company's deal hold")
+	}
+}
+
+// Final review 3: a lookup that failed for some leads releases none of their
+// companies: its deal_lost for a domain with a failed lead is dropped.
+func TestPartialLookupFailureKeepsDealHolds(t *testing.T) {
+	m := model.New()
+	person(m, "a", "acme.example")
+	person(m, "c", "cyan.example")
+	m.Put(model.TableOutcomes, model.Outcome{LeadID: "a", DealID: "D1", DealStage: "open"})
+	m.Put(model.TableOutcomes, model.Outcome{LeadID: "c", DealID: "D2", DealStage: "open"})
+	r := unitRun(t, m)
+	evs := []api.Event{
+		{Kind: "deal_lost", Domain: "acme.example", Attrs: map[string]string{}},
+		{Kind: "deal_lost", Domain: "cyan.example", Attrs: map[string]string{}},
+	}
+	applyLookupEvents(r, "hubspot", evs, map[api.LeadID]error{"a": errors.New("timeout")})
+	if s := m.Outcomes["a"].DealStage; s != "open" {
+		t.Errorf("acme (a lead's lookup failed) was released: %q", s)
+	}
+	if s := m.Outcomes["c"].DealStage; s != "lost" {
+		t.Errorf("cyan was not released: %q", s)
 	}
 }

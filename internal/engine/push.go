@@ -230,7 +230,7 @@ func (p *pusher) batch(b []item) error {
 				row = model.Push{LeadID: it.lead, LaneID: it.lane.ID, Step: step, LaneKind: it.lane.Kind, Dest: it.lane.Dest, State: statePending}
 			}
 			if row.State == stateCancelled && row.CalledAt.IsZero() && row.IntentRun == "" {
-				row.State, row.LastError = statePending, "" // reselected for the lane (contracts section 8)
+				row.State, row.LastError, row.Dest = statePending, "", it.lane.Dest // reselected for the lane (contracts section 8)
 			}
 			if row.State != statePending {
 				continue
@@ -313,6 +313,10 @@ func (p *pusher) pushOne(it item) {
 			continue
 		}
 		if row.State != statePending || r.PushCtx.Err() != nil {
+			return
+		}
+		if v.dealStepRow(row) && v.dealWaits(it.lead) {
+			r.log("info", "push_waiting", it.lead, fmt.Sprintf("lane %s: the deal step waits: another lead's deal step at the company was called and has no result yet", it.lane.ID))
 			return
 		}
 		req := api.StepRequest{

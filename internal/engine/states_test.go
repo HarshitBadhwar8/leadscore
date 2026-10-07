@@ -133,14 +133,17 @@ func TestNeverCalledCancelReselects(t *testing.T) {
 	w.edit(func(m *model.Model) {
 		for _, step := range []string{"contact", "enroll"} {
 			m.Put(model.TablePushes, model.Push{LeadID: id, LaneID: "seq-a", Step: step, LaneKind: kindCold,
-				Dest: "sequence/A", State: stateCancelled, LastError: "status replied_negative", UpdatedAt: time.Now().UTC()})
+				Dest: "sequence/Old", State: stateCancelled, LastError: "status replied_negative", UpdatedAt: time.Now().UTC()})
 		}
 	})
 	w.mustRun()
 	if got := pushedTo(w, w.apollo, "enroll"); !slices.Equal(got, []string{"ana@acme.example"}) {
 		t.Fatalf("a never-called cancelled push is reselected: %v", calls(w.apollo))
 	}
-	if r := w.push("ana@acme.example", "seq-a", "contact"); r["state"] != stateDone || r["last_error"] != "" {
+	if c := w.apollo.Calls()[0]; c.Dest != "sequence/A" {
+		t.Errorf("the reselected step was called at %q, want the lane's destination", c.Dest)
+	}
+	if r := w.push("ana@acme.example", "seq-a", "contact"); r["state"] != stateDone || r["last_error"] != "" || r["dest"] != "sequence/A" {
 		t.Errorf("row %v", r)
 	}
 }
