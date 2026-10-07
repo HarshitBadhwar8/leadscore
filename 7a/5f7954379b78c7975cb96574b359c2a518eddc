@@ -1,0 +1,43 @@
+adapters/apollo/golden_test.go
+  s_9dab9ff7f2c580::t_5de036043fc924 69,76,86
+adapters/apollo/parse.go
+  s_9dab9ff7f2c580::t_2a38cbe02c79f5 49-51,153
+docs/design/oss-outbound-engine-contracts.md
+  s_9dab9ff7f2c580::t_b616ca3af21f97 254,398,437,571,951
+docs/design/oss-outbound-engine.md
+  s_9dab9ff7f2c580::t_e7e72ed88e5b09 405
+internal/api/registry.go
+  s_9dab9ff7f2c580::t_fff35b15d70f47 6,90-92,94,116
+internal/api/registry_test.go
+  s_9dab9ff7f2c580::t_2940f62019e53e 78-92
+internal/config/config.go
+  s_9dab9ff7f2c580::t_611089dbf98106 561-564
+internal/config/config_test.go
+  s_9dab9ff7f2c580::t_be1536d83fa066 211
+internal/detect/detect_test.go
+  s_9dab9ff7f2c580::t_f1e5cdced1ceed 148-150
+internal/engine/intake.go
+  s_9dab9ff7f2c580::t_902627e93c18fb 438-441
+internal/events/events.go
+  s_9dab9ff7f2c580::t_5ad0cda50cec47 61-62,64-65,87,89-92,99-105,118-121,125,304,307-311,346-347,355-356,362
+internal/events/events_test.go
+  s_9dab9ff7f2c580::t_53b99555fc69dd 388-438
+leadscore.go
+  s_9dab9ff7f2c580::t_43520bd0de8029 249-251
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7a5f7954379b78c7975cb96574b359c2a518eddc",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
