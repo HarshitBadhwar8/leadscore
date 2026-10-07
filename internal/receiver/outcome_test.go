@@ -5,8 +5,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/engine"
@@ -14,16 +14,20 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/store/sqlite"
 )
 
-var outcomeVendor = fakesink.New(nil)
+// outcomeVendor is the fake behind the `hookfake` sink type. Each test
+// stores a fresh one, so a repeated run (go test -count=N) starts with no
+// calls.
+var outcomeVendor atomic.Pointer[fakesink.Vendor]
 
 func init() {
-	api.RegisterSink("hookfake", func(api.Config) (api.Sink, error) { return outcomeVendor.Sink(), nil })
+	api.RegisterSink("hookfake", func(api.Config) (api.Sink, error) { return outcomeVendor.Load().Sink(), nil })
 }
 
 // An unsubscribe posted to /apollo/reply with the secret is stored by the
 // handler, and the next run does not push that person.
 func TestWebhookUnsubscribeBlocksTheNextPush(t *testing.T) {
-	fastQueue(t, 10*time.Millisecond)
+	vendor := fakesink.New(nil)
+	outcomeVendor.Store(vendor)
 	dir := t.TempDir()
 	write := func(name, text string) {
 		t.Helper()
@@ -61,7 +65,7 @@ func TestWebhookUnsubscribeBlocksTheNextPush(t *testing.T) {
 	config("true")
 	run()
 	var pushed []string
-	for _, c := range outcomeVendor.Calls() {
+	for _, c := range vendor.Calls() {
 		pushed = append(pushed, c.Lead.Emails[0])
 	}
 	if len(pushed) != 1 || pushed[0] != "bo@beta.example" {

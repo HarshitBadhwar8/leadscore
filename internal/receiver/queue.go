@@ -15,8 +15,6 @@ import (
 // Write queue timing (contracts sections 5.1 and 11). Variables so tests can
 // shrink them; timers use the real clock.
 var (
-	// batchWindow is how long requests are gathered before one append.
-	batchWindow = 2 * time.Second
 	// holdCap bounds how long a request waits: the append's context ends this
 	// long after the oldest request in its batch arrived, and every request in
 	// the batch then gets 5xx so Apollo can retry it.
@@ -57,7 +55,8 @@ type batch struct {
 // batch, so nothing is acknowledged before the store said it is durable.
 type queue struct {
 	events api.EventLog
-	onErr  func(error) // logs a failed append
+	window time.Duration // how long requests are gathered before an append
+	onErr  func(error)   // logs a failed append
 
 	mu      sync.Mutex
 	pending *batch
@@ -70,8 +69,8 @@ type queue struct {
 	appendFailed atomic.Bool
 }
 
-func newQueue(events api.EventLog, onErr func(error)) *queue {
-	q := &queue{events: events, onErr: onErr, ready: make(chan *batch, readyBatches), exited: make(chan struct{})}
+func newQueue(events api.EventLog, window time.Duration, onErr func(error)) *queue {
+	q := &queue{events: events, window: window, onErr: onErr, ready: make(chan *batch, readyBatches), exited: make(chan struct{})}
 	go q.writer()
 	return q
 }
@@ -88,7 +87,7 @@ func (q *queue) submit(e api.RawEvent) (*batch, int, error) {
 	if b == nil {
 		b = &batch{oldest: time.Now(), done: make(chan struct{})}
 		q.pending = b
-		b.timer = time.AfterFunc(batchWindow, func() { q.flush(b) })
+		b.timer = time.AfterFunc(q.window, func() { q.flush(b) })
 	}
 	i := len(b.events)
 	b.events = append(b.events, e)

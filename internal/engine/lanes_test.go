@@ -337,3 +337,22 @@ func boolText(b bool) string {
 	}
 	return "false"
 }
+
+// A lead blocked on every lane is explained on an export lane too: with only
+// an export lane, an unsubscribed lead's reasons still say why it is not
+// listed (S17 review: the export lane's skip was missing).
+func TestBlockedExportLaneIsExplained(t *testing.T) {
+	w := newWorld(t, "ana@acme.example,Ana A,Head of Ops,acme.example", "bo@beta.example,Bo B,Clerk,beta.example")
+	w.write("rubric.yml", `version: 1
+lanes:
+  - { id: list, kind: export, when: { field: receiver_only, eq: false }, push: "export:list" }
+`)
+	w.override("ana@acme.example", "status", "unsubscribed", "")
+	w.mustRun()
+	if r := w.ranked("ana@acme.example"); r["lane"] != "" || !strings.Contains(r["reasons"], "lane list skipped: ") || !strings.Contains(r["reasons"], "unsubscribed") {
+		t.Errorf("Ana's Ranked row %v, want no lane and the export lane's skip explained", r)
+	}
+	if r := w.ranked("bo@beta.example"); r["lane"] != "list" || strings.Contains(r["reasons"], "skipped") {
+		t.Errorf("Bo's Ranked row %v, want listed with nothing skipped", r)
+	}
+}

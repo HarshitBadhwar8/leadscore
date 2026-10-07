@@ -616,6 +616,12 @@ func (v *view) route(id api.LeadID) ([]item, map[string]string) {
 			}
 		case kindCold:
 			cold = append(cold, l)
+		case kindExport:
+			// Not pushed here (the export hook lists it), but a lead the
+			// built-in checks block is explained like any skipped lane.
+			if why := v.laneCheck(id, l); why != "" {
+				skipped[l.ID] = why
+			}
 		}
 	}
 	if it, ok := v.coldRoute(id, cold, score, skipped); ok {

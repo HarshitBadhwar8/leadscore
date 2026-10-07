@@ -30,6 +30,7 @@ import (
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/check"
+	"github.com/HarshitBadhwar8/leadscore/internal/vendorhttp"
 )
 
 func init() {
@@ -110,16 +111,12 @@ func parse(cfg api.Config) (settings, error) {
 	if token == "" {
 		return s, fmt.Errorf("%s is not set", TokenVariable)
 	}
-	base, err := str("base_url")
+	base, hc, err := vendorhttp.Overrides(cfg)
 	if err != nil {
-		return s, err
+		return s, fmt.Errorf("sinks.hubspot: %w", err)
 	}
-	hc, _ := cfg["_http_client"].(*http.Client)
 	if base != "" {
-		if hc == nil {
-			return s, errors.New("sinks.hubspot.base_url is for tests only and needs a test HTTP client; remove it from leadscore.yml")
-		}
-		s.c = newClient(strings.TrimRight(base, "/"), token, hc)
+		s.c = newClient(base, token, hc)
 	} else {
 		s.c = newClient(defaultBaseURL, token, hc)
 		s.c.pace = &pacer{every: searchEvery}

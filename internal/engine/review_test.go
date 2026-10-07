@@ -361,3 +361,17 @@ func TestRubricCheckUsesTheRunsRubric(t *testing.T) {
 		t.Errorf("%+v %v", res, err)
 	}
 }
+
+// RunWithOutput with a nil writer discards the summary instead of failing.
+func TestRunWithOutputNilDiscards(t *testing.T) {
+	setStub(t, "leads", &stubOut{rows: []api.InputRow{{SourceID: "leads", Headers: []string{"Email", "Title"},
+		Columns: map[string]string{"Email": "ana@acme.example", "Title": "Head of Ops"}}}})
+	in := newInstall(t, "sources:\n  - { id: leads, type: stub }\n", testRubric)
+	res, err := RunWithOutput(context.Background(), in.opts(), DefaultHooks(), time.Now, nil, nil)
+	if err != nil || !res.Healthy {
+		t.Fatalf("a run with no output writer: %v %+v", err, res)
+	}
+	if n := len(in.rows(model.TableRanked)); n != 1 {
+		t.Errorf("%d Ranked rows, want 1", n)
+	}
+}

@@ -15,6 +15,7 @@ import (
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	"github.com/HarshitBadhwar8/leadscore/internal/logredact"
+	"github.com/HarshitBadhwar8/leadscore/internal/vendorhttp"
 )
 
 // client is one HubSpot API connection: the private-app token, the base URL
@@ -45,7 +46,7 @@ func (e *apiError) Error() string {
 	if d := logredact.VendorErrorDetail(e.body); d != "" {
 		s += " " + d
 	}
-	if e.status == http.StatusUnauthorized || e.status == http.StatusForbidden {
+	if vendorhttp.KeyRefused(e.status) {
 		s += " (HubSpot refused the token: check HUBSPOT_TOKEN and the private app's scopes; the sink stops for this run)"
 	}
 	return s
@@ -53,19 +54,18 @@ func (e *apiError) Error() string {
 
 func (e *apiError) Unwrap() error { return e.kind }
 
-// classify maps a status to the engine's error kinds: 429 is a rate limit,
-// 5xx is transient, a 400 whose body names INVALID_EMAIL is a refusal that
-// retrying cannot change (S0 confirms the code); anything else counts an
-// attempt. A 401 or 403 (a revoked token, a missing scope) is reported as a
-// rate limit: the sink stops for the run and no attempt is counted, since no
-// lead is at fault; the `hubspot` check raises the problem.
+// classify maps a status to the engine's error kinds. The shared rule
+// (vendorhttp.Class): 429 is a rate limit, and so are 401 and 403 (a revoked
+// token, a missing scope: the sink stops for the run and no attempt is
+// counted, since no lead is at fault; the `hubspot` check raises the
+// problem); 5xx is transient. HubSpot's own: a 400 whose body names
+// INVALID_EMAIL is a refusal that retrying cannot change (S0 confirms the
+// code). Anything else counts an attempt.
 func classify(status int, body []byte) error {
-	switch {
-	case status == http.StatusTooManyRequests, status == http.StatusUnauthorized, status == http.StatusForbidden:
-		return api.ErrRateLimited
-	case status >= 500:
-		return api.ErrTransient
-	case status == http.StatusBadRequest && bytes.Contains(body, []byte("INVALID_EMAIL")):
+	if class := vendorhttp.Class(status); class != nil {
+		return class
+	}
+	if status == http.StatusBadRequest && bytes.Contains(body, []byte("INVALID_EMAIL")) {
 		return api.ErrRefused
 	}
 	return nil
@@ -99,11 +99,16 @@ func existingID(err error) string {
 // failed read.
 var maxBody int64 = 16 << 20
 
-// call sends one request, bounded by callTimeout. A transport failure (a
-// timeout, a refused connection) is ErrTransient, unless the caller's
-// context ended, which is returned as is: the engine reads context.Canceled
-// itself. Redirects are not followed (newClient), so the token never goes to
-// another host.
+// maxErrorBody is how much of a non-2xx answer an apiError keeps.
+const maxErrorBody = 8192
+
+// call sends one request, bounded by callTimeout (vendorhttp.Do). A failed
+// call (a timeout, a refused connection, an answer over maxBody) is
+// ErrTransient, unless the caller's context ended, which is returned as is:
+// the engine reads context.Canceled itself. An answer whose body was cut
+// short still counts by its status when the shared rule decides it (429,
+// 401, 403, 5xx), so a refused token still stops the sink. Redirects are not followed
+// (newClient), so the token never goes to another host.
 func (c *client) call(parent context.Context, method, path string, in, out any) error {
 	route, _, _ := strings.Cut(path, "?")
 	if c.pace != nil && strings.HasSuffix(route, "/search") {
@@ -111,8 +116,6 @@ func (c *client) call(parent context.Context, method, path string, in, out any) 
 			return err
 		}
 	}
-	ctx, cancel := context.WithTimeout(parent, callTimeout)
-	defer cancel()
 	var body io.Reader
 	if in != nil {
 		b, err := json.Marshal(in)
@@ -121,40 +124,31 @@ func (c *client) call(parent context.Context, method, path string, in, out any) 
 		}
 		body = bytes.NewReader(b)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.base+path, body)
+	req, err := http.NewRequestWithContext(parent, method, c.base+path, body)
 	if err != nil {
 		return fmt.Errorf("hubspot: building the %s request: %w", route, err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.hc.Do(req)
-	if err != nil {
-		if parent.Err() != nil {
-			return fmt.Errorf("hubspot: %s %s: %w", method, route, parent.Err())
-		}
-		// Only the route: a transport error quotes the URL, and the URL is
-		// ours, but the error text from a proxy is not.
+	reply, err := vendorhttp.Do(c.hc, req, callTimeout, maxBody)
+	switch {
+	case err == nil, vendorhttp.Class(reply.Status) != nil:
+	case parent.Err() != nil:
+		return fmt.Errorf("hubspot: %s %s: %w", method, route, parent.Err())
+	case errors.Is(err, vendorhttp.ErrTooLarge):
+		return fmt.Errorf("hubspot: the %s answer is over %d bytes: %w", route, maxBody, api.ErrTransient)
+	default:
+		// Only the route: the cause's text may come from a proxy.
 		return fmt.Errorf("hubspot: %s %s: the call did not complete: %w", method, route, api.ErrTransient)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-		return &apiError{method: method, route: route, status: resp.StatusCode, body: raw, kind: classify(resp.StatusCode, raw)}
-	}
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
-	if err != nil {
-		if parent.Err() != nil {
-			return fmt.Errorf("hubspot: %s %s: %w", method, route, parent.Err())
-		}
-		return fmt.Errorf("hubspot: reading the %s answer: %w", route, api.ErrTransient)
-	}
-	if int64(len(raw)) > maxBody {
-		return fmt.Errorf("hubspot: the %s answer is over %d bytes: %w", route, maxBody, api.ErrTransient)
+	if reply.Status < 200 || reply.Status > 299 {
+		raw := reply.Body[:min(len(reply.Body), maxErrorBody)]
+		return &apiError{method: method, route: route, status: reply.Status, body: raw, kind: classify(reply.Status, raw)}
 	}
 	if out == nil {
 		return nil
 	}
-	if err := json.Unmarshal(raw, out); err != nil {
+	if err := json.Unmarshal(reply.Body, out); err != nil {
 		return fmt.Errorf("hubspot: reading the %s answer: %w", route, api.ErrTransient)
 	}
 	return nil
@@ -163,12 +157,7 @@ func (c *client) call(parent context.Context, method, path string, in, out any) 
 // newClient builds the HTTP side: hc (a test client, or nil for a default
 // one) copied with redirects turned off.
 func newClient(base, token string, hc *http.Client) *client {
-	h := http.Client{}
-	if hc != nil {
-		h = *hc
-	}
-	h.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &client{base: base, token: token, hc: &h}
+	return &client{base: base, token: token, hc: vendorhttp.NewClient(hc)}
 }
 
 // pacer spaces search calls: HubSpot limits its search endpoints to a few
