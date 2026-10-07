@@ -1,0 +1,86 @@
+adapters/apollo/sink.go
+  s_9dab9ff7f2c580::t_4b770bd9dc71a2 1-499
+  s_9dab9ff7f2c580::t_710f7d32c62ae4 500-510
+adapters/apollo/lookup.go
+  s_9dab9ff7f2c580::t_b3f6c17adc845c 1-124
+  s_9dab9ff7f2c580::t_0e0e24a1ea463c 125
+internal/check/apollo_sequences_test.go
+  s_9dab9ff7f2c580::t_84e0a404a88400 1-109
+internal/fakes/apollo/outreach.go
+  s_9dab9ff7f2c580::t_90fe7355b61f77 1-500
+adapters/apollo/poll.go
+  s_9dab9ff7f2c580::t_42ba3a329a0da4 1-124
+internal/check/apollo_sequences.go
+  s_9dab9ff7f2c580::t_19a00ea3314b17 1-76,78-121
+  s_9dab9ff7f2c580::t_90a9fe0f7c8018 77
+adapters/apollo/conformance_test.go
+  s_9dab9ff7f2c580::t_1a97343f34fe56 1-79
+adapters/apollo/sink_test.go
+  s_9dab9ff7f2c580::t_01582153518f0a 1-451
+docs/design/oss-outbound-engine-contracts.md
+  s_9dab9ff7f2c580::t_f4b8ae7f31ea85 596,606
+internal/engine/run_test.go
+  s_9dab9ff7f2c580::t_f3c70d8b125ba4 49-56,60-61
+internal/fakes/apollo/apollo.go
+  s_9dab9ff7f2c580::t_b592166a1f9757 3-6,16,18,44-46,73,78-79,113-116,121-128,229-239
+testdata/vendors/apollo/README.md
+  s_9dab9ff7f2c580::t_1f3690ba68aca9 21-27,34-42
+testdata/vendors/apollo/contacts_create/created.json
+  s_9dab9ff7f2c580::t_2c014157cd6f1e 1-41
+testdata/vendors/apollo/contacts_create/forbidden.json
+  s_9dab9ff7f2c580::t_84baa0c47735c8 1-31
+testdata/vendors/apollo/contacts_create/invalid_email.json
+  s_9dab9ff7f2c580::t_e03ab117154976 1-31
+testdata/vendors/apollo/contacts_create/rate_limited.json
+  s_9dab9ff7f2c580::t_218938f4aaf097 1-30
+testdata/vendors/apollo/contacts_create/server_error.json
+  s_9dab9ff7f2c580::t_953ce058186515 1-29
+testdata/vendors/apollo/contacts_get/found.json
+  s_9dab9ff7f2c580::t_c22c58cf32dcbe 1-40
+testdata/vendors/apollo/contacts_get/not_found.json
+  s_9dab9ff7f2c580::t_b7d0637d2795ab 1-20
+testdata/vendors/apollo/contacts_search/found.json
+  s_9dab9ff7f2c580::t_5b8e32f1ed4479 1-45
+testdata/vendors/apollo/contacts_search/opted_out.json
+  s_9dab9ff7f2c580::t_4b85cb1624f189 1-44
+testdata/vendors/apollo/contacts_search/rate_limited.json
+  s_9dab9ff7f2c580::t_b184bc2326bdc1 1-26
+testdata/vendors/apollo/email_accounts/list.json
+  s_9dab9ff7f2c580::t_140cc4c51d4e28 1-27
+testdata/vendors/apollo/emailer_campaigns_add_contact_ids/added.json
+  s_9dab9ff7f2c580::t_ffccaad00eb35b 1-62
+testdata/vendors/apollo/emailer_campaigns_add_contact_ids/forbidden.json
+  s_9dab9ff7f2c580::t_4eba5f69b81443 1-33
+testdata/vendors/apollo/emailer_campaigns_add_contact_ids/rate_limited.json
+  s_9dab9ff7f2c580::t_8ad50d63decd3b 1-32
+testdata/vendors/apollo/emailer_campaigns_add_contact_ids/server_error.json
+  s_9dab9ff7f2c580::t_b44bd28c88a99f 1-31
+testdata/vendors/apollo/emailer_campaigns_add_contact_ids/skipped_invalid_email.json
+  s_9dab9ff7f2c580::t_cc9cf9c00d5c3a 1-43
+testdata/vendors/apollo/emailer_campaigns_add_contact_ids/skipped_other_sequence.json
+  s_9dab9ff7f2c580::t_fdf24b2a5acb0a 1-43
+testdata/vendors/apollo/emailer_campaigns_add_contact_ids/skipped_unsubscribed.json
+  s_9dab9ff7f2c580::t_ceb3144564ba9f 1-43
+testdata/vendors/apollo/emailer_campaigns_search/found.json
+  s_9dab9ff7f2c580::t_47b4bc56ab7ce1 1-40
+testdata/vendors/apollo/emailer_messages_search/rate_limited.json
+  s_9dab9ff7f2c580::t_825305bf94c141 1-27
+testdata/vendors/apollo/emailer_messages_search/replies.json
+  s_9dab9ff7f2c580::t_e9f84fb8df608c 1-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0301efd30e7fe915ecb7c8482ac5d361f8a22902",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
