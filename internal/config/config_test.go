@@ -465,3 +465,11 @@ func TestNoConfigAnywhereNamesEveryPath(t *testing.T) {
 		}
 	}
 }
+
+func TestMissingConfigFlagKeepsPlainError(t *testing.T) {
+	withDefaultPaths(t)
+	_, err := Load(Options{Getenv: noEnv, ConfigPath: filepath.Join(t.TempDir(), "missing.yml")})
+	if err == nil || !strings.Contains(err.Error(), "reading config") || strings.Contains(err.Error(), "mounted at /config") {
+		t.Fatalf("--config to a missing file: got %v, want the plain reading config error", err)
+	}
+}

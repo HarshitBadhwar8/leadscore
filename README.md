@@ -321,8 +321,8 @@ Steps:
    `examples/leadscore.csv-only.yml` for CSV only), the example rubric as
    `rubric.yml`, and your CSV files. The folder is mounted read-only at
    `/config`; the export lists land in `./out`. Make that folder private
-   (the lists hold personal data): `mkdir -m 700 out`. On macOS with Colima
-   or podman, keep the folder under your home folder: they share only that
+   (the lists hold personal data): `mkdir -p out && chmod 700 out`. On
+   macOS, keep the folder under your home folder: Colima shares only that
    with Docker, and a folder elsewhere shows up empty inside the container.
    On Linux the container runs as its own user (uid 10001), so also run:
    - `sudo chown 10001:10001 out`: the container can write the lists into
