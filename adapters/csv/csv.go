@@ -90,13 +90,13 @@ func (s *Source) Fetch(ctx context.Context, _ api.Cursor) ([]api.InputRow, []api
 		return nil, nil, "", fmt.Errorf("csv source %q: %s: %w", s.id, s.path, err)
 	}
 	if s.events {
-		events, err := s.toEvents(headers, records)
+		events, err := ParseEvents(s.id, headers, records, s.now())
 		if err != nil {
 			return nil, nil, "", fmt.Errorf("csv source %q: %s: %w", s.id, s.path, err)
 		}
 		return nil, events, "", nil
 	}
-	return s.toRows(headers, records), nil, "", nil
+	return Rows(s.id, headers, records), nil, "", nil
 }
 
 // readFile reads at most maxFileBytes, and fails rather than truncating.
@@ -116,11 +116,15 @@ func readFile(path string) ([]byte, error) {
 	return data, nil
 }
 
-// record is one data line with its line number in the file, for reject reasons.
-type record struct {
-	line  int
-	cells []string
+// EventRecord is one data row: its line number in the file (for a sheet, its
+// row number), used in reject reasons, and its cells in header order.
+type EventRecord struct {
+	Line  int
+	Cells []string
 }
+
+// record is one data line of a file.
+type record = EventRecord
 
 var bom = []byte("\xEF\xBB\xBF")
 
@@ -194,7 +198,7 @@ func parse(data []byte) ([]string, []record, error) {
 			}
 			rec = kept
 		}
-		out = append(out, record{line: line, cells: rec})
+		out = append(out, record{Line: line, Cells: rec})
 	}
 }
 
@@ -237,12 +241,12 @@ func blank(cells []string) bool {
 	return true
 }
 
-// toRows returns one InputRow per record. Every header gets a column, empty
-// when the row is short, so a ragged row and the same row padded with empty
-// cells hash alike in merge. Cells past the last header have no name and are
+// Rows returns one InputRow per record; the Sheet-tab source uses it too.
+// Every header gets a column, empty when the row is short, so a ragged row
+// and the same row padded with empty cells hash alike in merge. Cells past the last header have no name and are
 // dropped. When a header is written twice, the first column's value is kept.
 // All rows share one Headers slice, which callers must not change.
-func (s *Source) toRows(headers []string, records []record) []api.InputRow {
+func Rows(sourceID string, headers []string, records []EventRecord) []api.InputRow {
 	rows := make([]api.InputRow, 0, len(records))
 	for _, rec := range records {
 		cols := make(map[string]string, len(headers))
@@ -250,9 +254,9 @@ func (s *Source) toRows(headers []string, records []record) []api.InputRow {
 			if _, seen := cols[h]; seen {
 				continue
 			}
-			cols[h] = cell(rec.cells, i)
+			cols[h] = cell(rec.Cells, i)
 		}
-		rows = append(rows, api.InputRow{SourceID: s.id, Headers: headers, Columns: cols})
+		rows = append(rows, api.InputRow{SourceID: sourceID, Headers: headers, Columns: cols})
 	}
 	return rows
 }
@@ -297,12 +301,14 @@ func attrKey(field string) string {
 	return field
 }
 
-// toEvents returns one event per record (contracts section 5.2). A row that
-// cannot be an event comes back with Kind empty and Attrs["reject"] saying why;
-// the engine logs it. Reasons carry the line number, never a cell's value, so
-// the log carries no email. A file with no `at` column, or no person-key
-// column, fails as a whole, as core refused such files.
-func (s *Source) toEvents(headers []string, records []record) ([]api.Event, error) {
+// ParseEvents returns one event per record (contracts section 5.2), as a
+// source marked `events: true` reads them; the Sheet-tab source uses it too,
+// so both follow one set of rules. A row that cannot be an event comes back
+// with Kind empty and Attrs["reject"] saying why; the engine logs it. Reasons
+// carry the line number, never a cell's value, so the log carries no email. A
+// file with no `at` column, or no person-key column, fails as a whole, as core
+// refused such files. received stamps every event's ReceivedAt.
+func ParseEvents(sourceID string, headers []string, records []EventRecord, received time.Time) ([]api.Event, error) {
 	aliases := api.BuiltinAliases()
 	// The first header in file order that resolves to a name owns it.
 	index := map[string]int{}
@@ -325,7 +331,7 @@ func (s *Source) toEvents(headers []string, records []record) ([]api.Event, erro
 		return nil, errors.New("an events file needs an email, linkedin_url or domain column")
 	}
 	_, hasEventCol := index[colEvent]
-	received := s.now().UTC()
+	received = received.UTC()
 
 	events := make([]api.Event, 0, len(records))
 	for _, rec := range records {
@@ -334,14 +340,14 @@ func (s *Source) toEvents(headers []string, records []record) ([]api.Event, erro
 			if !ok {
 				return ""
 			}
-			return strings.TrimSpace(cell(rec.cells, i))
+			return strings.TrimSpace(cell(rec.Cells, i))
 		}
 		e := api.Event{
 			Email:       get(colEmail),
 			LinkedInURL: get(colLinked),
 			Domain:      get(colDomain),
 			ReceivedAt:  received,
-			Origin:      s.id,
+			Origin:      sourceID,
 			Attrs:       map[string]string{},
 		}
 		for name, i := range index {
@@ -351,28 +357,28 @@ func (s *Source) toEvents(headers []string, records []record) ([]api.Event, erro
 				// not turn a good row into a rejected one.
 				continue
 			}
-			if v := strings.TrimSpace(cell(rec.cells, i)); v != "" {
+			if v := strings.TrimSpace(cell(rec.Cells, i)); v != "" {
 				e.Attrs[attrKey(name)] = v
 			}
 		}
 
 		// An Apollo visitor export has no event column: each row is a visit.
-		kind := visitKind(s.id)
+		kind := visitKind(sourceID)
 		if hasEventCol {
 			kind = strings.ToLower(get(colEvent))
 		}
 		at, atErr := parseAt(get(colAt))
 		switch {
 		case kind == "":
-			e.Attrs["reject"] = fmt.Sprintf("line %d: no event kind", rec.line)
+			e.Attrs["reject"] = fmt.Sprintf("line %d: no event kind", rec.Line)
 		case hasEventCol && !plainKind(kind):
-			e.Attrs["reject"] = fmt.Sprintf("line %d: an event kind may use only a-z, 0-9 and _", rec.line)
+			e.Attrs["reject"] = fmt.Sprintf("line %d: an event kind may use only a-z, 0-9 and _", rec.Line)
 		case forbidden(kind):
-			e.Attrs["reject"] = fmt.Sprintf("line %d: a sent, reply, opt-out or deal kind may not come from a file", rec.line)
+			e.Attrs["reject"] = fmt.Sprintf("line %d: a sent, reply, opt-out or deal kind may not come from a file", rec.Line)
 		case atErr != nil:
-			e.Attrs["reject"] = fmt.Sprintf("line %d: %v", rec.line, atErr)
+			e.Attrs["reject"] = fmt.Sprintf("line %d: %v", rec.Line, atErr)
 		case e.Email == "" && e.LinkedInURL == "" && e.Domain == "":
-			e.Attrs["reject"] = fmt.Sprintf("line %d: no email, linkedin_url or domain", rec.line)
+			e.Attrs["reject"] = fmt.Sprintf("line %d: no email, linkedin_url or domain", rec.Line)
 		default:
 			e.Kind = kind
 			e.At = at

@@ -22,6 +22,7 @@ import (
 
 	// The built-in stores register here: their packages are internal, so a
 	// custom build cannot import them, and every build gets them this way.
+	_ "github.com/HarshitBadhwar8/leadscore/internal/store/sheets"
 	_ "github.com/HarshitBadhwar8/leadscore/internal/store/sqlite"
 )
 
@@ -196,6 +197,9 @@ var (
 var (
 	// ErrTooLarge: Commit would exceed the store's limit; the store does not split.
 	ErrTooLarge = api.ErrTooLarge
+	// ErrCommittedWithProblems: Commit saved every write, but a people-owned
+	// table needs a person to look at it; treat the commit as done, never resend.
+	ErrCommittedWithProblems = api.ErrCommittedWithProblems
 	// ErrLeaseHeld: another owner holds a live run lease.
 	ErrLeaseHeld = api.ErrLeaseHeld
 	// ErrLeaseLost: the lease expired or another owner took it.

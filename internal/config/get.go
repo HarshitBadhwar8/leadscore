@@ -73,7 +73,6 @@ func SetHosting(path string, pairs []string) error {
 	if len(pairs) == 0 {
 		return errors.New("nothing to set: give one or more key=value pairs")
 	}
-	type kv struct{ k, v string }
 	var sets []kv
 	for _, pair := range pairs {
 		k, v, ok := strings.Cut(pair, "=")
@@ -85,7 +84,33 @@ func SetHosting(path string, pairs []string) error {
 		}
 		sets = append(sets, kv{k, v})
 	}
+	return setBlockKeys(path, "hosting", sets)
+}
 
+// StoreKeys are the `store` keys SetStoreKey may write: what `setup sheet`
+// writes after creating a spreadsheet.
+var StoreKeys = []string{"spreadsheet", "view_spreadsheet"}
+
+// SetStoreKey writes one key of the `store` block (store.spreadsheet or
+// store.view_spreadsheet) into the leadscore.yml at path, keeping comments,
+// as SetHosting does.
+func SetStoreKey(path, key, value string) error {
+	ok := false
+	for _, k := range StoreKeys {
+		ok = ok || k == key
+	}
+	if !ok {
+		return fmt.Errorf("unknown store key %q (allowed: %s)", key, strings.Join(StoreKeys, ", "))
+	}
+	return setBlockKeys(path, "store", []kv{{key, value}})
+}
+
+type kv struct{ k, v string }
+
+// setBlockKeys sets keys of one top-level mapping (creating it when missing),
+// keeping comments; the result must still load, and the file is replaced
+// atomically.
+func setBlockKeys(path, block string, sets []kv) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("reading %s: %w", path, err)
@@ -93,7 +118,7 @@ func SetHosting(path string, pairs []string) error {
 	if _, _, isBundle, err := splitBundle(data, path); err != nil {
 		return err
 	} else if isBundle {
-		return fmt.Errorf("%s is a hosted bundle; set hosting in leadscore.yml and run `leadscore config push`", path)
+		return fmt.Errorf("%s is a hosted bundle; set %s in leadscore.yml and run `leadscore config push`", path, block)
 	}
 
 	// Refuse a multi-document file: yaml.v3 would read and rewrite only the
@@ -112,28 +137,28 @@ func SetHosting(path string, pairs []string) error {
 	}
 	root := doc.Content[0]
 
-	hosting := mappingValue(root, "hosting")
+	node := mappingValue(root, block)
 	// An alias or anchor would make the change reach other keys, or not land
 	// where the reader looks; refuse rather than guess.
-	if hosting != nil && (hosting.Kind == yaml.AliasNode || hosting.Anchor != "" || hasAnchors(hosting)) {
-		return fmt.Errorf("%s: `hosting` uses a YAML anchor or alias; edit it by hand", path)
+	if node != nil && (node.Kind == yaml.AliasNode || node.Anchor != "" || hasAnchors(node)) {
+		return fmt.Errorf("%s: `%s` uses a YAML anchor or alias; edit it by hand", path, block)
 	}
-	if hosting == nil {
-		hosting = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	if node == nil {
+		node = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 		root.Content = append(root.Content,
-			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "hosting"}, hosting)
-	} else if hosting.Kind != yaml.MappingNode {
-		// `hosting:` with no value, or a scalar: replace the value, keep its comments.
-		*hosting = yaml.Node{Kind: yaml.MappingNode, Tag: "!!map",
-			HeadComment: hosting.HeadComment, LineComment: hosting.LineComment, FootComment: hosting.FootComment}
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: block}, node)
+	} else if node.Kind != yaml.MappingNode {
+		// A key with no value, or a scalar: replace the value, keep its comments.
+		*node = yaml.Node{Kind: yaml.MappingNode, Tag: "!!map",
+			HeadComment: node.HeadComment, LineComment: node.LineComment, FootComment: node.FootComment}
 	}
 	for _, s := range sets {
-		if v := mappingValue(hosting, s.k); v != nil {
+		if v := mappingValue(node, s.k); v != nil {
 			// Change the scalar in place so its line comment stays.
 			v.Kind, v.Tag, v.Value, v.Style, v.Content = yaml.ScalarNode, "!!str", s.v, 0, nil
 			continue
 		}
-		hosting.Content = append(hosting.Content,
+		node.Content = append(node.Content,
 			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: s.k},
 			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: s.v})
 	}
