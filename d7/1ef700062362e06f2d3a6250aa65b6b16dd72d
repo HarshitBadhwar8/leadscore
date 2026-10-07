@@ -1,0 +1,71 @@
+README.md
+  s_9dab9ff7f2c580::t_3f10be57ec497f 25,46-64
+docs/design/oss-outbound-engine-contracts.md
+  s_9dab9ff7f2c580::t_39699e60164c01 405,443,447,483,784,844,860-861,867,877,896,899-902,907,916,921-923,928-935
+docs/design/oss-outbound-engine.md
+  s_9dab9ff7f2c580::t_140fa802d1c3de 419
+internal/check/check.go
+  s_9dab9ff7f2c580::t_195e7226c56e92 14,31-38
+internal/check/rubric.go
+  s_9dab9ff7f2c580::t_b4be4d06144771 5,7-9,15-17,31-37,46-111
+internal/check/runcases_test.go
+  s_9dab9ff7f2c580::t_c875596798ffa7 1-123
+internal/check/store.go
+  s_9dab9ff7f2c580::t_131d91091641b6 12,19,26-27,29,70-72,153-179
+internal/cli/cli.go
+  s_9dab9ff7f2c580::t_f5e7e1cc2808ce 56,64,76,86-88
+internal/cli/run.go
+  s_9dab9ff7f2c580::t_3fc7373a1b0908 1-313
+internal/cli/run_test.go
+  s_9dab9ff7f2c580::t_1f4d4edc41fa2a 1-148
+internal/csvsafe/csvsafe.go
+  s_9dab9ff7f2c580::t_8d67fa18099467 1-40
+internal/csvsafe/csvsafe_test.go
+  s_9dab9ff7f2c580::t_4af40eab93167e 1-27
+internal/engine/dryrun.go
+  s_9dab9ff7f2c580::t_d4975bdf79d85e 1-95
+internal/engine/dryrun_test.go
+  s_9dab9ff7f2c580::t_143df75ea81597 1-87
+internal/engine/engine.go
+  s_9dab9ff7f2c580::t_5875f3f38e39d9 1-160
+internal/engine/health.go
+  s_9dab9ff7f2c580::t_8f31d69453a7d6 1-110
+internal/engine/helpers_test.go
+  s_9dab9ff7f2c580::t_aa47f5d129b045 1-256
+internal/engine/ingest.go
+  s_9dab9ff7f2c580::t_753ca82e12187b 1-132
+internal/engine/review_test.go
+  s_9dab9ff7f2c580::t_d800732bff6438 1-363
+internal/engine/run.go
+  s_9dab9ff7f2c580::t_9be6059edff15a 1-703
+internal/engine/run_test.go
+  s_9dab9ff7f2c580::t_46d90a6ed4a442 1-683
+internal/engine/score.go
+  s_9dab9ff7f2c580::t_2626351f503bc1 1-202
+internal/merge/apply.go
+  s_9dab9ff7f2c580::t_7ae0d861aaef6b 406,419
+internal/merge/normalize.go
+  s_9dab9ff7f2c580::t_c75eed932a1817 65,69,187-189,197-199
+internal/store/sqlite/sqlite.go
+  s_9dab9ff7f2c580::t_7865e11bb4744a 41-46,91-97
+leadscore.go
+  s_9dab9ff7f2c580::t_089b6218a9fbdc 20-21,259-261,263-265
+stub_adapters_test.go
+  s_9dab9ff7f2c580::t_3466736dbb7646 10-11,243-247
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d71ef700062362e06f2d3a6250aa65b6b16dd72d",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
