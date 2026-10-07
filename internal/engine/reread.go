@@ -2,7 +2,6 @@ package engine
 
 import (
 	"fmt"
-	"reflect"
 	"sort"
 	"strings"
 
@@ -13,64 +12,60 @@ import (
 )
 
 // reReadHook is the ReRead hook (S15, contracts section 12.6): before each
-// pushing batch it reads the receiver events stored since Intake read the
-// log, and applies their effects to the run's model, so an opt-out or reply
-// that arrives while the run pushes blocks the next batch.
+// pushing batch it reads the receiver events stored since the last read (the
+// first time, since Intake's cursor:events), and applies their effects to the
+// run's model, so an opt-out or reply that arrives while the run pushes
+// blocks the next batch.
 //
-// Each event's person is found with merge.FindPerson, with no writes: an
-// unknown person is skipped (the next run's Intake creates the lead), except
-// for an opt-out, which still reaches every live lead holding one of its
-// identity keys, as Intake would apply it. Under `replies: polling` a
-// receiver reply has no effect, as in Intake. It moves no cursor and writes
-// no Seen events or Window events row: the next run takes the same events
-// again through Intake, and applying an event twice changes nothing.
+// Each event passes the filter Intake uses (keyEvent and suppressed): an
+// event whose key is already in Seen events, or was taken by an earlier
+// re-read this run, is skipped, as Intake skips a redelivery, so a re-sent
+// reply can never move a status back. Its person is found with
+// merge.FindPerson, with no writes: an unknown person is skipped (the next
+// run's Intake creates the lead), except that an opt-out still reaches every
+// live lead holding one of its identity keys, as Intake would apply it.
 //
+// Its read position lives on the run only: it moves no cursor:events and
+// writes no Seen events or Window events row, so the next run takes the same
+// events again through Intake, and applying an event twice changes nothing.
 // It returns the live leads whose Outcomes or Apollo hold changed. The push
 // loop folds every status again after it, and reads opt-outs from Outcomes
-// directly, so a changed lead in a merge family blocks the whole family.
+// across each lead's merge family.
 func reReadHook(r *Run) ([]api.LeadID, error) {
 	if r.Events == nil || r.DryRun {
 		return nil, nil
 	}
 	m := r.Model
-	cursor := api.Cursor(m.StateValue(eventsCursorKey))
-	raws, _, err := r.Events.ReadEvents(r.Ctx, cursor)
+	st := r.reread
+	if st == nil {
+		st = &rereadState{cursor: api.Cursor(m.StateValue(eventsCursorKey)), seen: map[api.EventID]bool{}}
+		r.reread = st
+	}
+	raws, next, err := r.Events.ReadEvents(r.Ctx, st.cursor)
 	if err != nil {
 		return nil, fmt.Errorf("re-reading the event log: %w", err)
 	}
-	if len(raws) == 0 {
-		return nil, nil
-	}
-
-	outcomes := make(map[model.Key]model.Outcome, len(m.Outcomes))
-	for k, o := range m.Outcomes {
-		outcomes[k] = o
-	}
-	held := map[model.Key]bool{}
-	for k, p := range m.People {
-		held[k] = !p.ApolloHeldAt.IsZero()
-	}
-
+	st.cursor = next
+	set := map[api.LeadID]bool{}
 	parsed, _ := events.Parse(raws)
 	for _, e := range parsed {
-		e.Kind = strings.ToLower(e.Kind)
-		if e.Kind == "" || strings.HasPrefix(e.Kind, "deal_") || suppressed(r, []api.Event{e}) {
-			continue // a rejected body (Intake logs it), or a reply that polling owns
+		if e.Kind == "" {
+			continue // a rejected body: the next run's Intake logs it
 		}
-		e = merge.NormalizeEventKeys(e)
+		e, why := keyEvent(merge.NormalizeEventKeys(e))
+		if why != "" || st.seen[e.ID] {
+			continue
+		}
+		if _, seen := m.SeenEvents[model.Key(e.ID)]; seen {
+			continue
+		}
+		st.seen[e.ID] = true
+		if suppressed(r, []api.Event{e}) {
+			continue
+		}
 		lead, _ := merge.FindPerson(m, e)
-		events.Apply(m, lead, e, r.Config.ReplyLabels)
-	}
-
-	set := map[api.LeadID]bool{}
-	for k, o := range m.Outcomes {
-		if old, ok := outcomes[k]; !ok || !reflect.DeepEqual(old, o) {
-			set[merge.Live(m, api.LeadID(k))] = true
-		}
-	}
-	for k, p := range m.People {
-		if !p.ApolloHeldAt.IsZero() && !held[k] {
-			set[merge.Live(m, api.LeadID(k))] = true
+		for _, id := range events.Apply(m, lead, e, r.Config.ReplyLabels) {
+			set[id] = true
 		}
 	}
 	changed := make([]api.LeadID, 0, len(set))
@@ -79,6 +74,13 @@ func reReadHook(r *Run) ([]api.LeadID, error) {
 	}
 	sort.Slice(changed, func(i, j int) bool { return changed[i] < changed[j] })
 	return changed, nil
+}
+
+// rereadState is the re-read's position for one run: the event log cursor
+// after its last read, and the keys it took.
+type rereadState struct {
+	cursor api.Cursor
+	seen   map[api.EventID]bool
 }
 
 // receiverOnlyPushKind is the problem raised for a push to a lead known only

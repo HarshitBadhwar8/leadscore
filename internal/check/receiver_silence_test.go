@@ -28,10 +28,12 @@ func TestReceiverSilenceIsInRun(t *testing.T) {
 func TestReceiverSilence(t *testing.T) {
 	now := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
 	day := 24 * time.Hour
-	receiver := load(t, "version: 1\nstore: { type: sqlite }\nreplies: receiver\nreceiver: { visit_events: [Visit_Pricing] }\n")
-	visitsOnly := load(t, "version: 1\nstore: { type: sqlite }\nreplies: polling\nreceiver: { visit_events: [visit_pricing] }\n")
-	polling := load(t, "version: 1\nstore: { type: sqlite }\nreplies: polling\n")
-	week := load(t, "version: 1\nstore: { type: sqlite }\nreplies: receiver\nsilence_threshold: 7d\n")
+	const url = "public_url: https://hooks.example"
+	receiver := load(t, "version: 1\nstore: { type: sqlite }\nreplies: receiver\nreceiver: { visit_events: [Visit_Pricing], "+url+" }\n")
+	visitsOnly := load(t, "version: 1\nstore: { type: sqlite }\nreplies: polling\nreceiver: { visit_events: [visit_pricing], "+url+" }\n")
+	polling := load(t, "version: 1\nstore: { type: sqlite }\nreplies: polling\nreceiver: { "+url+" }\n")
+	week := load(t, "version: 1\nstore: { type: sqlite }\nreplies: receiver\nsilence_threshold: 7d\nreceiver: { "+url+" }\n")
+	notSetUp := load(t, "version: 1\nstore: { type: sqlite }\nreplies: receiver\n")
 	cases := []struct {
 		name  string
 		cfg   *config.Config
@@ -49,6 +51,9 @@ func TestReceiverSilence(t *testing.T) {
 			"first_run_at": now.Add(-30 * day), "last_received:sent": now.Add(-time.Hour), "last_received:visit_pricing": now.Add(-day)}, nil},
 		{"polling expects no sent", visitsOnly, map[string]time.Time{"first_run_at": now.Add(-30 * day)}, []string{"silent:visit_pricing"}},
 		{"receiver not configured", polling, map[string]time.Time{"first_run_at": now.Add(-30 * day)}, nil},
+		{"receiver never set up (no public_url)", notSetUp, map[string]time.Time{"first_run_at": now.Add(-30 * day)}, nil},
+		{"a future received time counts as now", receiver, map[string]time.Time{
+			"first_run_at": now.Add(-30 * day), "last_received:sent": now.Add(400 * day), "last_received:visit_pricing": now.Add(-time.Hour)}, nil},
 		{"the team's threshold", week, map[string]time.Time{"first_run_at": now.Add(-30 * day), "last_received:sent": now.Add(-6 * day)}, nil},
 	}
 	for _, c := range cases {

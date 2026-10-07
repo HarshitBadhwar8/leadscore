@@ -132,7 +132,17 @@ const crashLeaseTTL = 2 * time.Minute
 // writes under the run lease, taken for this write only. When another run
 // holds the lease it writes nothing and returns an error wrapping
 // api.ErrLeaseHeld: that run writes Health itself.
-func RecordCrash(ctx context.Context, store api.Backend, startAt time.Time, err error) error {
+//
+// It reads only the Health table, never the whole store, so it still writes
+// when loading the store is what failed (a newer schema, a table that cannot
+// be read), and it recovers a panic of its own into its error, so the
+// receiver calling it stays up.
+func RecordCrash(ctx context.Context, store api.Backend, startAt time.Time, err error) (rerr error) {
+	defer func() {
+		if p := recover(); p != nil {
+			rerr = fmt.Errorf("recording the crash panicked: %v", p)
+		}
+	}()
 	id, uerr := uuid.NewV7()
 	if uerr != nil {
 		return uerr
@@ -146,9 +156,13 @@ func RecordCrash(ctx context.Context, store api.Backend, startAt time.Time, err 
 		defer cancel()
 		_ = lease.Release(rctx)
 	}()
-	m, lerr := codec.Load(ctx, store)
+	rows, lerr := store.ReadTable(ctx, model.TableHealth)
 	if lerr != nil {
-		return fmt.Errorf("loading the store to record the crash: %w", lerr)
+		return fmt.Errorf("reading Health to record the crash: %w", lerr)
+	}
+	m := model.New()
+	if lerr := m.Load(model.TableHealth, rows); lerr != nil {
+		return fmt.Errorf("reading Health to record the crash: %w", lerr)
 	}
 	x := &exec{
 		store: store, startAt: startAt.UTC(), problems: map[string]problem{}, failed: true,

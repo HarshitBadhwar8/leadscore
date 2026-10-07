@@ -21,7 +21,7 @@ const (
 
 // receiverSilence is the receiver-silence check (contracts sections 5.3 and
 // 10, RFC 6.12): reachable is not delivering, so when the receiver is
-// configured, every event kind it expects must have arrived within
+// configured and set up (receiver.public_url), every event kind it expects must have arrived within
 // silence_threshold. Silence is measured from the later of the kind's newest
 // received event (State last_received:<kind>) and the first run (State
 // first_run_at), so a new install is not flagged before it could hear
@@ -33,7 +33,10 @@ func (receiverSilence) Name() string { return "receiver-silence" }
 func (receiverSilence) InRun() bool  { return true }
 
 func (receiverSilence) Run(_ context.Context, env Env) []Problem {
-	if env.Config == nil || env.Model == nil || !ReceiverConfigured(env.Config) {
+	// Only a receiver that was set up (it has a public address) can fall
+	// silent; an install that never set one up is not flagged forever.
+	if env.Config == nil || env.Model == nil || !ReceiverConfigured(env.Config) ||
+		strings.TrimSpace(env.Config.Receiver.PublicURL) == "" {
 		return nil
 	}
 	m := env.Model
@@ -48,6 +51,9 @@ func (receiverSilence) Run(_ context.Context, env Env) []Problem {
 		since := firstRun
 		last, err := model.ParseTime(m.StateValue(lastReceivedPrefix + kind))
 		heard := err == nil && !last.IsZero()
+		if heard && last.After(now) {
+			last = now // a received time in the future (a clock that ran ahead) counts as now
+		}
 		if heard && last.After(since) {
 			since = last
 		}

@@ -21,7 +21,11 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 	fakeapollo "github.com/HarshitBadhwar8/leadscore/internal/fakes/apollo"
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
+	"github.com/HarshitBadhwar8/leadscore/internal/store/codec"
+	"github.com/HarshitBadhwar8/leadscore/internal/store/sqlite"
 )
+
+func codecLoad(s api.Backend) (*model.Model, error) { return codec.Load(context.Background(), s) }
 
 const apolloTestKey = "s15-test-key"
 
@@ -338,8 +342,18 @@ func TestWorkedExample(t *testing.T) {
   - { id: warm,`)
 	w.lookup("apollo").OptOut("priya@acme.example")
 	w.mustRun()
-	if r := w.push("priya@acme.example", "deal-sync", "contact"); r != nil && r["called_at"] != "" {
-		t.Errorf("the deal-sync push went out after the opt-out: %v", r)
+	// She was selected for deal-sync, so the lookup read her; its opt-out
+	// stopped the push before any ledger row was written or called.
+	if !slices.Contains(w.apollo.LookedIDs(), w.id("priya@acme.example")) {
+		t.Errorf("the Apollo lookup never read Priya: %v", w.apollo.LookedIDs())
+	}
+	if r := w.push("priya@acme.example", "deal-sync", "contact"); r != nil && (r["called_at"] != "" || r["state"] == stateDone) {
+		t.Errorf("the deal-sync row %v, want none or never called", r)
+	}
+	for _, c := range w.hubspot.Calls() {
+		if c.Key.LaneID == "deal-sync" {
+			t.Errorf("deal-sync called the vendor: %v", c.Key)
+		}
 	}
 	if o := w.outcome("priya@acme.example"); o["status"] != statusUnsubscribed || o["unsubscribed_origin"] != "lookup" {
 		t.Fatalf("after the lookup's opt-out: %v, want unsubscribed (rule 1)", o)
@@ -393,7 +407,7 @@ func TestReceiverOnlyPushRaiseAndClear(t *testing.T) {
 // makes the run unhealthy; an event of that kind clears it.
 func TestReceiverSilenceInRun(t *testing.T) {
 	w := twoLeads(t)
-	w.config("pushes_enabled: true", "pushes_enabled: false\nreceiver: { visit_events: [visit_pricing] }")
+	w.config("pushes_enabled: true", "pushes_enabled: false\nreceiver: { visit_events: [visit_pricing], public_url: \"https://hooks.example\" }")
 	res, _ := w.mustRun()
 	if hasKey(res.Problems, "silent:sent") || hasKey(res.Problems, "silent:visit_pricing") {
 		t.Fatalf("a new install is flagged: %v", res.Problems)
@@ -419,7 +433,7 @@ func TestReceiverSilenceInRun(t *testing.T) {
 // their first_seen_at. With the lease held by another run it writes nothing.
 func TestRecordCrash(t *testing.T) {
 	w := twoLeads(t)
-	w.config("pushes_enabled: true", "pushes_enabled: false\nreceiver: { visit_events: [visit_pricing] }")
+	w.config("pushes_enabled: true", "pushes_enabled: false\nreceiver: { visit_events: [visit_pricing], public_url: \"https://hooks.example\" }")
 	w.mustRun()
 	w.clock = func() time.Time { return time.Now().Add(4 * 24 * time.Hour) }
 	w.mustRun() // silent:sent is open
@@ -504,4 +518,241 @@ func TestOptOutInACycleSurvivesTheFix(t *testing.T) {
 			t.Errorf("%s %q, want unsubscribed", e, s)
 		}
 	}
+}
+
+// flakyWorld is a world on the flaky store, whose event log tests can count
+// and make shrink.
+func flakyWorld(t *testing.T, leads ...string) *world {
+	w := newWorld(t, leads...)
+	w.cfg = "store: { type: flaky, path: leadscore.db }\n" + laneConfig
+	w.install.config(w.cfg)
+	flaky.Lock()
+	flaky.eventsRead, flaky.shrinkEvents = 0, false
+	flaky.Unlock()
+	t.Cleanup(func() { flaky.Lock(); flaky.eventsRead, flaky.shrinkEvents = 0, false; flaky.Unlock() })
+	return w
+}
+
+// A reply Apollo sends again mid-run, already taken by an earlier run, is
+// skipped by the re-read as Intake skips it: it never moves a stored
+// replied_positive back to replied_neutral.
+func TestReReadSkipsARedeliveredReply(t *testing.T) {
+	w := newWorld(t, clerks(30)...)
+	now := time.Now().UTC()
+	first := replyRaw("email_replied", "p00@p00.example", "Interested", now.Add(-2*time.Minute))
+	w.appendEvents(first, replyRaw("email_replied_positive", "p00@p00.example", "Meeting", now.Add(-time.Minute)))
+	w.pushesOff()
+	if s := w.outcome("p00@p00.example")["reply_status"]; s != "replied_positive" {
+		t.Fatalf("reply_status %q before the redelivery", s)
+	}
+	again := first
+	again.ReceivedAt = now // the same event, delivered again later
+	appendDuring(w, again)
+	w.mustRun()
+	if s := w.outcome("p00@p00.example")["reply_status"]; s != "replied_positive" {
+		t.Errorf("after a mid-run redelivery: reply_status %q, want replied_positive", s)
+	}
+	w.mustRun()
+	if s := w.outcome("p00@p00.example")["reply_status"]; s != "replied_positive" {
+		t.Errorf("the next run: reply_status %q, want replied_positive", s)
+	}
+}
+
+// Each re-read reads only what arrived since the last one: over three
+// batches, an event stored during the first is read once, not before every
+// later batch.
+func TestReReadReadsEachEventOnce(t *testing.T) {
+	w := flakyWorld(t, clerks(60)...)
+	w.limits("{ max_pushes_per_run: 100, max_pushes_per_day: 100 }")
+	w.pushesOff()
+	flaky.Lock()
+	flaky.eventsRead = 0
+	flaky.Unlock()
+	appendDuring(w, replyRaw("email_unsubscribed", "p59@p59.example", "", time.Now().UTC()))
+	res, _ := w.mustRun()
+	if res.Pushed != 59 {
+		t.Errorf("pushed %d, want 59", res.Pushed)
+	}
+	flaky.Lock()
+	n := flaky.eventsRead
+	flaky.Unlock()
+	if n != 1 {
+		t.Errorf("the run read %d stored events, want the one event read once", n)
+	}
+}
+
+// A mid-run opt-out naming an unknown email and an existing lead's LinkedIn
+// URL blocks that lead in the next batch, as Intake would apply it.
+func TestReReadOptOutReachesTheLinkedInHolder(t *testing.T) {
+	w := newWorld(t)
+	lines := []string{"Email,Name,Title,Domain,LinkedIn URL"}
+	for i, l := range clerks(30) {
+		li := ""
+		if i == 29 {
+			li = "https://www.linkedin.com/in/p29-example"
+		}
+		lines = append(lines, l+","+li)
+	}
+	w.write("leads.csv", csvText(lines...))
+	w.pushesOff()
+	appendDuring(w, api.RawEvent{Kind: "apollo_reply", ReceivedAt: time.Now().UTC(), Body: []byte(
+		`{"event":"email_unsubscribed","contact_email":"someone.new@elsewhere.example","contact_linkedin_url":"https://linkedin.com/in/P29-example/"}`)})
+	w.mustRun()
+	if slices.Contains(pushedLeads(w), "p29@p29.example") {
+		t.Fatal("the LinkedIn holder of a mid-run opt-out was pushed in the next batch")
+	}
+}
+
+// A re-read that fails mid-run (the event log shrank) stops pushing for the
+// rest of the run, with step_failed:reread.
+func TestDefaultReReadFailureStopsPushing(t *testing.T) {
+	w := flakyWorld(t, clerks(30)...)
+	w.pushesOff()
+	var once sync.Once
+	w.fake.Before(func(context.Context, api.StepRequest) {
+		once.Do(func() { flaky.Lock(); flaky.shrinkEvents = true; flaky.Unlock() })
+	})
+	res, _ := w.mustRun()
+	if n := len(w.fake.Calls()); n != 25 {
+		t.Errorf("calls %d, want only the first batch (25)", n)
+	}
+	if !hasKey(res.Problems, "step_failed:reread") || res.Healthy {
+		t.Errorf("problems %v healthy %v", res.Problems, res.Healthy)
+	}
+}
+
+// receiver_only_push on a cold lane: a lane that does not require
+// receiver_only false pushes a webhook-only lead, and the flag is raised.
+func TestReceiverOnlyPushOnAColdLane(t *testing.T) {
+	w := newWorld(t, "bo@beta.example,Bo B,Head of Ops,beta.example")
+	w.rubric(`when: { field: receiver_only, eq: false }, push: "fake:b"`, `when: { field: tier, eq: 2 }, push: "fake:b"`)
+	w.pushesOff()
+	w.appendEvents(visitRaw("zoe@zeta.example", ago(time.Hour), time.Now().UTC()))
+	res, _ := w.mustRun()
+	zoe := w.id("zoe@zeta.example")
+	if r := w.push("zoe@zeta.example", "seq-b", "push"); r == nil || r["state"] != stateDone {
+		t.Fatalf("the cold lane did not push the webhook-only lead: %v", r)
+	}
+	if !hasKey(res.Problems, "receiver_only_push:"+string(zoe)) {
+		t.Errorf("problems %v, want receiver_only_push for the cold push", res.Problems)
+	}
+}
+
+// A resubscribe row logs per person, however many leads of the family held
+// a manual opt-out.
+func TestResubscribeLogsPerPerson(t *testing.T) {
+	w := newWorld(t,
+		"ana@acme.example,Ana A,Clerk,acme.example",
+		"ana.alt@home.example,Ana Alt,Clerk,home.example")
+	w.config("pushes_enabled: true", "pushes_enabled: false")
+	w.mustRun()
+	for _, e := range []string{"ana@acme.example", "ana.alt@home.example"} {
+		id := w.id(e)
+		w.edit(func(m *model.Model) {
+			o := m.Outcomes[model.Key(id)]
+			o.LeadID, o.UnsubscribedAt, o.UnsubscribedOrigin = id, time.Now().UTC(), unsubManual
+			m.Put(model.TableOutcomes, o)
+		})
+	}
+	w.override("ana@acme.example", "same_as", "ana.alt@home.example", "")
+	w.override("ana@acme.example", "status", "resubscribe", "")
+	w.mustRun()
+	var msgs []string
+	for _, r := range w.rows(model.TableLog) {
+		if r["kind"] == logResubscribe {
+			msgs = append(msgs, r["message"])
+		}
+	}
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "cleared the person's manual opt-out") || strings.Contains(msgs[0], "2 manual") {
+		t.Errorf("resubscribe log %q, want one line for the person", msgs)
+	}
+}
+
+// A wrong merge undone by hand leaves the other person contactable: an
+// opt-out on the survivor is not copied onto the lead merged into it.
+func TestUnmergeLeavesTheOtherPersonContactable(t *testing.T) {
+	w := newWorld(t,
+		"bea@beta.example,Bea B,Head of Ops,beta.example",
+		"ana@acme.example,Ana A,Head of Ops,acme.example")
+	w.override("bea@beta.example", "same_as", "ana@acme.example", "")
+	w.pushesOff()
+	ana := w.id("ana@acme.example")
+	w.appendEvents(replyRaw("email_unsubscribed", "bea@beta.example", "", time.Now().UTC()))
+	w.config("pushes_enabled: true", "pushes_enabled: false")
+	w.mustRun()
+	if s := w.outcome("bea@beta.example")["status"]; s != statusUnsubscribed {
+		t.Fatalf("bea %q", s)
+	}
+	// A person undoes the wrong merge by hand.
+	w.edit(func(m *model.Model) {
+		p := m.People[model.Key(ana)]
+		p.MergedInto = ""
+		m.Put(model.TablePeople, p)
+		for _, o := range m.Overrides {
+			if o.Action == "same_as" {
+				m.Delete(model.TableOverrides, []string{o.Person, o.Action, o.Value, o.Note})
+			}
+		}
+	})
+	w.config("pushes_enabled: false", "pushes_enabled: true")
+	w.mustRun()
+	if got := pushedLeads(w); !slices.Equal(got, []string{"ana@acme.example"}) {
+		t.Errorf("pushed %v, want ana (contactable again) and not bea", got)
+	}
+}
+
+// RecordCrash reads only Health: it writes even when loading the whole
+// store would fail (a newer schema) or panic (a table that cannot be read),
+// and a panic of its own comes back as an error.
+func TestRecordCrashWithABrokenStore(t *testing.T) {
+	w := twoLeads(t)
+	w.pushesOff()
+	s := w.store()
+	start := time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC)
+	if err := s.Commit(context.Background(), []api.TableWrite{{Table: model.TableState, Op: api.OpUpsert, Key: []string{"key"},
+		Rows: []api.Row{{"key": "schema_version", "value": "99.0"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := codecLoad(s); err == nil {
+		t.Fatal("the store still loads; the test needs a newer schema")
+	}
+	if err := RecordCrash(context.Background(), s, start, errors.New("panic: boom")); err != nil {
+		t.Fatalf("newer schema: %v", err)
+	}
+	if h := w.health(); h["result:last_run_at"] != model.FormatTime(start) || !strings.Contains(h["problem:run_failed"], "boom") {
+		t.Errorf("Health %v", h)
+	}
+
+	panicky := &panickyStore{Store: s}
+	if err := RecordCrash(context.Background(), panicky, start.Add(time.Hour), errors.New("panic: again")); err != nil {
+		t.Fatalf("a store whose other tables panic: %v", err)
+	}
+	if h := w.health(); h["result:last_run_at"] != model.FormatTime(start.Add(time.Hour)) {
+		t.Errorf("Health %v", h)
+	}
+	panicky.commitPanics = true
+	if err := RecordCrash(context.Background(), panicky, start, errors.New("panic: third")); err == nil || !strings.Contains(err.Error(), "panicked") {
+		t.Errorf("err %v, want the write's panic recovered into the error", err)
+	}
+}
+
+// panickyStore panics reading any table but Health (so a full load panics),
+// and, when set, on Commit.
+type panickyStore struct {
+	*sqlite.Store
+	commitPanics bool
+}
+
+func (p *panickyStore) ReadTable(ctx context.Context, name string) ([]api.Row, error) {
+	if name != model.TableHealth && name != model.TableState {
+		panic("cannot read " + name)
+	}
+	return p.Store.ReadTable(ctx, name)
+}
+
+func (p *panickyStore) Commit(ctx context.Context, w []api.TableWrite) error {
+	if p.commitPanics {
+		panic("commit")
+	}
+	return p.Store.Commit(ctx, w)
 }

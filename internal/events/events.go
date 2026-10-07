@@ -289,19 +289,22 @@ func optOutOrigin(kind string, e api.Event, labels map[string]string) string {
 // merged_into). The caller resolved the person: Intake through
 // merge.ApplyEventPerson, the pre-push and re-read steps with the lead they
 // looked up. lead may be empty for a company-level deal event. labels are the
-// team's reply_labels overrides.
+// team's reply_labels overrides. It returns the live leads whose Outcomes row
+// or Apollo hold it changed, sorted (the re-read folds them again).
 //
 // An opt-out (unsubscribed, optout, a polled unsubscribe label) also reaches
 // every other live lead that holds one of the event's identity keys (its
 // contact id, well-formed email or LinkedIn URL), logged as key_conflict with
 // lead ids only: wrongly not contacting someone is acceptable, contacting an
-// opted-out person is not. Each opt-out is written to every lead of the
-// reached leads' merge families too (cycle members included). Replies and
-// visits stay on the resolved lead.
+// opted-out person is not. A reached lead in a hand-edited merged_into cycle
+// gets it on every member of the cycle too, so fixing the cycle by hand never
+// drops it; a plain merge needs no copy, since the fold reads opt-outs across
+// the family, and an un-merge then leaves the other person contactable.
+// Replies and visits stay on the resolved lead.
 //
 // A visit or custom kind has no outcome effect (it feeds detectors only).
 // Applying an event twice changes nothing the second time.
-func Apply(m *model.Model, lead api.LeadID, e api.Event, labels map[string]string) {
+func Apply(m *model.Model, lead api.LeadID, e api.Event, labels map[string]string) []api.LeadID {
 	kind := strings.ToLower(e.Kind)
 	at := Time(e)
 	received := e.ReceivedAt.UTC()
@@ -309,8 +312,7 @@ func Apply(m *model.Model, lead api.LeadID, e api.Event, labels map[string]strin
 		received = at
 	}
 	if strings.HasPrefix(kind, "deal_") {
-		applyDeal(m, lead, e, kind, at)
-		return
+		return applyDeal(m, lead, e, kind, at)
 	}
 	if lead != "" {
 		lead = merge.Live(m, lead)
@@ -318,25 +320,28 @@ func Apply(m *model.Model, lead api.LeadID, e api.Event, labels map[string]strin
 			lead = ""
 		}
 	}
+	var changed []api.LeadID
 	if origin := optOutOrigin(kind, e, labels); origin != "" {
 		held := kind != "optout"
-		if lead != "" {
-			applyOptOutFamily(m, lead, at, origin, held)
+		if lead != "" && applyOptOutCycle(m, lead, at, origin, held) {
+			changed = append(changed, lead)
 		}
 		for _, other := range holders(m, e) {
-			if other == lead || !applyOptOutFamily(m, other, at, origin, held) {
+			if other == lead || !applyOptOutCycle(m, other, at, origin, held) {
 				continue
 			}
+			changed = append(changed, other)
 			msg := fmt.Sprintf("an opt-out that matched no lead carries an identity key of lead %s; the opt-out was applied to it", other)
 			if lead != "" {
 				msg = fmt.Sprintf("an opt-out resolved to lead %s carries an identity key of lead %s; the opt-out was applied to both", lead, other)
 			}
 			m.Put(model.TableLog, model.LogEntry{At: received, Level: "warn", LeadID: other, Kind: merge.LogKeyConflict, Message: msg})
 		}
-		return
+		sort.Slice(changed, func(i, j int) bool { return changed[i] < changed[j] })
+		return changed
 	}
 	if lead == "" {
-		return
+		return nil
 	}
 	o := m.Outcomes[model.Key(lead)]
 	before := o
@@ -355,18 +360,22 @@ func Apply(m *model.Model, lead api.LeadID, e api.Event, labels map[string]strin
 			setReply(&o, s, received)
 		}
 	default:
-		return
+		return nil
 	}
-	if !reflect.DeepEqual(o, before) {
+	dirty := !reflect.DeepEqual(o, before)
+	if dirty {
 		m.Put(model.TableOutcomes, o)
 	}
-	markHeld(m, lead, at)
+	if markHeld(m, lead, at) || dirty {
+		return []api.LeadID{lead}
+	}
+	return nil
 }
 
-// applyOptOut records an opt-out on one live lead: the time kept at its
-// earliest, the origin always the automated one, even over `manual`
-// (contracts section 5.3). An Apollo opt-out also marks the lead Apollo-held.
-// It reports whether the outcome changed.
+// applyOptOut records an opt-out on one lead: the time kept at its earliest,
+// the origin always the automated one, even over `manual` (contracts section
+// 5.3). An Apollo opt-out also marks the lead Apollo-held. It reports whether
+// the outcome or the hold changed.
 func applyOptOut(m *model.Model, lead api.LeadID, at time.Time, origin string, held bool) bool {
 	o := m.Outcomes[model.Key(lead)]
 	before := o
@@ -379,33 +388,36 @@ func applyOptOut(m *model.Model, lead api.LeadID, at time.Time, origin string, h
 	if changed {
 		m.Put(model.TableOutcomes, o)
 	}
-	if held {
-		markHeld(m, lead, at)
+	if held && markHeld(m, lead, at) {
+		changed = true
 	}
 	return changed
 }
 
-// applyOptOutFamily records an opt-out on a live lead and on every lead
-// merged into it, members of a hand-edited merged_into cycle included, so the
-// opt-out stays on each of them even if a person later edits the
-// merged_into cells. Only the live lead is marked Apollo-held (the hold is
-// read across the family). It reports whether the live lead's outcome
-// changed.
-func applyOptOutFamily(m *model.Model, lead api.LeadID, at time.Time, origin string, held bool) bool {
+// applyOptOutCycle records an opt-out on a live lead and, when the lead
+// stands for a hand-edited merged_into cycle, on every lead of that cycle
+// (and every lead merged into one), so the opt-out stays on each of them
+// when a person later fixes the merged_into cells. Only the live lead is
+// marked Apollo-held. It reports whether the live lead changed.
+func applyOptOutCycle(m *model.Model, lead api.LeadID, at time.Time, origin string, held bool) bool {
 	changed := applyOptOut(m, lead, at, origin, held)
-	for _, f := range family(m, lead) {
+	for _, f := range cycleMembers(m, lead) {
 		applyOptOut(m, f, at, origin, false)
 	}
 	return changed
 }
 
-// family returns the leads other than lead whose merged_into walk ends at
-// it, sorted.
-func family(m *model.Model, lead api.LeadID) []api.LeadID {
+// cycleMembers returns the leads other than lead that resolve to it through a
+// merged_into cycle, sorted. A live lead outside a cycle has no merged_into of
+// its own, so the common case returns at once without a scan.
+func cycleMembers(m *model.Model, lead api.LeadID) []api.LeadID {
+	if m.People[model.Key(lead)].MergedInto == "" {
+		return nil
+	}
 	var out []api.LeadID
-	for _, p := range m.People {
-		if p.MergedInto != "" && p.LeadID != lead && merge.Live(m, p.LeadID) == lead {
-			out = append(out, p.LeadID)
+	for id := range merge.Cycles(m) {
+		if id != lead && merge.Live(m, id) == lead {
+			out = append(out, id)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
@@ -452,14 +464,16 @@ func setReply(o *model.Outcome, status string, received time.Time) {
 }
 
 // markHeld sets apollo_held_at on the first Apollo send, reply or unsubscribe
-// event (RFC 6.7), kept at its earliest. Nothing clears it.
-func markHeld(m *model.Model, lead api.LeadID, at time.Time) {
+// event (RFC 6.7), kept at its earliest. Nothing clears it. It reports
+// whether it changed the lead.
+func markHeld(m *model.Model, lead api.LeadID, at time.Time) bool {
 	p := m.People[model.Key(lead)]
 	if !p.ApolloHeldAt.IsZero() && !at.Before(p.ApolloHeldAt) {
-		return
+		return false
 	}
 	p.ApolloHeldAt = at
 	m.Put(model.TablePeople, p)
+	return true
 }
 
 // applyDeal sets the deal on every live lead at the company and every lead
@@ -467,7 +481,7 @@ func markHeld(m *model.Model, lead api.LeadID, at time.Time) {
 // event's domain (normalized), else the lead's. deal_stage holds the stage
 // class from the kind (open, won or lost), which is what the status fold
 // reads; the vendor's own stage name is stored nowhere.
-func applyDeal(m *model.Model, lead api.LeadID, e api.Event, kind string, at time.Time) {
+func applyDeal(m *model.Model, lead api.LeadID, e api.Event, kind string, at time.Time) []api.LeadID {
 	stage := strings.TrimPrefix(kind, "deal_")
 	dealID := e.Attrs["deal_id"]
 	domain := merge.NormalizeDomain(e.Domain)
@@ -502,6 +516,7 @@ func applyDeal(m *model.Model, lead api.LeadID, e api.Event, kind string, at tim
 		ids = append(ids, string(id))
 	}
 	sort.Strings(ids)
+	var changed []api.LeadID
 	for _, id := range ids {
 		o := m.Outcomes[model.Key(id)]
 		before := o
@@ -509,6 +524,8 @@ func applyDeal(m *model.Model, lead api.LeadID, e api.Event, kind string, at tim
 		o.DealID, o.DealStage, o.DealCheckedAt = dealID, stage, at
 		if !reflect.DeepEqual(o, before) {
 			m.Put(model.TableOutcomes, o)
+			changed = append(changed, merge.Live(m, api.LeadID(id)))
 		}
 	}
+	return changed
 }

@@ -252,14 +252,20 @@ func (t *timer) safeRun(stop <-chan struct{}) (res api.RunResult, err error) {
 
 // writePanic records a recovered panic in Health, as the run could not:
 // last_result unhealthy, last_run_at and run_failed, under the run lease
-// (engine.RecordCrash). Another run holding the lease writes Health itself.
+// (engine.RecordCrash). It never takes the receiver down: a panic while
+// writing is recovered and logged.
 func (t *timer) writePanic(startAt time.Time, p *panicked) {
+	defer func() {
+		if v := recover(); v != nil {
+			t.log("writing the panicked run to Health panicked: %v", v)
+		}
+	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	err := engine.RecordCrash(ctx, t.store, startAt, p)
 	switch {
 	case errors.Is(err, api.ErrLeaseHeld):
-		t.log("the panicked run is not written to Health: another run holds the lease")
+		t.log("the panicked run is not written to Health: another run holds the lease and writes Health itself")
 	case err != nil:
 		t.log("writing the panicked run to Health: %v", err)
 	}

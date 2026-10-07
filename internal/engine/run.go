@@ -438,7 +438,7 @@ func (x *exec) resetAttempt() {
 	r := x.run
 	r.NoPush, r.SourceEvents, r.EventsShrank = "", nil, false
 	r.Input, r.Result = rules.Input{}, rules.Result{}
-	r.lv, r.pushing = nil, nil
+	r.lv, r.pushing, r.reread = nil, nil, nil
 	x.columns, x.merged, x.backlog, x.cursors = nil, 0, 0, nil
 	x.scored, x.cutShort, x.degraded = false, false, false
 	x.oldRanked, x.tierLogs = nil, nil

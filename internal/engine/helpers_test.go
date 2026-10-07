@@ -33,7 +33,7 @@ func init() {
 		if err != nil {
 			return nil, nil, err
 		}
-		return &flakyStore{Store: s}, s, nil
+		return &flakyStore{Store: s}, &flakyLog{Store: s}, nil
 	})
 }
 
@@ -98,6 +98,27 @@ var flaky struct {
 	// exportInPhase2: a commit wrote Health and an export table together.
 	exportLog      []string
 	exportInPhase2 bool
+	// eventsRead counts the events every ReadEvents returned; shrinkEvents
+	// makes every ReadEvents answer ErrEventsShrank.
+	eventsRead   int
+	shrinkEvents bool
+}
+
+// flakyLog is the flaky store's event log.
+type flakyLog struct{ *sqlite.Store }
+
+func (f *flakyLog) ReadEvents(ctx context.Context, c api.Cursor) ([]api.RawEvent, api.Cursor, error) {
+	flaky.Lock()
+	shrink := flaky.shrinkEvents
+	flaky.Unlock()
+	if shrink {
+		return nil, c, api.ErrEventsShrank
+	}
+	evs, next, err := f.Store.ReadEvents(ctx, c)
+	flaky.Lock()
+	flaky.eventsRead += len(evs)
+	flaky.Unlock()
+	return evs, next, err
 }
 
 type flakyStore struct{ *sqlite.Store }

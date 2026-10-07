@@ -180,8 +180,8 @@ before each batch of 25 pushes the run reads the newly stored events, so the
 person is not pushed in the next batch. Every opt-out and reply is kept in
 `Outcomes`, so it holds long after the 90-day event window.
 
-**Silence.** Reachable is not delivering. When the receiver is configured,
-each run checks that every event kind it expects arrived within
+**Silence.** Reachable is not delivering. When the receiver is set up
+(`receiver.public_url` is set), each run checks that every event kind it expects arrived within
 `silence_threshold` (3 days by default): `sent` with `replies: receiver`, and
 each `receiver.visit_events` kind. A silent kind shows in `Health` as
 `silent:<kind>` and makes the run unhealthy; check that Apollo workflow.

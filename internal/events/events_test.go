@@ -1,6 +1,7 @@
 package events
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -218,16 +219,20 @@ func TestOptOutFollowsMergedInto(t *testing.T) {
 	if o := outcome(m, "LIVE"); o.UnsubscribedAt.IsZero() {
 		t.Errorf("opt-out did not land on the live lead: %+v", o)
 	}
-	// Called with the absorbed lead's id, it still writes the live lead, and
-	// every lead of the family keeps the opt-out too.
+	// Called with the absorbed lead's id, it still writes the live lead only:
+	// the fold reads opt-outs across the family, and an un-merge must leave
+	// the other person contactable.
 	m2 := newModel(t, "LIVE")
 	m2.Put(model.TablePeople, model.Person{LeadID: "OLD", CreatedAt: t0, MergedInto: "LIVE"})
-	Apply(m2, "OLD", api.Event{Kind: "optout", At: t0}, nil)
-	if outcome(m2, "LIVE").UnsubscribedAt.IsZero() || outcome(m2, "OLD").UnsubscribedAt.IsZero() {
-		t.Error("Apply must write the live lead and the lead merged into it")
+	changed := Apply(m2, "OLD", api.Event{Kind: "optout", At: t0}, nil)
+	if outcome(m2, "LIVE").UnsubscribedAt.IsZero() || !outcome(m2, "OLD").UnsubscribedAt.IsZero() {
+		t.Error("Apply must write the live lead, not the absorbed one")
 	}
-	if !m2.People["OLD"].ApolloHeldAt.IsZero() || !m2.People["LIVE"].ApolloHeldAt.IsZero() {
-		t.Error("a lookup opt-out is not an Apollo engagement")
+	if len(changed) != 1 || changed[0] != "LIVE" {
+		t.Errorf("changed %v, want the live lead", changed)
+	}
+	if again := Apply(m2, "OLD", api.Event{Kind: "optout", At: t0}, nil); len(again) != 0 {
+		t.Errorf("a repeat changed %v", again)
 	}
 }
 
@@ -483,5 +488,22 @@ func TestLookupOrigin(t *testing.T) {
 	k := string(Key(api.Event{Kind: "optout", Email: "a@b.example", Origin: LookupOrigin("crm")}))
 	if !strings.HasPrefix(k, "lookup|") {
 		t.Errorf("a plug-in lookup's event is keyed as a lookup event: %q", k)
+	}
+}
+
+// An opt-out on a large install costs no scan of People: only a lead that
+// stands for a merge cycle looks for the other members.
+func BenchmarkApplyOptOutLargeModel(b *testing.B) {
+	m := model.New()
+	for i := 0; i < 50000; i++ {
+		id := api.LeadID(fmt.Sprintf("L%05d", i))
+		m.Put(model.TablePeople, model.Person{LeadID: id, CreatedAt: t0})
+		m.Put(model.TableIdentities, model.Identity{Key: fmt.Sprintf("p%05d@example.com", i), Kind: "email", LeadID: id, SourceID: "csv", FirstSeenAt: t0})
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		n := i % 50000
+		e := api.Event{Kind: "unsubscribed", Email: fmt.Sprintf("p%05d@example.com", n), At: t0, Origin: OriginReceiver}
+		Apply(m, api.LeadID(fmt.Sprintf("L%05d", n)), e, nil)
 	}
 }
