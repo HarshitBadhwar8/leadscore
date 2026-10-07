@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -575,16 +576,21 @@ func TestExportNewRowsCapped(t *testing.T) {
 	}
 	// The lane widens to every lead with a chunk of 2.
 	in.config("sources:\n  - { id: leads, type: csv, path: leads.csv }\ningest_chunk_rows: 2\n")
-	in.write("rubric.yml", exportRubric(false))
+	// A second export lane matches everyone too: the cap is shared.
+	in.write("rubric.yml", exportRubric(false)+`  - { id: list-b, kind: export, when: { field: tier, lte: 2 }, push: "export:b" }
+`)
 	in.override("a@a.example", "status", "unsubscribed")
 	in.mustRun(DefaultHooks())
 	got := in.dnc("list")
-	if len(got) != 4 || got["a@a.example"] != "yes" {
-		t.Fatalf("after one capped run: %v (2 listed before + 2 new; a's refresh written)", got)
+	if n := len(got) + len(in.dnc("list-b")); n != 4 || got["a@a.example"] != "yes" {
+		t.Fatalf("after one capped run: %v and %v (2 listed before + 2 new across both lanes; a's refresh written)", got, in.dnc("list-b"))
 	}
-	in.mustRun(DefaultHooks())
-	if got := in.dnc("list"); len(got) != 5 {
-		t.Errorf("the rest is listed next run: %v", got)
+	for i := 0; i < 3; i++ {
+		in.mustRun(DefaultHooks())
+	}
+	// Five on list, four on list-b: a opted out before list-b took her.
+	if n := len(in.dnc("list")) + len(in.dnc("list-b")); n != 9 {
+		t.Errorf("the rest is listed in later runs: %d rows", n)
 	}
 }
 
@@ -715,12 +721,20 @@ func TestExportDirHousekeeping(t *testing.T) {
 		t.Fatal(err)
 	}
 	stale := filepath.Join(dir, ".list.csv.123.tmp")
-	if err := os.WriteFile(stale, []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
+	keep := []string{".budget.csv.backup.tmp", ".list.csv.backup.tmp", ".other.csv.123.tmp", "list.csv.123.tmp", ".list.csv.123.tmp.bak"}
+	for _, f := range append(keep, ".list.csv.123.tmp") {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	res := in.mustRun(DefaultHooks())
 	if _, err := os.Stat(stale); !os.IsNotExist(err) {
 		t.Error("a stale temporary file was left")
+	}
+	for _, f := range keep {
+		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
+			t.Errorf("a file the writer never made was removed: %s", f)
+		}
 	}
 	if !hasKey(res.Problems, exportDirProblem) || !res.Healthy {
 		t.Errorf("want the %s warning on a healthy run: %+v", exportDirProblem, res)
@@ -811,4 +825,125 @@ func readInstallCSV(t *testing.T, in *install, lane string) [][]string {
 		t.Fatal(err)
 	}
 	return recs
+}
+
+// A mass switch to yes (a new cold lane claiming a whole list) lands even
+// with a store that refuses big commits: the export tables are written after
+// phase 2 in their own chunks, halved on ErrTooLarge, switches to yes first.
+func TestExportMassSwitchLandsInChunks(t *testing.T) {
+	var leads []string
+	for i := 0; i < 12; i++ {
+		leads = append(leads, fmt.Sprintf("c%02d@c%02d.example,C %02d,Cold clerk,c%02d.example", i, i, i, i))
+	}
+	in := exportInstall(t, "flaky", "", leads...)
+	old := exportChunkRows
+	exportChunkRows = 8
+	flaky.Lock()
+	flaky.maxExportRows, flaky.exportLog, flaky.exportInPhase2 = 3, nil, false
+	flaky.Unlock()
+	t.Cleanup(func() {
+		exportChunkRows = old
+		flaky.Lock()
+		flaky.maxExportRows, flaky.exportLog, flaky.exportInPhase2 = 0, nil, false
+		flaky.Unlock()
+	})
+	in.mustRun(DefaultHooks())
+	if got := in.dnc("list"); len(got) != 12 {
+		t.Fatalf("listed %d of 12", len(got))
+	}
+	in.write("rubric.yml", exportRubric(true))
+	more := append([]string{}, leads...)
+	for i := 0; i < 3; i++ {
+		more = append(more, fmt.Sprintf("n%d@n%d.example,N %d,Clerk,n%d.example", i, i, i, i))
+	}
+	in.write("leads.csv", csvText(append([]string{"Email,Name,Title,Domain"}, more...)...))
+	flaky.Lock()
+	flaky.exportLog = nil
+	flaky.Unlock()
+	if _, out, err := in.run(DefaultHooks()); err != nil {
+		t.Fatal(err, out)
+	}
+	got := in.dnc("list")
+	yes := 0
+	for e, v := range got {
+		if v == "yes" {
+			yes++
+		} else if !strings.HasPrefix(e, "n") {
+			t.Errorf("%s still no", e)
+		}
+	}
+	if len(got) != 15 || yes != 12 {
+		t.Errorf("after the switch: %d rows, %d yes: %v", len(got), yes, got)
+	}
+	flaky.Lock()
+	log, inPhase2 := append([]string{}, flaky.exportLog...), flaky.exportInPhase2
+	flaky.Unlock()
+	if inPhase2 {
+		t.Error("an export table was written in the phase 2 commit")
+	}
+	if strings.Join(log, ",") != strings.Repeat("yes,", 12)+"no,no,no" {
+		t.Errorf("saved in the order %v, want every yes first", log)
+	}
+}
+
+// The CSV rewrite stops before the lease runs out, and renames nothing
+// once the lease is lost.
+func TestExportCSVRespectsTheLease(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		mod  func(rr *Run)
+	}{
+		{"lease about to run out", func(rr *Run) { rr.leaseUntil = time.Now().Add(csvLeaseMargin / 2) }},
+		{"lease lost", func(rr *Run) { rr.Lease = lostLease{} }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			in := exportInstall(t, "sqlite", "", "ana@acme.example,Ana A,Head of Ops,acme.example")
+			in.mustRun(DefaultHooks())
+			path := filepath.Join(in.dir, "out", "list.csv")
+			before, _ := os.ReadFile(path)
+			in.override("ana@acme.example", "status", "unsubscribed")
+			var cerr error
+			hooks := DefaultHooks()
+			hooks.AfterSave = func(r *Run) error {
+				rr := *r
+				tc.mod(&rr)
+				cerr = writeExportCSVs(&rr)
+				return nil
+			}
+			in.mustRun(hooks)
+			if cerr == nil {
+				t.Error("the rewrite went ahead")
+			}
+			if after, _ := os.ReadFile(path); string(after) != string(before) {
+				t.Error("the CSV was replaced")
+			}
+			if entries, _ := os.ReadDir(filepath.Join(in.dir, "out")); len(entries) != 1 {
+				t.Errorf("out holds %d files", len(entries))
+			}
+		})
+	}
+}
+
+type lostLease struct{}
+
+func (lostLease) Check(context.Context) error   { return api.ErrLeaseLost }
+func (lostLease) Release(context.Context) error { return nil }
+
+// A lane recorded in State with an id that breaks the lane id rule raises a
+// problem instead of being dropped silently.
+func TestExportInvalidRecordedLaneRaisesProblem(t *testing.T) {
+	in := exportInstall(t, "sqlite", "", "ana@acme.example,Ana A,Head of Ops,acme.example")
+	in.mustRun(DefaultHooks())
+	err := in.store().Commit(t.Context(), []api.TableWrite{{Table: model.TableState, Op: api.OpUpsert, Key: []string{"key"},
+		Rows: []api.Row{{"key": model.ExportLaneKey + "bad lane", "value": "yes"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := in.mustRun(DefaultHooks())
+	if !hasKey(res.Problems, invalidLaneProblem+":bad lane") || res.Healthy {
+		t.Errorf("problems %v healthy %v", res.Problems, res.Healthy)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(in.dir, "out")); len(entries) != 1 {
+		t.Errorf("out holds %d files, want only list.csv", len(entries))
+	}
 }

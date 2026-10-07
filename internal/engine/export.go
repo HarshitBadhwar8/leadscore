@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -15,16 +16,21 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/csvsafe"
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
 	"github.com/HarshitBadhwar8/leadscore/internal/rules"
+	"github.com/HarshitBadhwar8/leadscore/internal/store/codec"
 )
 
 // exportFileMode is each export CSV's mode: the lists hold personal data, so
 // only the owner may read them.
 const exportFileMode = 0o600
 
-// exportReadTimeout bounds reading the tables back for the CSV rewrite. It
-// is not tied to the run's context, so a CSV is still rewritten after a hard
-// stop cancelled the Ranked write.
+// exportReadTimeout bounds the CSV rewrite. It is not tied to the run's
+// context, so a CSV is still rewritten after a hard stop cancelled the Ranked
+// write; it is cut further to end csvLeaseMargin before the lease runs out.
 const exportReadTimeout = 30 * time.Second
+
+// csvLeaseMargin is how long before the lease runs out the CSV rewrite stops,
+// so no file is renamed once another run may hold the lease.
+const csvLeaseMargin = 5 * time.Second
 
 // exportDirProblem is the warning raised when export.dir is readable by
 // other users of the machine.
@@ -37,7 +43,15 @@ var (
 	csvStores = map[string]bool{"sqlite": true}
 	// renameFile is os.Rename, a variable so a test can make it fail.
 	renameFile = os.Rename
+	// exportChunkRows bounds one export table commit after phase 2 (halved
+	// on ErrTooLarge). A variable so tests can shrink it.
+	exportChunkRows = 5000
 )
+
+// invalidLaneProblem prefixes the problem raised for a lane recorded in
+// State whose id breaks the lane id rule (a hand edit): its table is neither
+// refreshed nor written as a file.
+const invalidLaneProblem = "export_lane_invalid"
 
 // exportHook is the Export hook (RFC 6.11, contracts section 4 "Export
 // rows"). It runs every run, after Push and before phase 2, pushes on or off
@@ -47,9 +61,9 @@ var (
 // It first adds each live lead that newly matches an export lane (its `when`
 // held and it is not blocked on every lane) to that lane's table, once: a
 // lead counts as listed when it, or any lead in its merge family, already has
-// a row there. At most ingest_chunk_rows new rows are added per lane per run
-// (lowest lead id first; the rest are listed in later runs), so a rubric
-// change that newly matches every lead cannot make phase 2 too large. It then
+// a row there. At most ingest_chunk_rows new rows are added per run across
+// all lanes (rubric order, then lowest lead id first; the rest are listed in
+// later runs). It then
 // recomputes `status` and `do_not_contact` for every row of every export
 // table in the store, including tables of lanes since removed from the
 // rubric (State export_lane:<lane id>), following merged_into to the live
@@ -66,14 +80,20 @@ func exportHook(r *Run) error {
 		return nil
 	}
 	checkExportDir(r)
+	for _, lane := range invalidExportLanes(r.Model) {
+		r.Problem(invalidLaneProblem+":"+lane,
+			"State records an export lane whose id is not a valid lane id, so its table is not refreshed and gets no CSV",
+			"fix or delete the export_lane: row in State (lane ids use letters, digits, - and _, starting with a letter or digit)", false)
+	}
 	r.invalidate() // Push and PrePush may have changed the ledger and Outcomes
 	v := r.view()
 	defer r.invalidate()
 	var errs []error
 	if r.judged {
+		budget := r.Config.IngestChunkRows
 		for _, l := range r.Rubric.Lanes() {
 			if l.Kind == kindExport {
-				if err := addListed(r, v, l.ID); err != nil {
+				if err := addListed(r, v, l.ID, &budget); err != nil {
 					errs = append(errs, err)
 				}
 			}
@@ -88,18 +108,17 @@ func exportHook(r *Run) error {
 }
 
 // addListed adds the live leads that newly match the lane to its table, at
-// most ingest_chunk_rows of them. The new rows' status and do_not_contact are
-// set by refreshListed.
-func addListed(r *Run, v *view, lane string) error {
+// most *budget of them, lowering it. The new rows' status and do_not_contact
+// are set by refreshListed.
+func addListed(r *Run, v *view, lane string, budget *int) error {
 	m := r.Model
 	listed := map[api.LeadID]bool{}
 	for _, row := range m.Exports[lane] {
 		listed[v.live(row.LeadID)] = true
 	}
 	now := r.Now()
-	added := 0
 	for _, ref := range r.Input.Leads { // sorted by lead id
-		if added >= r.Config.IngestChunkRows {
+		if *budget <= 0 {
 			break
 		}
 		id := ref.ID
@@ -118,7 +137,7 @@ func addListed(r *Run, v *view, lane string) error {
 			return fmt.Errorf("listing on export lane %s: %w", lane, err)
 		}
 		listed[id] = true
-		added++
+		*budget--
 	}
 	return nil
 }
@@ -250,6 +269,83 @@ func exportLanes(m *model.Model) []string {
 	return out
 }
 
+// invalidExportLanes lists, sorted, the lanes recorded in State whose id
+// breaks the lane id rule.
+func invalidExportLanes(m *model.Model) []string {
+	var out []string
+	for k := range m.State {
+		if lane, ok := strings.CutPrefix(string(k), model.ExportLaneKey); ok && !model.ValidLaneID(lane) {
+			out = append(out, lane)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// writeExports writes the export tables' changed rows after phase 2, in
+// their own commits of at most exportChunkRows rows (contracts section 12.6),
+// so a mass change (a new cold lane turning most of a list to yes) can never
+// make phase 2 too large and block every later opt-out. Rows turning
+// do_not_contact to yes go first, across all lanes, then every other change.
+// Each commit checks the lease; ErrTooLarge halves the chunk. A lane's
+// export_lane State record travels with its table's first chunk.
+func (x *exec) writeExports() error {
+	m := x.run.Model
+	lanes := make([]string, 0, len(m.Exports))
+	for lane := range m.Exports {
+		lanes = append(lanes, lane)
+	}
+	sort.Strings(lanes)
+	var yes, rest []api.TableWrite
+	state := map[string]api.TableWrite{}
+	for _, lane := range lanes {
+		for _, w := range codec.Encode(m, model.ExportTable(lane)) {
+			if w.Table == model.TableState {
+				state[w.Table+lane] = w
+				continue
+			}
+			if w.Op != api.OpUpsert {
+				rest = append(rest, w)
+				continue
+			}
+			y, n := w, w
+			y.Rows, n.Rows = nil, nil
+			for _, row := range w.Rows {
+				if row["do_not_contact"] == "yes" {
+					y.Rows = append(y.Rows, row)
+				} else {
+					n.Rows = append(n.Rows, row)
+				}
+			}
+			yes, rest = append(yes, y), append(rest, n)
+		}
+	}
+	size := exportChunkRows
+	for _, w := range append(yes, rest...) {
+		lane := strings.TrimPrefix(w.Table, model.ExportPrefix)
+		for i := 0; i < len(w.Rows); {
+			c := w
+			c.Rows = w.Rows[i:min(i+size, len(w.Rows))]
+			writes := []api.TableWrite{c}
+			sw, hasState := state[model.TableState+lane]
+			if hasState {
+				writes = append(writes, sw)
+			}
+			err := x.commit("export "+lane, writes, true)
+			if errors.Is(err, api.ErrTooLarge) && size > 1 {
+				size = max(1, size/2)
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			delete(state, model.TableState+lane)
+			i += len(c.Rows)
+		}
+	}
+	return nil
+}
+
 // csvLanes is every lane that gets a CSV: each recorded export table, and
 // each export lane of the rubric (a lane nobody matched yet gets a
 // header-only file) unless it matches a recorded lane only ignoring case,
@@ -295,7 +391,9 @@ func checkExportDir(r *Run) {
 // temporary file in export.dir and renamed over the old one, UTF-8, the
 // header row in the section 4 column order, every cell made safe with
 // csvsafe, mode 0600; the folder is synced after each rename. Temporary
-// files a crash left behind are removed first.
+// files a crash left behind are removed first. The rewrite stops
+// csvLeaseMargin before the lease runs out and checks the lease before each
+// rename.
 func writeExportCSVs(r *Run) error {
 	if r.DryRun || !csvStores[r.Config.Store.Type] {
 		return nil
@@ -308,24 +406,67 @@ func writeExportCSVs(r *Run) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("export CSVs: creating export.dir: %w", err)
 	}
-	if stale, err := filepath.Glob(filepath.Join(dir, ".*.csv.*.tmp")); err == nil {
-		for _, f := range stale {
-			os.Remove(f)
-		}
+	removeStaleTemps(dir, lanes)
+	end := time.Now().Add(exportReadTimeout)
+	if !r.leaseUntil.IsZero() {
+		end = minTime(end, r.leaseUntil.Add(-csvLeaseMargin))
 	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Ctx), exportReadTimeout)
+	ctx, cancel := context.WithDeadline(context.WithoutCancel(r.Ctx), end)
 	defer cancel()
+	// Before each rename: still in time, and still holding the lease, so no
+	// file is replaced once another run may own the list.
+	ready := func() error {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("out of time before the lease runs out: %w", err)
+		}
+		if r.Lease != nil {
+			return r.Lease.Check(ctx)
+		}
+		return nil
+	}
 	var errs []error
 	for _, lane := range lanes {
 		rows, err := r.Store.ReadTable(ctx, model.ExportTable(lane))
 		if err == nil {
-			err = writeCSV(dir, lane, rows)
+			err = writeCSV(dir, lane, rows, ready)
 		}
 		if err != nil {
 			errs = append(errs, fmt.Errorf("export CSV for lane %s: %w", lane, err))
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func minTime(a, b time.Time) time.Time {
+	if b.Before(a) {
+		return b
+	}
+	return a
+}
+
+// removeStaleTemps deletes the temporary files a crashed rewrite left in dir:
+// only names writeCSV makes (os.CreateTemp's ".<lane>.csv.<digits>.tmp") for
+// the given lanes, so a person's own files there are never touched.
+func removeStaleTemps(dir string, lanes []string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	pats := make([]*regexp.Regexp, len(lanes))
+	for i, lane := range lanes {
+		pats[i] = regexp.MustCompile(`^\.` + regexp.QuoteMeta(lane) + `\.csv\.[0-9]+\.tmp$`)
+	}
+	for _, e := range entries {
+		if !e.Type().IsRegular() {
+			continue
+		}
+		for _, p := range pats {
+			if p.MatchString(e.Name()) {
+				os.Remove(filepath.Join(dir, e.Name()))
+				break
+			}
+		}
+	}
 }
 
 // exportColumns is the export table's column order (contracts section 4).
@@ -341,7 +482,7 @@ func exportColumns() []string {
 // writeCSV writes one lane's rows, oldest listed first, to a temporary file
 // in dir and renames it to <lane>.csv. On any failure the old file stays and
 // the temporary file is removed.
-func writeCSV(dir, lane string, rows []api.Row) (err error) {
+func writeCSV(dir, lane string, rows []api.Row, ready func() error) (err error) {
 	cols := exportColumns()
 	sort.SliceStable(rows, func(i, j int) bool {
 		if rows[i]["first_listed_at"] != rows[j]["first_listed_at"] {
@@ -384,6 +525,9 @@ func writeCSV(dir, lane string, rows []api.Row) (err error) {
 		return err
 	}
 	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := ready(); err != nil {
 		return err
 	}
 	if err := renameFile(tmp, filepath.Join(dir, lane+".csv")); err != nil {
