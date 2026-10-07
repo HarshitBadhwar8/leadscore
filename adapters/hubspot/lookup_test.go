@@ -236,3 +236,61 @@ func TestLookupKeepsOptOutsWhenEveryLeadFailed(t *testing.T) {
 	}
 	wantEvents(t, evs, "optout ana@acme.example")
 }
+
+// A deal linked to a contact at the company but belonging to another company
+// (the person's old employer, no matching domain) is not this company's:
+// acme has no deal.
+func TestLookupContactDealOfAnotherCompany(t *testing.T) {
+	f, cfg := portal(t)
+	c := f.AddContact("ana@acme.example", nil)
+	oldJob := f.AddCompany("oldjob.example")
+	old := f.AddDeal(fakehub.StageOpen, nil)
+	f.Associate("companies", oldJob, "deals", old)
+	f.Associate("contacts", c, "deals", old)
+	evs, _, err := lookup(t, cfg, lead("a", "acme.example", "ana@acme.example"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantEvents(t, evs, "deal_lost acme.example")
+}
+
+func doneContact(l api.LeadRef, contactID string) api.LeadRef {
+	l.Done = []api.LedgerRef{{Key: api.StepKey{LeadID: l.ID, LaneID: "warm", Step: "contact"}, Dest: "contacts", VendorID: contactID, State: "done"}}
+	return l
+}
+
+// The contact the ledger holds for a lead was merged in HubSpot into
+// another, which opted out: the opt-out counts for the lead, though neither
+// the lead's email nor its lead id finds the survivor.
+func TestLookupOptOutOnAMergedStoredContact(t *testing.T) {
+	f, cfg := portal(t)
+	ours := f.AddContact("ana@acme.example", nil)
+	survivor := f.AddContact("a.example@other.example", map[string]string{"hs_email_optout": "true"})
+	f.Merge(ours, survivor)
+	evs, failed, err := lookup(t, cfg, doneContact(lead("a", "", "ana@acme.example"), ours))
+	if err != nil || len(failed) != 0 {
+		t.Fatalf("%v %v", failed, err)
+	}
+	wantEvents(t, evs, "optout ana@acme.example")
+
+	// A stored contact deleted since is skipped, not a failure.
+	gone := f.AddContact("bo@beta.example", nil)
+	f.Delete("contacts", gone)
+	if _, failed, err := lookup(t, cfg, doneContact(lead("b", "", "bo@beta.example"), gone)); err != nil || len(failed) != 0 {
+		t.Errorf("a deleted stored contact: %v %v", failed, err)
+	}
+}
+
+// A read by email that matches a contact's secondary address answers under
+// its primary one. The batch's unmatched emails are read one by one, so the
+// opt-out lands on the right email and no lead fails.
+func TestLookupSecondaryEmailMatch(t *testing.T) {
+	f, cfg := portal(t)
+	f.AddContact("primary@other.example", map[string]string{"hs_additional_emails": "ana@acme.example", "hs_email_optout": "true"})
+	f.AddContact("bo@beta.example", nil)
+	evs, failed, err := lookup(t, cfg, lead("a", "", "ana@acme.example"), lead("b", "", "bo@beta.example"))
+	if err != nil || len(failed) != 0 {
+		t.Fatalf("failed %v err %v", failed, err)
+	}
+	wantEvents(t, evs, "optout ana@acme.example")
+}

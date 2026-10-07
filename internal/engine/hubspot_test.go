@@ -184,9 +184,68 @@ func TestNoDealAnswerSoonAfterADealCallIsNotTrusted(t *testing.T) {
 		t.Error("no lookup_failed Log line for the held company")
 	}
 
-	w.clock = func() time.Time { return start.Add(dealSearchLag + time.Minute) }
+	// Run 2 cancelled Ana's deal step (she is no longer replied_positive),
+	// which wrote updated_at: the window runs from that write, the safe side.
+	w.clock = func() time.Time { return start.Add(5*time.Minute + dealSearchLag + time.Minute) }
 	w.mustRun()
 	if s := w.outcome("ben@acme.example")["status"]; s != statusNew {
 		t.Errorf("past the window the no-deal answer should release Acme: Ben is %q", s)
+	}
+}
+
+// The window counts from the deal step's latest call: a step first called
+// at T and retried at T+10m keeps a no-deal answer at T+20m untrusted.
+func TestDealSearchLagCountsFromTheLatestCall(t *testing.T) {
+	w := newWorld(t,
+		"ana@acme.example,Ana A,Clerk,acme.example",
+		"ben@acme.example,Ben B,Head of IT,acme.example")
+	w.rubric("{ field: status, eq: replied_positive }", "{ field: status, in: [replied_positive, deal] }")
+	w.pushesOff()
+	w.reply("ana@acme.example", "replied_positive")
+	start := time.Now()
+	for i := 0; i < 3; i++ {
+		w.hubspot.Fail("deal", sinktest.Transient)
+	}
+	w.clock = func() time.Time { return start }
+	w.mustRun()
+	w.clock = func() time.Time { return start.Add(10 * time.Minute) }
+	w.mustRun()
+	if r := w.push("ana@acme.example", "warm", "deal"); r["attempts"] != "0" && r["attempts"] != "" || len(w.hubspot.Calls()) < 4 {
+		t.Fatalf("setup: the deal step should have been called twice: %v %v", r, calls(w.hubspot))
+	}
+	w.lookup("hubspot").DealsByCompany()
+	w.clock = func() time.Time { return start.Add(20 * time.Minute) }
+	w.mustRun()
+	if o := w.outcome("ana@acme.example"); o["deal_checked_at"] != "" {
+		t.Errorf("a no-deal answer 10 minutes after the latest deal call was applied: %v", o)
+	}
+	if s := w.outcome("ben@acme.example")["status"]; s != statusDeal {
+		t.Errorf("Ben is %q, want deal", s)
+	}
+}
+
+// A lookup gets each lead's done steps for its sink (LeadRef.Done), so the
+// HubSpot lookup can read the contact the ledger already holds.
+func TestLookupGetsTheLeadsDoneSteps(t *testing.T) {
+	w := newWorld(t, "ana@acme.example,Ana A,Clerk,acme.example")
+	w.pushesOff()
+	w.reply("ana@acme.example", "replied_positive")
+	w.mustRun()
+	contact := w.push("ana@acme.example", "warm", "contact")["vendor_id"]
+	if contact == "" {
+		t.Fatal("setup: no contact step done")
+	}
+	lk := w.lookup("hubspot")
+	w.mustRun()
+	found := false
+	for _, call := range lk.Looked() {
+		for _, l := range call {
+			for _, d := range l.Done {
+				found = found || l.ID == w.id("ana@acme.example") && d.Key.Step == "contact" && d.VendorID == contact
+			}
+		}
+	}
+	if !found {
+		t.Errorf("the lookup did not get Ana's contact step: %v", lk.Looked())
 	}
 }

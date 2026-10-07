@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 
@@ -19,15 +20,17 @@ const optOutProperty = "hs_email_optout"
 //
 //   - an `optout` for every email of a lead whose contact has opted out:
 //     each email of the lead's family is read by email, and the lead's own
-//     contact (found by the lead id property) is read too, so an address a
-//     salesperson changed in HubSpot still counts;
+//     contacts are read too (found by the lead id property, and by the
+//     contact ids the ledger holds, in LeadRef.Done, which follow a merge in
+//     HubSpot), so an address a salesperson changed still counts;
 //   - one deal event per company (lead domain): the strongest stage (won,
-//     then open, then lost) among the deals associated with the contacts at
-//     the company, with the company records found through those contacts
-//     (or by the domain when none is), with the deals carrying the company's
-//     domain property, and with the company's stored deal (CompanyDealID). A
-//     stored deal that no longer exists is `deal_lost` naming it; a company
-//     with no deal at all is `deal_lost` with no deal id.
+//     then open, then lost) among the deals of the company records found
+//     through its contacts (or by the domain when none is), the deals
+//     carrying the company's domain property, the deals linked to its
+//     contacts that carry that domain, and the company's stored deal
+//     (CompanyDealID). A stored deal that no longer exists is `deal_lost`
+//     naming it; a company with no deal at all is `deal_lost` with no deal
+//     id.
 //
 // A read that fails, or that could not see every result, fails every lead it
 // was for (contracts section 1, `failed`), and a company any failed read
@@ -75,6 +78,7 @@ func (l *Lookup) Lookup(ctx context.Context, leads []api.LeadRef) ([]api.Event, 
 	}
 	r.byEmailRead(ctx)
 	r.byLeadID(ctx)
+	r.byStoredID(ctx)
 	r.deals(ctx)
 
 	for d := range r.badDom {
@@ -136,16 +140,20 @@ func optedOut(o object) bool {
 }
 
 // byEmailRead reads every email's contact (batch read by email; an email no
-// contact has is simply absent).
+// contact has is simply absent). S0 confirms whether a read by email also
+// matches a contact's secondary addresses: if an answer comes back under an
+// address we did not send, the emails left unmatched in that batch are read
+// one at a time, so each answer belongs to the email asked for.
 func (r *lookupRun) byEmailRead(ctx context.Context) {
 	emails := make([]string, 0, len(r.byEmail))
 	for e := range r.byEmail {
 		emails = append(emails, e)
 	}
 	sort.Strings(emails)
+	props := []string{"email", optOutProperty}
 	for start := 0; start < len(emails); start += batchSize {
 		chunk := emails[start:min(start+batchSize, len(emails))]
-		found, err := r.s.c.batchRead(ctx, "contacts", "email", chunk, []string{"email", optOutProperty})
+		found, err := r.s.c.batchRead(ctx, "contacts", "email", chunk, props)
 		if err != nil {
 			var idx []int
 			for _, e := range chunk {
@@ -154,26 +162,120 @@ func (r *lookupRun) byEmailRead(ctx context.Context) {
 			r.fail(idx, fmt.Errorf("hubspot: reading contacts by email: %w", err))
 			continue
 		}
+		matched := map[string]bool{}
+		stray := false
 		for _, o := range found {
 			e := strings.ToLower(strings.TrimSpace(o.prop("email")))
-			holders := r.byEmail[e]
-			if len(holders) == 0 {
-				// The answer names an email we did not send (HubSpot matched
-				// another address of the contact): S0 confirms this cannot
-				// happen; fail every lead in the chunk rather than guess.
-				var idx []int
-				for _, c := range chunk {
-					idx = append(idx, r.byEmail[c]...)
-				}
-				r.fail(idx, errors.New("hubspot: a contact read by email came back under another address"))
+			if len(r.byEmail[e]) == 0 {
+				stray = true
 				continue
 			}
-			for _, i := range holders {
-				r.contact[i] = append(r.contact[i], o.ID)
+			matched[e] = true
+			r.emailContact(e, o)
+		}
+		if !stray {
+			continue
+		}
+		for _, e := range chunk {
+			if matched[e] {
+				continue
 			}
+			one, err := r.s.c.batchRead(ctx, "contacts", "email", []string{e}, props)
+			if err != nil {
+				r.fail(r.byEmail[e], fmt.Errorf("hubspot: reading a contact by email: %w", err))
+				continue
+			}
+			for _, o := range one {
+				r.emailContact(e, o)
+			}
+		}
+	}
+}
+
+// emailContact records the contact found for an email: its id for every
+// lead holding the email, and an opt-out under that email.
+func (r *lookupRun) emailContact(email string, o object) {
+	for _, i := range r.byEmail[email] {
+		r.contact[i] = append(r.contact[i], o.ID)
+	}
+	if optedOut(o) {
+		r.optout(email)
+	}
+}
+
+// leadOptOut reports an opt-out on a contact that is the lead's own (found
+// by lead id or by the contact id stored in the ledger), under the lead's
+// primary email, whatever address the contact now shows.
+func (r *lookupRun) leadOptOut(i int) {
+	if es := cleanEmails(r.leads[i].Emails); len(es) > 0 {
+		r.optout(es[0])
+	} else if len(r.leads[i].LinkedInURLs) > 0 {
+		r.events = append(r.events, api.Event{Kind: "optout", LinkedInURL: r.leads[i].LinkedInURLs[0]})
+	}
+}
+
+// byStoredID reads the contacts the ledger already holds for each lead (the
+// contact step's vendor ids, in LeadRef.Done). A contact merged into another
+// in HubSpot answers with the surviving contact (S0 confirms), so an
+// opt-out on the survivor counts for the lead. An id the batch read does
+// not answer under its own id is read on its own; one that no longer
+// exists is skipped.
+func (r *lookupRun) byStoredID(ctx context.Context) {
+	idx := map[string][]int{}
+	var ids []string
+	for i, lead := range r.leads {
+		for _, d := range lead.Done {
+			if d.Key.Step != stepContact || d.VendorID == "" {
+				continue
+			}
+			if _, ok := idx[d.VendorID]; !ok {
+				ids = append(ids, d.VendorID)
+			}
+			idx[d.VendorID] = append(idx[d.VendorID], i)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	ids = sortedIDs(ids)
+	props := []string{"email", optOutProperty}
+	found, err := r.s.c.batchRead(ctx, "contacts", "", ids, props)
+	if err != nil {
+		var all []int
+		for _, id := range ids {
+			all = append(all, idx[id]...)
+		}
+		r.fail(all, fmt.Errorf("hubspot: reading stored contacts: %w", err))
+		return
+	}
+	answered := map[string]bool{}
+	use := func(id string, o object) {
+		for _, i := range idx[id] {
+			r.contact[i] = append(r.contact[i], o.ID)
 			if optedOut(o) {
-				r.optout(e)
+				r.leadOptOut(i)
 			}
+		}
+	}
+	for _, o := range found {
+		if _, ok := idx[o.ID]; ok {
+			answered[o.ID] = true
+			use(o.ID, o)
+		}
+	}
+	for _, id := range ids {
+		if answered[id] {
+			continue
+		}
+		var o object
+		err := r.s.c.call(ctx, http.MethodGet, "/crm/v3/objects/contacts/"+id+"?properties=email,"+optOutProperty, nil, &o)
+		switch {
+		case statusOf(err) == http.StatusNotFound:
+			// Deleted in HubSpot: nothing to read.
+		case err != nil:
+			r.fail(idx[id], fmt.Errorf("hubspot: reading a stored contact: %w", err))
+		default:
+			use(id, o)
 		}
 	}
 }
@@ -208,13 +310,7 @@ func (r *lookupRun) byLeadID(ctx context.Context) {
 			for _, i := range idx[o.prop(leadProp)] {
 				r.contact[i] = append(r.contact[i], o.ID)
 				if optedOut(o) {
-					// The contact is this lead's, whatever address it now
-					// shows: the opt-out goes to the lead's own email.
-					if es := cleanEmails(r.leads[i].Emails); len(es) > 0 {
-						r.optout(es[0])
-					} else if len(r.leads[i].LinkedInURLs) > 0 {
-						r.events = append(r.events, api.Event{Kind: "optout", LinkedInURL: r.leads[i].LinkedInURLs[0]})
-					}
+					r.leadOptOut(i)
 				}
 			}
 		}
@@ -223,8 +319,9 @@ func (r *lookupRun) byLeadID(ctx context.Context) {
 
 // candidate is one deal a company may have, and where it was found.
 type candidate struct {
-	id     string
-	stored bool // the company's stored deal (CompanyDealID)
+	id         string
+	stored     bool // the company's stored deal (CompanyDealID)
+	viaContact bool // linked to a contact at the company only: it counts only when it carries the company's domain
 }
 
 // deals reads every company's deals and emits one event per company that no
@@ -287,7 +384,9 @@ func (r *lookupRun) deals(ctx context.Context) {
 		for _, d := range domains {
 			for _, c := range contactsAt[d] {
 				companiesAt[d] = append(companiesAt[d], comps[c]...)
-				add(d, cdeals[c]...)
+				for _, id := range cdeals[c] {
+					cands[d] = append(cands[d], candidate{id: id, viaContact: true})
+				}
 			}
 		}
 	}
@@ -375,7 +474,7 @@ func (r *lookupRun) deals(ctx context.Context) {
 	all = sortedIDs(all)
 	read := map[string]object{}
 	if len(all) > 0 {
-		objs, err := r.s.c.batchRead(ctx, "deals", "", all, []string{"dealstage", "pipeline"})
+		objs, err := r.s.c.batchRead(ctx, "deals", "", all, []string{"dealstage", "pipeline", domainProp})
 		if err != nil {
 			var hit []string
 			for _, d := range domains {
@@ -394,16 +493,17 @@ func (r *lookupRun) deals(ctx context.Context) {
 		if r.badDom[d] {
 			continue
 		}
-		r.events = append(r.events, companyEvent(d, cands[d], read, pipes))
+		r.events = append(r.events, companyEvent(d, cands[d], read, pipes, domainProp))
 	}
 }
 
 // companyEvent is the one deal event for a company: the strongest stage
 // among its deals (won, then open, then lost), naming that deal; the
-// company's stored deal is preferred within a stage. A stored deal that no
+// company's stored deal is preferred within a stage. A deal linked only to a
+// contact at the company counts only when it carries the company's domain. A stored deal that no
 // longer exists counts as lost. No deal at all is deal_lost with no deal id
 // (contracts section 5.3).
-func companyEvent(domain string, cands []candidate, read map[string]object, pipes *pipelines) api.Event {
+func companyEvent(domain string, cands []candidate, read map[string]object, pipes *pipelines, domainProp string) api.Event {
 	type pick struct {
 		id, stage string
 		stored    bool
@@ -425,6 +525,12 @@ func companyEvent(domain string, cands []candidate, read map[string]object, pipe
 			if c.stored {
 				consider(classLost, pick{id: c.id, stored: true}) // deleted
 			}
+			continue
+		}
+		if c.viaContact && !strings.EqualFold(o.prop(domainProp), domain) {
+			// A deal linked only to a contact here, for another company
+			// (the person's old employer): not this company's. A deal of
+			// this company's own company record is a separate candidate.
 			continue
 		}
 		class, _ := pipes.of(o.prop("pipeline"), o.prop("dealstage"))

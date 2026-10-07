@@ -130,7 +130,9 @@ func TestContactFoundByLeadIDAfterAnEmailCorrection(t *testing.T) {
 }
 
 // Error mapping (contracts section 6): an invalid email is a refusal; a
-// 401 counts an attempt; vendor messages never reach the error text.
+// 401 or 403 stops the sink for the run with no attempt counted (reported as
+// a rate limit: no lead is at fault); vendor messages never reach the error
+// text.
 func TestContactErrors(t *testing.T) {
 	_, cfg := portal(t)
 	_, err := newSink(t, cfg).Do(context.Background(), req(lead("lead-1", "acme.example", "not-an-email"), "contacts", "contact", nil))
@@ -143,8 +145,7 @@ func TestContactErrors(t *testing.T) {
 	}
 	t.Setenv(hubspot.TokenVariable, "wrong")
 	_, err = newSink(t, cfg).Do(context.Background(), req(lead("lead-3", "acme.example", "a@acme.example"), "contacts", "contact", nil))
-	if err == nil || errors.Is(err, api.ErrRefused) || errors.Is(err, api.ErrTransient) || errors.Is(err, api.ErrRateLimited) ||
-		!strings.Contains(err.Error(), "401") || !strings.Contains(err.Error(), "correlationId=") {
+	if !errors.Is(err, api.ErrRateLimited) || !strings.Contains(err.Error(), "401") || !strings.Contains(err.Error(), "correlationId=") {
 		t.Errorf("401: %v", err)
 	}
 }
@@ -325,5 +326,67 @@ func TestConfigRefusals(t *testing.T) {
 	t.Setenv(hubspot.TokenVariable, "")
 	if _, err := hubspot.NewLookup(api.Config{}); err == nil || !strings.Contains(err.Error(), "HUBSPOT_TOKEN") {
 		t.Errorf("no token: %v", err)
+	}
+}
+
+// A candidate deal at a stage no pipeline lists may be the company's open
+// deal (the lookup holds the company for it): the deal step waits rather
+// than open a second deal.
+func TestDealWaitsOnAnUnknownStageCandidate(t *testing.T) {
+	for _, where := range []string{"related", "stored", "domain"} {
+		t.Run(where, func(t *testing.T) {
+			f, cfg := portal(t)
+			ghost := f.AddDeal(fakehub.StageOpen, map[string]string{"leadscore_company_domain": "acme.example"})
+			f.SetProp("deals", ghost, "pipeline", "otherpipe")
+			f.SetProp("deals", ghost, "dealstage", "ghoststage")
+			s := newSink(t, cfg)
+			l := lead("lead-1", "acme.example", "ana@acme.example")
+			r := req(l, "deals", "deal", map[string]string{"contact": contactFor(t, s, l)})
+			switch where {
+			case "related":
+				r.Related = []api.LedgerRef{{Key: api.StepKey{LeadID: "x", LaneID: "warm", Step: "deal"}, Dest: "deals", VendorID: ghost, State: "done"}}
+			case "stored":
+				r.Lead.CompanyDealID = ghost
+			}
+			_, err := s.Do(context.Background(), r)
+			if !errors.Is(err, api.ErrTransient) || f.Count("deal") != 0 {
+				t.Errorf("err %v, %d deals created", err, f.Count("deal"))
+			}
+		})
+	}
+}
+
+// The tiers go in order: a known open deal is reused without reading the
+// contact's deals or searching.
+func TestDealKnownTierFirst(t *testing.T) {
+	f, cfg := portal(t)
+	d := f.AddDeal(fakehub.StageOpen, nil)
+	s := newSink(t, cfg)
+	l := lead("lead-1", "acme.example", "ana@acme.example")
+	l.CompanyDealID = d
+	r := req(l, "deals", "deal", map[string]string{"contact": contactFor(t, s, l)})
+	before := len(f.Requests())
+	if id, err := s.Do(context.Background(), r); err != nil || id != d {
+		t.Fatalf("%q %v", id, err)
+	}
+	for _, q := range f.Requests()[before:] {
+		if strings.Contains(q, "/associations/contacts/deals") || strings.HasSuffix(q, "/deals/search") {
+			t.Errorf("read past the known tier: %s", q)
+		}
+	}
+}
+
+// A deal linked to the lead's contact but carrying another company's domain
+// (the person's old employer) is never reused for this company.
+func TestDealOnTheContactForAnotherCompanyIsNotReused(t *testing.T) {
+	f, cfg := portal(t)
+	s := newSink(t, cfg)
+	l := lead("lead-1", "acme.example", "ana@acme.example")
+	c := contactFor(t, s, l)
+	old := f.AddDeal(fakehub.StageOpen, map[string]string{"leadscore_company_domain": "oldjob.example"})
+	f.Associate("contacts", c, "deals", old)
+	id, err := s.Do(context.Background(), req(l, "deals", "deal", map[string]string{"contact": c}))
+	if err != nil || id == old || f.Count("deal") != 1 {
+		t.Errorf("got %q %v; the old employer's deal is %s", id, err, old)
 	}
 }

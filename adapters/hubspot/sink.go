@@ -26,7 +26,7 @@ type Sink struct {
 
 	mu    sync.Mutex
 	pipes *pipelines
-	deals map[string]string // company domain -> the deal a deal step settled this run
+	deals map[string]string // company domain -> the deal a deal step settled this run (see deal)
 }
 
 // NewSink builds the sink from its sinks.hubspot block.
@@ -161,18 +161,24 @@ func (k *Sink) contactProps(req api.StepRequest, email string) map[string]string
 const maxTextLen = 65536
 
 // deal settles the company's one open deal and associates the lead's
-// contact with it. It reuses, in this order, a deal it can read as open:
-// another lead's done deal step (Related), the deal a deal step settled
-// earlier this run, the company's stored deal (CompanyDealID), a deal
-// already associated with this contact that carries the company's domain
-// (a retry of this step whose earlier call created it, read through the
-// association, which does not lag), and a deal carrying the company's
-// domain found by search. Only then does it create one, named by the
-// domain, with the domain property and the association in the same call,
-// so a deal never exists without them.
+// contact with it (contracts section 6). It looks in three tiers, reading
+// each tier's deals and reusing the first it reads as open:
 //
-// Any read that fails stops the step before a create: a deal is never
-// opened on an incomplete answer.
+//  1. deals the engine already knows: another lead's done deal step
+//     (Related), the deal a deal step settled earlier in this run, and the
+//     company's stored deal (CompanyDealID);
+//  2. deals associated with this lead's contact that carry the company's
+//     domain: a retry of this step whose earlier call created the deal and
+//     timed out, read through the association, which (S0 confirms) does not
+//     lag as search does;
+//  3. deals carrying the company's domain, found by search.
+//
+// Only when no tier has an open deal does it create one, named by the
+// domain, with the domain property and the association in the same call, so
+// a deal never exists without them. A candidate whose stage no pipeline lists
+// makes the step wait (ErrTransient) instead: it may be the company's open
+// deal, and creating would open a second one. Any read that fails stops the
+// step before a create.
 func (k *Sink) deal(ctx context.Context, req api.StepRequest) (string, error) {
 	contactID := req.Prior[stepContact]
 	if contactID == "" {
@@ -189,14 +195,48 @@ func (k *Sink) deal(ctx context.Context, req api.StepRequest) (string, error) {
 	if pipes.pipelineID == "" {
 		return "", fmt.Errorf("hubspot: sinks.hubspot.pipeline and stage are not set, so the deal step waits: %w", api.ErrTransient)
 	}
-
 	domainProp := k.s.prop("company_domain")
-	var known []string // reused whatever their domain property says
+	unknown := false
+	// pick reads the ids and returns the first open one; with sameDomain, a
+	// deal counts only when it carries the company's domain.
+	pick := func(ids []string, sameDomain bool) (string, error) {
+		ids = dedupe(ids)
+		if len(ids) == 0 {
+			return "", nil
+		}
+		read, err := k.s.c.batchRead(ctx, "deals", "", ids, []string{"dealstage", "pipeline", domainProp})
+		if err != nil {
+			return "", fmt.Errorf("hubspot: reading candidate deals: %w", err)
+		}
+		byID := map[string]object{}
+		for _, o := range read {
+			byID[o.ID] = o
+		}
+		for _, id := range ids {
+			o, ok := byID[id]
+			if !ok || sameDomain && !strings.EqualFold(o.prop(domainProp), domain) {
+				continue // deleted, or another company's deal
+			}
+			c, known := pipes.of(o.prop("pipeline"), o.prop("dealstage"))
+			if !known {
+				unknown = true
+				continue
+			}
+			if c == classOpen {
+				return id, nil
+			}
+		}
+		return "", nil
+	}
+
+	var known []string
 	for _, r := range req.Related {
 		if r.Key.Step == stepDeal && r.Dest == destDeals && r.State == "done" && r.VendorID != "" {
 			known = append(known, r.VendorID)
 		}
 	}
+	// The run's own map covers leads Related leaves out: another lead of
+	// this lead's own family whose deal step finished earlier in the run.
 	k.mu.Lock()
 	if id := k.deals[domain]; id != "" {
 		known = append(known, id)
@@ -205,49 +245,27 @@ func (k *Sink) deal(ctx context.Context, req api.StepRequest) (string, error) {
 	if req.Lead.CompanyDealID != "" {
 		known = append(known, req.Lead.CompanyDealID)
 	}
-	assoc, err := k.s.c.associations(ctx, "contacts", "deals", []string{contactID})
+	reuse, err := pick(known, false)
 	if err != nil {
-		return "", fmt.Errorf("hubspot: reading the contact's deals: %w", err)
+		return "", err
 	}
-	found, err := k.s.c.search(ctx, "deals",
-		[]filterGroup{{Filters: []filter{{PropertyName: domainProp, Operator: "EQ", Value: domain}}}}, []string{domainProp})
-	if err != nil {
-		return "", fmt.Errorf("hubspot: finding the company's deal: %w", err)
-	}
-	byDomain := sortedIDs(append(assoc[contactID], idsOf(found)...))
-
-	ids := dedupe(append(append([]string(nil), known...), byDomain...))
-	deals := map[string]object{}
-	if len(ids) > 0 {
-		read, err := k.s.c.batchRead(ctx, "deals", "", ids, []string{"dealstage", "pipeline", domainProp})
+	if reuse == "" {
+		assoc, err := k.s.c.associations(ctx, "contacts", "deals", []string{contactID})
 		if err != nil {
-			return "", fmt.Errorf("hubspot: reading candidate deals: %w", err)
+			return "", fmt.Errorf("hubspot: reading the contact's deals: %w", err)
 		}
-		for _, o := range read {
-			deals[o.ID] = o
-		}
-	}
-	open := func(id string) bool {
-		o, ok := deals[id]
-		if !ok {
-			return false // deleted
-		}
-		c, known := pipes.of(o.prop("pipeline"), o.prop("dealstage"))
-		return known && c == classOpen
-	}
-	reuse := ""
-	for _, id := range known {
-		if open(id) {
-			reuse = id
-			break
+		if reuse, err = pick(sortedIDs(assoc[contactID]), true); err != nil {
+			return "", err
 		}
 	}
 	if reuse == "" {
-		for _, id := range byDomain {
-			if open(id) && strings.EqualFold(deals[id].prop(domainProp), domain) {
-				reuse = id
-				break
-			}
+		found, err := k.s.c.search(ctx, "deals",
+			[]filterGroup{{Filters: []filter{{PropertyName: domainProp, Operator: "EQ", Value: domain}}}}, []string{domainProp})
+		if err != nil {
+			return "", fmt.Errorf("hubspot: finding the company's deal: %w", err)
+		}
+		if reuse, err = pick(sortedIDs(idsOf(found)), true); err != nil {
+			return "", err
 		}
 	}
 	if reuse != "" {
@@ -257,6 +275,9 @@ func (k *Sink) deal(ctx context.Context, req api.StepRequest) (string, error) {
 		}
 		k.remember(domain, reuse)
 		return reuse, nil
+	}
+	if unknown {
+		return "", fmt.Errorf("hubspot: a deal at the company is at a stage no pipeline lists, so the deal step waits rather than open a second deal: %w", api.ErrTransient)
 	}
 
 	props := map[string]string{

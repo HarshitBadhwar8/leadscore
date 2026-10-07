@@ -10,7 +10,12 @@
 //
 // Search can lag, as HubSpot's search index does (SetLag): a record created
 // while lag is on is missing from search, but not from reads by id or from
-// association reads, until Index. Calls can be made to fail before the
+// association reads, until Index. (That reads by id and association reads
+// do not lag is itself an S0 question; the fake assumes it.) A contact can
+// be merged into another (Merge): reads of the old id answer with the
+// survivor. A read by email also matches `hs_additional_emails` (a
+// provisional assumption S0 confirms either way; the adapter copes with
+// both). Calls can be made to fail before the
 // portal acts (Fail, FailNext) or after it created a record (FailAfter).
 package hubspot
 
@@ -86,7 +91,8 @@ type Server struct {
 	groups    map[string]bool
 	scopes    []string
 	lag       bool
-	hidden    map[string]bool // ids missing from search
+	hidden    map[string]bool   // ids missing from search
+	merged    map[string]string // a merged-away contact id -> the survivor
 	faults    []*fault
 	created   map[string]int // "contact" or "deal" -> records created
 	requests  []string
@@ -128,10 +134,11 @@ func NewBare() *Server {
 		groups:  map[string]bool{},
 		scopes:  append([]string(nil), AllScopes...),
 		hidden:  map[string]bool{},
+		merged:  map[string]string{},
 		created: map[string]int{},
 	}
 	builtin := map[string][]string{
-		"contacts":  {"email", "firstname", "lastname", "jobtitle", "company", "hs_email_optout", "hs_object_id"},
+		"contacts":  {"email", "firstname", "lastname", "jobtitle", "company", "hs_email_optout", "hs_additional_emails", "hs_object_id"},
 		"deals":     {"dealname", "pipeline", "dealstage", "amount", "hs_object_id"},
 		"companies": {"domain", "name", "hs_object_id"},
 	}
@@ -305,6 +312,26 @@ func (s *Server) SetProp(typ, id, name, value string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.objects[typ][id].props[name] = value
+}
+
+// Merge merges contact from into contact into, as a salesperson merging
+// duplicates does: from is gone, and a read of its id answers with into.
+func (s *Server) Merge(from, into string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.objects["contacts"], from)
+	s.merged[from] = into
+}
+
+// byID finds a record by id, following a contact merge.
+func (s *Server) byID(typ, id string) *record {
+	if r := s.objects[typ][id]; r != nil {
+		return r
+	}
+	if typ == "contacts" && s.merged[id] != "" {
+		return s.objects[typ][s.merged[id]]
+	}
+	return nil
 }
 
 // Delete removes a record.
@@ -501,6 +528,7 @@ func (s *Server) takeFault(method, path string) *fault {
 
 var (
 	objectPath = regexp.MustCompile(`^/crm/v3/objects/(contacts|deals|companies)(/search|/batch/read)?$`)
+	objectGet  = regexp.MustCompile(`^/crm/v3/objects/(contacts|deals|companies)/(\d+)$`)
 	assocRead  = regexp.MustCompile(`^/crm/v4/associations/(contacts|deals|companies)/(contacts|deals|companies)/batch/read$`)
 	assocPut   = regexp.MustCompile(`^/crm/v4/objects/(contacts|deals|companies)/(\d+)/associations/default/(contacts|deals|companies)/(\d+)$`)
 	propsPath  = regexp.MustCompile(`^/crm/v3/properties/(contacts|deals)(/groups)?$`)
@@ -523,7 +551,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rec := &recorder{header: http.Header{}}
-	s.route(rec, r.Method, path, body)
+	s.route(rec, r.Method, path, r.URL.Query().Get("properties"), body)
 	if f != nil {
 		writeRaw(w, f.status, f.body)
 		return
@@ -555,7 +583,7 @@ func (rec *recorder) json(status int, v any) {
 
 func (rec *recorder) raw(status int, b []byte) { rec.status, rec.body = status, b }
 
-func (s *Server) route(rec *recorder, method, path string, body []byte) {
+func (s *Server) route(rec *recorder, method, path, query string, body []byte) {
 	switch {
 	case method == http.MethodPost && path == "/oauth/v2/private-apps/get/access-token-info":
 		rec.json(200, map[string]any{"userId": 1, "hubId": 1000, "appId": 2000, "scopes": s.scopes})
@@ -571,6 +599,14 @@ func (s *Server) route(rec *recorder, method, path string, body []byte) {
 		default:
 			s.create(rec, m[1], body)
 		}
+	case objectGet.MatchString(path) && method == http.MethodGet:
+		m := objectGet.FindStringSubmatch(path)
+		r := s.byID(m[1], m[2])
+		if r == nil {
+			rec.raw(s.errorBody("errors/not_found"))
+			return
+		}
+		rec.json(200, answer(r, strings.Split(query, ",")))
 	case assocRead.MatchString(path) && method == http.MethodPost:
 		m := assocRead.FindStringSubmatch(path)
 		s.assocBatch(rec, m[1], m[2], body)
@@ -742,11 +778,11 @@ func (s *Server) batchRead(rec *recorder, typ string, body []byte) {
 	for _, input := range in.Inputs {
 		var hit *record
 		if in.IDProperty == "" {
-			hit = s.objects[typ][input.ID]
+			hit = s.byID(typ, input.ID)
 		} else {
 			var ids []string
 			for id, r := range s.objects[typ] {
-				if strings.EqualFold(r.props[in.IDProperty], input.ID) {
+				if strings.EqualFold(r.props[in.IDProperty], input.ID) || in.IDProperty == "email" && hasAdditional(r, input.ID) {
 					ids = append(ids, id)
 				}
 			}
@@ -846,6 +882,15 @@ func (s *Server) create(rec *recorder, typ string, body []byte) {
 		s.created[step]++
 	}
 	rec.json(201, answer(s.objects[typ][id], keys(in.Properties)))
+}
+
+func hasAdditional(r *record, email string) bool {
+	for _, e := range strings.Split(r.props["hs_additional_emails"], ";") {
+		if e != "" && strings.EqualFold(strings.TrimSpace(e), email) {
+			return true
+		}
+	}
+	return false
 }
 
 func keys(m map[string]string) []string {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 
@@ -12,17 +13,19 @@ import (
 )
 
 // requiredScopes are the private-app scopes the sink and lookup use (S0
-// confirms the list). Setup also needs crm.schemas.contacts.write and
+// confirms the list); dealsWriteScope is needed only when a lane pushes to
+// hubspot:deals. Setup also needs crm.schemas.contacts.write and
 // crm.schemas.deals.write, which a run does not.
 var requiredScopes = []string{
 	"crm.objects.companies.read",
 	"crm.objects.contacts.read",
 	"crm.objects.contacts.write",
 	"crm.objects.deals.read",
-	"crm.objects.deals.write",
 	"crm.schemas.contacts.read",
 	"crm.schemas.deals.read",
 }
+
+const dealsWriteScope = "crm.objects.deals.write"
 
 // hubspotCheck is the `hubspot` check (contracts section 10): the token has
 // the scopes, the custom properties exist and fit, and the pipeline and stage
@@ -43,7 +46,7 @@ func (hubspotCheck) Run(ctx context.Context, env check.Env) []check.Problem {
 		return nil
 	}
 	block, ok := env.Config.Sinks["hubspot"]
-	if !ok || strings.TrimSpace(getenv(TokenVariable)) == "" {
+	if !ok || strings.TrimSpace(os.Getenv(TokenVariable)) == "" {
 		return nil
 	}
 	s, err := parse(block)
@@ -56,6 +59,15 @@ func (hubspotCheck) Run(ctx context.Context, env check.Env) []check.Problem {
 			Fix: "check HUBSPOT_TOKEN and HubSpot's status"})
 	}
 
+	dealsLane := ""
+	if env.Rubric != nil {
+		for _, l := range env.Rubric.Lanes() {
+			if l.Sink == "hubspot" && l.Dest == destDeals {
+				dealsLane = l.ID
+				break
+			}
+		}
+	}
 	// S0 confirms this call and its answer for private-app tokens.
 	var info struct {
 		Scopes []string `json:"scopes"`
@@ -69,7 +81,12 @@ func (hubspotCheck) Run(ctx context.Context, env check.Env) []check.Problem {
 		have[sc] = true
 	}
 	var missing []string
-	for _, sc := range requiredScopes {
+	need := requiredScopes
+	if dealsLane != "" {
+		need = append(append([]string(nil), need...), dealsWriteScope)
+	}
+	sort.Strings(need)
+	for _, sc := range need {
 		if !have[sc] {
 			missing = append(missing, sc)
 		}
@@ -103,15 +120,6 @@ func (hubspotCheck) Run(ctx context.Context, env check.Env) []check.Problem {
 		out = append(out, check.Problem{Key: "hubspot:properties", Message: strings.Join(gaps, "; "), Fix: fixSetup})
 	}
 
-	dealsLane := ""
-	if env.Rubric != nil {
-		for _, l := range env.Rubric.Lanes() {
-			if l.Sink == "hubspot" && l.Dest == destDeals {
-				dealsLane = l.ID
-				break
-			}
-		}
-	}
 	switch {
 	case s.pipeline == "" && dealsLane != "":
 		out = append(out, check.Problem{Key: "hubspot:pipeline",

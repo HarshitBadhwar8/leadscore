@@ -38,14 +38,16 @@ func init() {
 	check.Register(hubspotCheck{})
 }
 
+// callTimeout bounds every call (contracts section 11); a variable so a test
+// can shorten it.
+var callTimeout = 30 * time.Second
+
 // TokenVariable holds the private-app token.
 const TokenVariable = "HUBSPOT_TOKEN"
 
 const (
 	defaultBaseURL = "https://api.hubapi.com"
 	defaultPrefix  = "leadscore_"
-	// callTimeout bounds every call (contracts section 11).
-	callTimeout = 30 * time.Second
 	// searchEvery spaces search calls against the real API.
 	searchEvery = 250 * time.Millisecond
 	// groupName is the property group setup creates on contacts and deals.
@@ -68,10 +70,6 @@ type settings struct {
 	prefix          string
 	c               *client
 }
-
-// getenv reads the token; a variable so this package's tests set it without
-// touching the process environment.
-var getenv = os.Getenv
 
 // parse reads a sinks.hubspot block. `base_url` and `_http_client` are for
 // tests only: a `base_url` without a test client is refused, so a file can
@@ -108,7 +106,7 @@ func parse(cfg api.Config) (settings, error) {
 	if (s.pipeline == "") != (s.stage == "") {
 		return s, errors.New("sinks.hubspot.pipeline and sinks.hubspot.stage are set together")
 	}
-	token := strings.TrimSpace(getenv(TokenVariable))
+	token := strings.TrimSpace(os.Getenv(TokenVariable))
 	if token == "" {
 		return s, fmt.Errorf("%s is not set", TokenVariable)
 	}
@@ -117,20 +115,15 @@ func parse(cfg api.Config) (settings, error) {
 		return s, err
 	}
 	hc, _ := cfg["_http_client"].(*http.Client)
-	c := &client{base: defaultBaseURL, token: token, hc: &http.Client{Timeout: callTimeout}}
 	if base != "" {
 		if hc == nil {
 			return s, errors.New("sinks.hubspot.base_url is for tests only and needs a test HTTP client; remove it from leadscore.yml")
 		}
-		c.base = strings.TrimRight(base, "/")
-		c.hc = hc
+		s.c = newClient(strings.TrimRight(base, "/"), token, hc)
 	} else {
-		if hc != nil {
-			c.hc = hc
-		}
-		c.pace = &pacer{every: searchEvery}
+		s.c = newClient(defaultBaseURL, token, hc)
+		s.c.pace = &pacer{every: searchEvery}
 	}
-	s.c = c
 	return s, nil
 }
 
@@ -222,7 +215,8 @@ func readPipelines(ctx context.Context, s settings) (*pipelines, error) {
 
 // classify3 reads a stage's metadata: not closed is open; closed with
 // probability 1 is won; any other closed stage is lost. Metadata it cannot
-// read counts as open, which holds the company: the safe direction.
+// read counts as open, which holds the company: the safe direction. S0
+// confirms the metadata keys (isClosed, probability) and their text values.
 func classify3(isClosed, probability string) stageClass {
 	if !strings.EqualFold(strings.TrimSpace(isClosed), "true") {
 		return classOpen

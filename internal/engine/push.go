@@ -444,6 +444,33 @@ func (v *view) related(id api.LeadID, sinkType string) []api.LedgerRef {
 	return out
 }
 
+// doneSteps is LeadRef.Done for a lookup of a sink type: the type's done
+// steps for the lead and every lead merged into it, so a lookup can read the
+// vendor records the lead already has (a HubSpot contact id).
+func (v *view) doneSteps(id api.LeadID, sinkType string) []api.LedgerRef {
+	var out []api.LedgerRef
+	for _, row := range v.familyRows(id) {
+		if row.State != stateDone || row.VendorID == "" || !v.rowSink(row, sinkType) {
+			continue
+		}
+		out = append(out, api.LedgerRef{
+			Key:  api.StepKey{LeadID: row.LeadID, LaneID: row.LaneID, Step: row.Step},
+			Dest: row.Dest, VendorID: row.VendorID, State: row.State,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i].Key, out[j].Key
+		if a.LeadID != b.LeadID {
+			return a.LeadID < b.LeadID
+		}
+		if a.LaneID != b.LaneID {
+			return a.LaneID < b.LaneID
+		}
+		return a.Step < b.Step
+	})
+	return out
+}
+
 // rowSink reports a row of a lane pushing to the sink type. A row of a lane
 // since removed from the rubric counts for the deals sink when its
 // destination is `deals` (its deal stays the company's); otherwise its sink

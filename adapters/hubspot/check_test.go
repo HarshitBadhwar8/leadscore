@@ -71,6 +71,29 @@ func TestHubSpotCheck(t *testing.T) {
 		t.Errorf("a bare portal with a bad stage: %+v", got)
 	}
 
+	f.SetScopes("crm.objects.companies.read", "crm.objects.contacts.read", "crm.objects.contacts.write",
+		"crm.objects.deals.read", "crm.schemas.contacts.read", "crm.schemas.deals.read")
+	contactsOnly := c.Run(context.Background(), check.Env{Config: &config.Config{Sinks: map[string]api.Config{"hubspot": cfg}}})
+	if len(contactsOnly) != 0 {
+		t.Errorf("deals write is required with no deals lane: %+v", contactsOnly)
+	}
+	if got := run(f, cfg); keysOf(got) != "hubspot:scopes" || !strings.Contains(got[0].Message, "crm.objects.deals.write") {
+		t.Errorf("a deals lane needs deals write: %+v", got)
+	}
+
+	f.AddProperty("deals", fakehub.Property{Name: "leadscore_company_domain", Type: "string", FieldType: "text", HasUniqueValue: true})
+	f.SetScopes(fakehub.AllScopes...)
+	if got := run(f, cfg); keysOf(got) != "hubspot:properties" || !strings.Contains(got[0].Message, "leadscore_company_domain requires unique values") {
+		t.Errorf("a unique domain property: %+v", got)
+	}
+	f.AddProperty("deals", fakehub.Property{Name: "leadscore_company_domain", Type: "string", FieldType: "text"})
+
+	t.Setenv(hubspot.TokenVariable, "wrong")
+	if got := run(f, cfg); keysOf(got) != "hubspot:api" || !strings.Contains(got[0].Message, "401") {
+		t.Errorf("a refused token: %+v", got)
+	}
+	t.Setenv(hubspot.TokenVariable, fakehub.Token)
+
 	delete(cfg, "pipeline")
 	delete(cfg, "stage")
 	f.SetScopes(fakehub.AllScopes...)

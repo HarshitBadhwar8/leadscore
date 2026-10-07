@@ -87,7 +87,9 @@ func lookups(r *Run, v *view, provisional map[api.LeadID]bool, st *pushRun) erro
 		}
 		refs := make([]api.LeadRef, 0, len(ids))
 		for _, id := range ids {
-			refs = append(refs, v.leadRef(id))
+			ref := v.leadRef(id)
+			ref.Done = v.doneSteps(id, typ)
+			refs = append(refs, ref)
 		}
 		evs, bad, err := lookupOne(r.PushCtx, typ, r.Config.Sinks[typ], refs)
 		if err != nil {

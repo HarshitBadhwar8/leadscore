@@ -46,7 +46,7 @@ func (e *apiError) Error() string {
 		s += " " + d
 	}
 	if e.status == http.StatusUnauthorized || e.status == http.StatusForbidden {
-		s += " (check HUBSPOT_TOKEN and the private app's scopes)"
+		s += " (HubSpot refused the token: check HUBSPOT_TOKEN and the private app's scopes; the sink stops for this run)"
 	}
 	return s
 }
@@ -55,10 +55,13 @@ func (e *apiError) Unwrap() error { return e.kind }
 
 // classify maps a status to the engine's error kinds: 429 is a rate limit,
 // 5xx is transient, a 400 whose body names INVALID_EMAIL is a refusal that
-// retrying cannot change; anything else counts an attempt.
+// retrying cannot change (S0 confirms the code); anything else counts an
+// attempt. A 401 or 403 (a revoked token, a missing scope) is reported as a
+// rate limit: the sink stops for the run and no attempt is counted, since no
+// lead is at fault; the `hubspot` check raises the problem.
 func classify(status int, body []byte) error {
 	switch {
-	case status == http.StatusTooManyRequests:
+	case status == http.StatusTooManyRequests, status == http.StatusUnauthorized, status == http.StatusForbidden:
 		return api.ErrRateLimited
 	case status >= 500:
 		return api.ErrTransient
@@ -92,16 +95,24 @@ func existingID(err error) string {
 	return ""
 }
 
-// call sends one request. A transport failure (a timeout, a refused
-// connection) is ErrTransient, unless the caller's context ended, which is
-// returned as is: the engine reads context.Canceled itself.
-func (c *client) call(ctx context.Context, method, path string, in, out any) error {
+// maxBody caps an answer read into memory; a larger one is treated as a
+// failed read.
+var maxBody int64 = 16 << 20
+
+// call sends one request, bounded by callTimeout. A transport failure (a
+// timeout, a refused connection) is ErrTransient, unless the caller's
+// context ended, which is returned as is: the engine reads context.Canceled
+// itself. Redirects are not followed (newClient), so the token never goes to
+// another host.
+func (c *client) call(parent context.Context, method, path string, in, out any) error {
 	route, _, _ := strings.Cut(path, "?")
 	if c.pace != nil && strings.HasSuffix(route, "/search") {
-		if err := c.pace.wait(ctx); err != nil {
+		if err := c.pace.wait(parent); err != nil {
 			return err
 		}
 	}
+	ctx, cancel := context.WithTimeout(parent, callTimeout)
+	defer cancel()
 	var body io.Reader
 	if in != nil {
 		b, err := json.Marshal(in)
@@ -118,8 +129,8 @@ func (c *client) call(ctx context.Context, method, path string, in, out any) err
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		if ctx.Err() != nil {
-			return fmt.Errorf("hubspot: %s %s: %w", method, route, ctx.Err())
+		if parent.Err() != nil {
+			return fmt.Errorf("hubspot: %s %s: %w", method, route, parent.Err())
 		}
 		// Only the route: a transport error quotes the URL, and the URL is
 		// ours, but the error text from a proxy is not.
@@ -130,17 +141,34 @@ func (c *client) call(ctx context.Context, method, path string, in, out any) err
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 		return &apiError{method: method, route: route, status: resp.StatusCode, body: raw, kind: classify(resp.StatusCode, raw)}
 	}
-	if out == nil {
-		_, _ = io.Copy(io.Discard, resp.Body)
-		return nil
-	}
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-		if ctx.Err() != nil {
-			return fmt.Errorf("hubspot: %s %s: %w", method, route, ctx.Err())
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
+	if err != nil {
+		if parent.Err() != nil {
+			return fmt.Errorf("hubspot: %s %s: %w", method, route, parent.Err())
 		}
 		return fmt.Errorf("hubspot: reading the %s answer: %w", route, api.ErrTransient)
 	}
+	if int64(len(raw)) > maxBody {
+		return fmt.Errorf("hubspot: the %s answer is over %d bytes: %w", route, maxBody, api.ErrTransient)
+	}
+	if out == nil {
+		return nil
+	}
+	if err := json.Unmarshal(raw, out); err != nil {
+		return fmt.Errorf("hubspot: reading the %s answer: %w", route, api.ErrTransient)
+	}
 	return nil
+}
+
+// newClient builds the HTTP side: hc (a test client, or nil for a default
+// one) copied with redirects turned off.
+func newClient(base, token string, hc *http.Client) *client {
+	h := http.Client{}
+	if hc != nil {
+		h = *hc
+	}
+	h.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &client{base: base, token: token, hc: &h}
 }
 
 // pacer spaces search calls: HubSpot limits its search endpoints to a few

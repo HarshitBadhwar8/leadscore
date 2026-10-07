@@ -52,6 +52,22 @@ func TestFakeMatchesFixtures(t *testing.T) {
 			s.AddDeal(StageOpen, nil)
 		},
 		"companies_search/by_domain": func(s *Server) { s.next = 300; s.AddCompany("example.com") },
+		"contacts_get/merged_id": func(s *Server) {
+			old := s.AddContact("ana.old@example.com", nil)
+			winner := s.AddContact("ana@example.com", map[string]string{"hs_email_optout": "true"})
+			s.Merge(old, winner)
+		},
+		"associations_batch_read/contacts_companies": func(s *Server) {
+			c := s.AddContact("ana@example.com", nil)
+			s.next = 300
+			s.Associate("contacts", c, "companies", s.AddCompany("example.com"))
+		},
+		"associations_batch_read/companies_deals": func(s *Server) {
+			s.next = 200
+			d := s.AddDeal(StageOpen, nil)
+			s.next = 300
+			s.Associate("companies", s.AddCompany("example.com"), "deals", d)
+		},
 	}
 	bare := map[string]bool{"properties_create/created": true, "property_groups_create/created": true}
 	skip := map[string]string{
@@ -82,7 +98,11 @@ func TestFakeMatchesFixtures(t *testing.T) {
 			if len(fx.RequestBody) > 0 && string(fx.RequestBody) != "null" {
 				body = bytes.NewReader(fx.RequestBody)
 			}
-			req, _ := http.NewRequest(fx.Method, srv.URL+fx.Path, body)
+			url := srv.URL + fx.Path
+			if fx.Query != "" {
+				url += "?" + fx.Query
+			}
+			req, _ := http.NewRequest(fx.Method, url, body)
 			token := Token
 			if key == "errors/unauthorized" {
 				token = "wrong"

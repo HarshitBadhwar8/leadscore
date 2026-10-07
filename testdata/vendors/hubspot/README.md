@@ -17,13 +17,20 @@ are no keys or tokens.
 What S0 must confirm (also marked "S0 confirms" in `adapters/hubspot`):
 
 - `hs_email_optout` is the opt-out flag, and `"true"` its set value.
-- Batch read by `idProperty: email` matches only the address given, and
-  answers a missing email with a 207 `OBJECT_NOT_FOUND` error entry.
-- v4 association batch reads answer a record with no associations with a
-  `NO_ASSOCIATIONS_FOUND` error entry.
-- The 409 message carries `Existing ID: <id>`.
-- How long search lags a create (the engine waits 15 minutes before it
-  trusts a "no deal" answer after a deal step was called).
+- Whether batch read by `idProperty: email` also matches a contact's
+  secondary addresses (the adapter re-reads one by one if it does), and that
+  it answers a missing email with a 207 `OBJECT_NOT_FOUND` error entry.
+- That reading a merged-away contact id (batch read or `GET`) answers with
+  the surviving contact.
+- v4 association batch reads (contact to companies, contact to deals,
+  company to deals) answer a record with no associations with a
+  `NO_ASSOCIATIONS_FOUND` error entry, and whether they lag a fresh create
+  (the deal step's retry relies on the contact-to-deals read not lagging).
+- The v4 `PUT` association call (`associations_put`).
+- Stage metadata keys and values (`isClosed`, `probability`).
+- The `INVALID_EMAIL` code in a 400, and the 409 message `Existing ID: <id>`.
+- How long search lags a create (the engine waits 15 minutes after a deal
+  step's latest call before it trusts a "no deal" answer).
 - The search rate limit (the adapter spaces searches 250 ms apart).
 - The private-app token-info call and its `scopes` list; deal-to-contact
-  association type id 3.
+  association type id 3; 401 and 403 answers.

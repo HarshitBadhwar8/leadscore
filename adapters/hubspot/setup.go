@@ -70,6 +70,8 @@ func (p property) mismatch(e existing) string {
 		return fmt.Sprintf("is of type %s, not %s", e.Type, typ)
 	case p.unique && !e.HasUniqueValue:
 		return "does not require unique values"
+	case !p.unique && e.HasUniqueValue:
+		return "requires unique values, which it must not (one company can have several deals over time)"
 	}
 	return ""
 }
@@ -115,10 +117,15 @@ func Setup(ctx context.Context, cfg api.Config, out io.Writer) error {
 			body["hasUniqueValue"] = true
 		}
 		err := c.call(ctx, http.MethodPost, "/crm/v3/properties/"+p.object, body, nil)
-		if err != nil && statusOf(err) != http.StatusConflict {
+		switch {
+		case statusOf(err) == http.StatusConflict:
+			// Created by someone else since the list was read.
+			fmt.Fprintf(out, "kept %s property %s\n", strings.TrimSuffix(p.object, "s"), name)
+		case err != nil:
 			return fmt.Errorf("creating %s property %s: %w", strings.TrimSuffix(p.object, "s"), name, err)
+		default:
+			fmt.Fprintf(out, "created %s property %s\n", strings.TrimSuffix(p.object, "s"), name)
 		}
-		fmt.Fprintf(out, "created %s property %s\n", strings.TrimSuffix(p.object, "s"), name)
 	}
 	if len(bad) > 0 {
 		sort.Strings(bad)
