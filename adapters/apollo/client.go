@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
+	"github.com/HarshitBadhwar8/leadscore/internal/logredact"
 	"github.com/HarshitBadhwar8/leadscore/internal/vendorhttp"
 )
 
@@ -81,13 +82,16 @@ func NewClientWithKey(cfg api.Config, key string) (*Client, error) {
 	if key == "" {
 		return nil, fmt.Errorf("apollo: %s is not set", KeyVariable)
 	}
-	base, given, err := vendorhttp.TestKeys(cfg)
+	base, given, err := vendorhttp.Overrides(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("apollo: %w", err)
 	}
+	if given == nil {
+		given = &http.Client{Timeout: CallTimeout}
+	}
 	// A copy that never follows a redirect, so the key header never leaves
 	// for another host: a 3xx is returned as the reply, a StatusError.
-	c := &Client{key: key, baseURL: DefaultBaseURL, http: vendorhttp.NewClient(given, CallTimeout)}
+	c := &Client{key: key, baseURL: DefaultBaseURL, http: vendorhttp.NewClient(given)}
 	if base != "" {
 		c.baseURL = base
 	}
@@ -180,7 +184,9 @@ func (c *Client) DoRetrying(ctx context.Context, req Request, out any) error {
 }
 
 // attempt sends one request under the per-call timeout, reading the whole
-// reply (vendorhttp.Do).
+// reply (vendorhttp.Do). A reply whose body was cut short still counts by its
+// status when the shared rule decides it (429, 401, 403, 5xx), so a refused
+// key is never read as a passing network failure.
 func (c *Client) attempt(ctx context.Context, req Request) (vendorhttp.Reply, error) {
 	var body io.Reader
 	if req.Body != nil {
@@ -205,7 +211,7 @@ func (c *Client) attempt(ctx context.Context, req Request) (vendorhttp.Reply, er
 		hr.Header.Set("Content-Type", "application/json")
 	}
 	reply, err := vendorhttp.Do(c.http, hr, CallTimeout, maxReplyBytes)
-	if err != nil {
+	if err != nil && vendorhttp.Class(reply.Status) == nil {
 		return vendorhttp.Reply{}, fmt.Errorf("apollo: %s %s: %w", req.Method, req.Path, err)
 	}
 	return reply, nil
@@ -218,7 +224,7 @@ func (c *Client) finish(reply vendorhttp.Reply, out any) error {
 	case reply.Status == http.StatusTooManyRequests:
 		return fmt.Errorf("apollo: %w (429)", api.ErrRateLimited)
 	case reply.Status < 200 || reply.Status > 299:
-		return &StatusError{Status: reply.Status, Detail: reply.Detail(), body: raw}
+		return &StatusError{Status: reply.Status, Detail: logredact.VendorErrorDetail(raw), body: raw}
 	}
 	if out == nil || len(bytes.TrimSpace(raw)) == 0 {
 		return nil

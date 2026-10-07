@@ -667,12 +667,13 @@ func errorFields(body []byte) string {
 	return strings.Join(parts, " ")
 }
 
-// classify maps a call's error to section 1's classes (contracts section 6,
-// with the status rule shared through vendorhttp.Class): a 429, 401 or 403
-// is ErrRateLimited (a refused key or a key without the scope is no lead's
-// fault: the sink stops for the run with no attempt counted); a 5xx, a timeout or a transport failure is ErrTransient; a 4xx
-// whose error fields name a refusal (another sequence, opted out, invalid
-// email) is ErrRefused; any other error counts one attempt.
+// classify maps a call's error to section 1's classes (contracts section 6;
+// the status rule is vendorhttp's): a 429, 401 or 403 is ErrRateLimited (a
+// refused key or a key without the scope is no lead's fault: the sink stops
+// for the run with no attempt counted); a 5xx, a timeout or a transport
+// failure is ErrTransient; a 4xx whose error fields name a refusal (another
+// sequence, opted out, invalid email) is ErrRefused; any other error counts
+// one attempt.
 //
 // None of these says Apollo did nothing: the ledger records that the call
 // went out, so a timeout still holds the person's one cold push.
@@ -689,12 +690,13 @@ func classify(err error) error {
 		}
 		return fmt.Errorf("%w: %w", api.ErrTransient, err)
 	}
-	switch class := vendorhttp.Class(se.Status); {
-	case vendorhttp.KeyRefused(se.Status):
-		return fmt.Errorf("%w: apollo refused the key (it must be a master key): %w", class, err)
-	case class != nil:
+	if vendorhttp.KeyRefused(se.Status) {
+		return fmt.Errorf("%w: apollo refused the key (it must be a master key): %w", api.ErrRateLimited, err)
+	}
+	if class := vendorhttp.Class(se.Status); class != nil {
 		return fmt.Errorf("%w: %w", class, err)
-	case se.Status >= 400:
+	}
+	if se.Status >= 400 {
 		switch reason := refusalOf(errorFields(se.Body())); reason {
 		case "", reasonInSequence:
 			// Not a refusal; "already in this sequence" is read by the

@@ -91,3 +91,20 @@ func TestPacer(t *testing.T) {
 		t.Errorf("err %v after %s", err, time.Since(start))
 	}
 }
+
+// A 401 or 429 whose body is cut short is still read by its status, so the
+// sink stops for the run instead of calling again.
+func TestCallCutShortKeepsItsStatus(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusTooManyRequests} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Length", "1000")
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(`{"status":`)) // then the connection closes early
+		}))
+		err := newClient(srv.URL, "t", srv.Client()).call(context.Background(), http.MethodGet, "/x", nil, nil)
+		if !errors.Is(err, api.ErrRateLimited) || statusOf(err) != status {
+			t.Errorf("%d: %v", status, err)
+		}
+		srv.Close()
+	}
+}

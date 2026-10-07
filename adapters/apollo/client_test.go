@@ -506,3 +506,25 @@ func TestEnricherStopsWhenCtxEnds(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+// A 401 or 429 whose body is cut short is still read by its status: a
+// refused key stops the sink, and a rate limit is a rate limit, not a
+// passing network failure.
+func TestCutShortReplyKeepsItsStatus(t *testing.T) {
+	cutShort := func(status int) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Length", "1000")
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(`{"error":`)) // then the connection closes early
+		}
+	}
+	req := Request{Method: http.MethodGet, Path: "/v1/auth/health"}
+	err := handlerClient(t, cutShort(http.StatusUnauthorized)).Do(context.Background(), req, nil)
+	if !KeyRefused(err) || !errors.Is(classify(err), api.ErrRateLimited) {
+		t.Errorf("401: %v", err)
+	}
+	err = handlerClient(t, cutShort(http.StatusTooManyRequests)).Do(context.Background(), req, nil)
+	if !errors.Is(err, api.ErrRateLimited) {
+		t.Errorf("429: %v", err)
+	}
+}

@@ -105,7 +105,9 @@ const maxErrorBody = 8192
 // call sends one request, bounded by callTimeout (vendorhttp.Do). A failed
 // call (a timeout, a refused connection, an answer over maxBody) is
 // ErrTransient, unless the caller's context ended, which is returned as is:
-// the engine reads context.Canceled itself. Redirects are not followed
+// the engine reads context.Canceled itself. An answer whose body was cut
+// short still counts by its status when the shared rule decides it (429,
+// 401, 403, 5xx), so a refused token still stops the sink. Redirects are not followed
 // (newClient), so the token never goes to another host.
 func (c *client) call(parent context.Context, method, path string, in, out any) error {
 	route, _, _ := strings.Cut(path, "?")
@@ -130,7 +132,7 @@ func (c *client) call(parent context.Context, method, path string, in, out any) 
 	req.Header.Set("Content-Type", "application/json")
 	reply, err := vendorhttp.Do(c.hc, req, callTimeout, maxBody)
 	switch {
-	case err == nil:
+	case err == nil, vendorhttp.Class(reply.Status) != nil:
 	case parent.Err() != nil:
 		return fmt.Errorf("hubspot: %s %s: %w", method, route, parent.Err())
 	case errors.Is(err, vendorhttp.ErrTooLarge):
@@ -155,7 +157,7 @@ func (c *client) call(parent context.Context, method, path string, in, out any) 
 // newClient builds the HTTP side: hc (a test client, or nil for a default
 // one) copied with redirects turned off.
 func newClient(base, token string, hc *http.Client) *client {
-	return &client{base: base, token: token, hc: vendorhttp.NewClient(hc, callTimeout)}
+	return &client{base: base, token: token, hc: vendorhttp.NewClient(hc)}
 }
 
 // pacer spaces search calls: HubSpot limits its search endpoints to a few

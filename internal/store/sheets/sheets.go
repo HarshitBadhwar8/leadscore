@@ -85,7 +85,7 @@ func Connect(ctx context.Context, cfg api.Config, scopes ...string) (*Services, 
 	if len(scopes) == 0 {
 		scopes = Scopes
 	}
-	base, client, err := vendorhttp.TestKeys(cfg)
+	base, client, err := vendorhttp.Overrides(cfg)
 	if err != nil {
 		return nil, err
 	}

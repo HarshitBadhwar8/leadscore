@@ -22,6 +22,7 @@ import (
 	htransport "google.golang.org/api/transport/http"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
+	"github.com/HarshitBadhwar8/leadscore/internal/logredact"
 	"github.com/HarshitBadhwar8/leadscore/internal/vendorhttp"
 )
 
@@ -94,22 +95,24 @@ type Client struct {
 // already-authenticated client; else the client signs in with Google's
 // standard credentials (on a person's machine, the run account through
 // `gcloud auth application-default login --impersonate-service-account`). A
-// nil block is Google's standard credentials.
+// nil block is Google's standard credentials. Redirects are never followed
+// (vendorhttp.NewClient): the sign-in transport adds the token to every
+// request, a redirect to another host included.
 func Connect(ctx context.Context, cfg api.Config) (*Client, error) {
-	base, client, err := vendorhttp.TestKeys(cfg)
+	base, client, err := vendorhttp.Overrides(cfg)
 	switch {
 	case err != nil:
 		return nil, err
 	case base != "":
-		return &Client{http: client, base: base}, nil
+		return &Client{http: vendorhttp.NewClient(client), base: base}, nil
 	case client != nil:
-		return &Client{http: client}, nil
+		return &Client{http: vendorhttp.NewClient(client)}, nil
 	}
 	hc, _, err := htransport.NewClient(ctx, option.WithScopes(cloudPlatformScope))
 	if err != nil {
 		return nil, fmt.Errorf("signing in to Google Cloud (run `setup/gcp.sh accounts`, which ends with the impersonated login): %w", err)
 	}
-	return &Client{http: hc}, nil
+	return &Client{http: vendorhttp.NewClient(hc)}, nil
 }
 
 // APIError is a Google API answer other than 2xx. Detail keeps only the
@@ -155,7 +158,7 @@ func (c *Client) call(ctx context.Context, method, service, path string, body io
 		return fmt.Errorf("%s %s: %w", service, path, err)
 	}
 	if reply.Status/100 != 2 {
-		return fmt.Errorf("%s %s: %w", service, path, &APIError{Status: reply.Status, Detail: reply.Detail()})
+		return fmt.Errorf("%s %s: %w", service, path, &APIError{Status: reply.Status, Detail: logredact.VendorErrorDetail(reply.Body)})
 	}
 	if out == nil {
 		return nil

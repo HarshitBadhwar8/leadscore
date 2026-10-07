@@ -16,19 +16,18 @@ import (
 	"time"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
-	"github.com/HarshitBadhwar8/leadscore/internal/logredact"
 )
 
 // ErrBaseURLNeedsClient refuses a block with `base_url` but no test client.
 var ErrBaseURLNeedsClient = errors.New("`base_url` is for tests only and needs a test HTTP client; remove it from leadscore.yml")
 
-// TestKeys reads a block's two test keys (contracts section 3). base is
+// Overrides reads a block's two test keys (contracts section 3). base is
 // base_url without a trailing "/", or "" when unset; hc is _http_client, or
 // nil when unset (a typed nil counts as unset). base_url without a client is
 // refused: only tests set it, and one written into leadscore.yml would send
 // the key to whatever address it names. A base_url that is not non-empty
 // text, or an _http_client that is not an *http.Client, is refused too.
-func TestKeys(cfg api.Config) (base string, hc *http.Client, err error) {
+func Overrides(cfg api.Config) (base string, hc *http.Client, err error) {
 	if v, ok := cfg["_http_client"]; ok && v != nil {
 		if hc, ok = v.(*http.Client); !ok {
 			return "", nil, errors.New("`_http_client` must be an *http.Client")
@@ -46,11 +45,11 @@ func TestKeys(cfg api.Config) (base string, hc *http.Client, err error) {
 	return base, hc, nil
 }
 
-// NewClient returns a copy of hc (a new client bounded by timeout when hc is
-// nil) that never follows a redirect: a 3xx is the reply, so a key header
-// never leaves for another host. The caller's client is left alone.
-func NewClient(hc *http.Client, timeout time.Duration) *http.Client {
-	c := http.Client{Timeout: timeout}
+// NewClient returns a copy of hc (a new default client when hc is nil) that
+// never follows a redirect: a 3xx is the reply, so a key header never leaves
+// for another host. The caller's client is left alone. Do bounds each call.
+func NewClient(hc *http.Client) *http.Client {
+	var c http.Client
 	if hc != nil {
 		c = *hc
 	}
@@ -65,17 +64,17 @@ type Reply struct {
 	Body   []byte // never log it: it may echo a person's email
 }
 
-// Detail is the body's machine-issued diagnostic fields only, safe to log.
-func (r Reply) Detail() string { return logredact.VendorErrorDetail(r.Body) }
-
 // ErrTooLarge is a reply body over Do's cap.
 var ErrTooLarge = errors.New("the reply is over the size cap")
 
 // Do sends req bounded by timeout on its own context, whatever client is
 // given, and reads the whole reply (at most maxBytes) while that context is
-// live. Every error means no usable reply (a timeout, a network failure, a
-// body over the cap), all transient by Class's rule. A transport error names
-// only its operation and cause, never the URL, whose query may hold an email.
+// live. An error means no whole reply (a timeout, a network failure, a body
+// over the cap), transient by Class's rule; but when the status line came,
+// the Reply still carries the status, header and the body read so far (at
+// most maxBytes), so a caller still reads a 429, 401 or 403 as a rate limit.
+// A transport error names only its operation and cause, never the URL, whose
+// query may hold an email.
 func Do(hc *http.Client, req *http.Request, timeout time.Duration, maxBytes int64) (Reply, error) {
 	ctx, cancel := context.WithTimeout(req.Context(), timeout)
 	defer cancel()
@@ -89,13 +88,14 @@ func Do(hc *http.Client, req *http.Request, timeout time.Duration, maxBytes int6
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
-	if err != nil {
-		return Reply{}, fmt.Errorf("reading the reply: %w", err)
+	reply := Reply{Status: resp.StatusCode, Header: resp.Header, Body: raw[:min(int64(len(raw)), maxBytes)]}
+	switch {
+	case err != nil:
+		return reply, fmt.Errorf("reading the reply: %w", err)
+	case int64(len(raw)) > maxBytes:
+		return reply, fmt.Errorf("%w (%d bytes)", ErrTooLarge, maxBytes)
 	}
-	if int64(len(raw)) > maxBytes {
-		return Reply{}, fmt.Errorf("%w (%d bytes)", ErrTooLarge, maxBytes)
-	}
-	return Reply{Status: resp.StatusCode, Header: resp.Header, Body: raw}, nil
+	return reply, nil
 }
 
 // KeyRefused reports a status saying the key or token itself is refused.

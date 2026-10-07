@@ -111,7 +111,7 @@ func parse(cfg api.Config) (settings, error) {
 	if token == "" {
 		return s, fmt.Errorf("%s is not set", TokenVariable)
 	}
-	base, hc, err := vendorhttp.TestKeys(cfg)
+	base, hc, err := vendorhttp.Overrides(cfg)
 	if err != nil {
 		return s, fmt.Errorf("sinks.hubspot: %w", err)
 	}

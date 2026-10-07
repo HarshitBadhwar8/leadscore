@@ -12,7 +12,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 )
 
-func TestTestKeys(t *testing.T) {
+func TestOverrides(t *testing.T) {
 	hc := &http.Client{}
 	var typedNil *http.Client
 	for _, c := range []struct {
@@ -25,6 +25,7 @@ func TestTestKeys(t *testing.T) {
 		{"nil block", nil, "", false, ""},
 		{"neither", api.Config{}, "", false, ""},
 		{"client only", api.Config{"_http_client": hc}, "", true, ""},
+		{"typed-nil client only is unset", api.Config{"_http_client": typedNil}, "", false, ""},
 		{"both, trailing slash trimmed", api.Config{"base_url": " http://x.test/ ", "_http_client": hc}, "http://x.test", true, ""},
 		{"null base_url is unset", api.Config{"base_url": nil}, "", false, ""},
 		{"base_url without a client", api.Config{"base_url": "https://collector.example"}, "", false, "tests only"},
@@ -33,7 +34,7 @@ func TestTestKeys(t *testing.T) {
 		{"base_url empty", api.Config{"base_url": " ", "_http_client": hc}, "", false, "must be a URL"},
 		{"client of the wrong type", api.Config{"_http_client": "x"}, "", false, "*http.Client"},
 	} {
-		base, got, err := TestKeys(c.cfg)
+		base, got, err := Overrides(c.cfg)
 		switch {
 		case c.wantErr != "":
 			if err == nil || !strings.Contains(err.Error(), c.wantErr) {
@@ -43,7 +44,7 @@ func TestTestKeys(t *testing.T) {
 			t.Errorf("%s: %q %v %v", c.name, base, got, err)
 		}
 	}
-	if _, _, err := TestKeys(api.Config{"base_url": "https://x.example"}); !errors.Is(err, ErrBaseURLNeedsClient) {
+	if _, _, err := Overrides(api.Config{"base_url": "https://x.example"}); !errors.Is(err, ErrBaseURLNeedsClient) {
 		t.Errorf("err %v", err)
 	}
 }
@@ -59,7 +60,7 @@ func TestNewClientRefusesRedirects(t *testing.T) {
 	}))
 	defer srv.Close()
 	given := srv.Client()
-	hc := NewClient(given, time.Minute)
+	hc := NewClient(given)
 	if given.CheckRedirect != nil || hc == given {
 		t.Error("the caller's client was changed")
 	}
@@ -69,8 +70,8 @@ func TestNewClientRefusesRedirects(t *testing.T) {
 	if err != nil || reply.Status != http.StatusFound {
 		t.Errorf("reply %d, err %v", reply.Status, err)
 	}
-	if d := NewClient(nil, 7*time.Second); d.Timeout != 7*time.Second || d.CheckRedirect == nil {
-		t.Error("the default client has no timeout or follows redirects")
+	if d := NewClient(nil); d.CheckRedirect == nil {
+		t.Error("the default client follows redirects")
 	}
 }
 
@@ -82,12 +83,33 @@ func TestDoReadsTheReply(t *testing.T) {
 	}))
 	defer srv.Close()
 	req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
-	reply, err := Do(NewClient(srv.Client(), 0), req, time.Minute, 1<<10)
-	if err != nil || reply.Status != http.StatusBadRequest || reply.Header.Get("Retry-After") != "3" {
+	reply, err := Do(NewClient(srv.Client()), req, time.Minute, 1<<10)
+	if err != nil || reply.Status != http.StatusBadRequest || reply.Header.Get("Retry-After") != "3" ||
+		!strings.Contains(string(reply.Body), "INVALID_EMAIL") {
 		t.Fatalf("reply %+v, err %v", reply, err)
 	}
-	if d := reply.Detail(); strings.Contains(d, "ada@") || !strings.Contains(d, "INVALID_EMAIL") {
-		t.Errorf("detail %q", d)
+}
+
+// A reply whose body is cut short, or over the cap, still carries its
+// status with the error, so a 429, 401 or 403 is still read as one.
+func TestDoKeepsTheStatusWhenTheBodyFails(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusTooManyRequests} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Length", "1000")
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(`{"error":`)) // then the connection closes early
+		}))
+		req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
+		reply, err := Do(srv.Client(), req, time.Minute, 1<<10)
+		if err == nil || reply.Status != status || Class(reply.Status) != api.ErrRateLimited {
+			t.Errorf("cut short %d: reply %d, err %v", status, reply.Status, err)
+		}
+		req, _ = http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
+		reply, err = Do(srv.Client(), req, time.Minute, 4)
+		if !errors.Is(err, ErrTooLarge) || reply.Status != status || len(reply.Body) != 4 {
+			t.Errorf("over the cap %d: reply %d %q, err %v", status, reply.Status, reply.Body, err)
+		}
+		srv.Close()
 	}
 }
 
