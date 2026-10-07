@@ -88,12 +88,13 @@ func FormulaRequest(sheetID int64, formula string) *sheetsapi.Request {
 // siblings: an Events tab with the editors of an existing protected Events tab
 // (the receiver and run accounts), any other tool tab with the editors of an
 // existing protected tool tab (the run account). When no protected Events tab
-// is left, a new one gets the tool tabs' editors plus receiver, the account
-// appending (it must keep appending to it). People-owned tabs, and a
-// spreadsheet with nothing protected yet, get none.
-func protectionFor(book *sheetsapi.Spreadsheet, name string, sheetID int64, receiver string) *sheetsapi.Request {
+// is left, a new one gets the tool tabs' editors plus receiver(), the account
+// appending (it must keep appending to it); when that account cannot be
+// found, it fails rather than protect the tab against its own writer.
+// People-owned tabs, and a spreadsheet with nothing protected yet, get none.
+func protectionFor(book *sheetsapi.Spreadsheet, name string, sheetID int64, receiver func() (string, error)) (*sheetsapi.Request, error) {
 	if peopleOwned(name) {
-		return nil
+		return nil, nil
 	}
 	editorsOf := func(events bool) ([]string, string) {
 		for _, sh := range book.Sheets {
@@ -110,19 +111,23 @@ func protectionFor(book *sheetsapi.Spreadsheet, name string, sheetID int64, rece
 	}
 	events := isEventsTab(name)
 	if users, note := editorsOf(events); users != nil {
-		return protectRequest(sheetID, users, note)
+		return protectRequest(sheetID, users, note), nil
 	}
 	if !events {
-		return nil
+		return nil, nil
 	}
 	users, _ := editorsOf(false)
 	if users == nil {
-		return nil
+		return nil, nil
 	}
-	if receiver != "" && !slices.ContainsFunc(users, func(u string) bool { return strings.EqualFold(u, receiver) }) {
-		users = append(slices.Clone(users), receiver)
+	me, err := receiver()
+	if err != nil {
+		return nil, fmt.Errorf("protecting %s for the account appending to it: %w", name, err)
 	}
-	return protectRequest(sheetID, users, eventsTabNote)
+	if !slices.ContainsFunc(users, func(u string) bool { return strings.EqualFold(u, me) }) {
+		users = append(slices.Clone(users), me)
+	}
+	return protectRequest(sheetID, users, eventsTabNote), nil
 }
 
 func protectRequest(sheetID int64, editors []string, description string) *sheetsapi.Request {

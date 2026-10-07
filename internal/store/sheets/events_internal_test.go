@@ -285,3 +285,60 @@ func TestQuietMonthKeepsProtection(t *testing.T) {
 		t.Errorf("December's protection = %+v", prs)
 	}
 }
+
+// A month DeleteProcessed recorded as deleted, then made again by a lagging
+// receiver: the old cursor's mark is for the deleted tab, so the new tab is
+// read whole; a mark taken from the new tab is honored after that.
+func TestRecreatedMonth(t *testing.T) {
+	sep := time.Date(2026, 9, 10, 0, 0, 0, 0, time.UTC)
+	oct := time.Date(2026, 10, 10, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
+	s, _ := clockStore(t, &now)
+	ctx := t.Context()
+	for _, at := range []time.Time{sep, sep, oct} {
+		if err := s.AppendEvents(ctx, visit(at)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, saved, _ := s.ReadEvents(ctx, "")
+	if _, err := s.DeleteProcessed(ctx, saved, now); err != nil {
+		t.Fatal(err)
+	}
+	late := sep.Add(time.Hour)
+	if err := s.AppendEvents(ctx, visit(late)); err != nil { // a lagging receiver re-creates September
+		t.Fatal(err)
+	}
+	evs, next, err := s.ReadEvents(ctx, saved)
+	if err != nil || len(evs) != 1 || !evs[0].ReceivedAt.Equal(late) {
+		t.Fatalf("read from the old cursor = %v, %v; want the re-created tab's event", evs, err)
+	}
+	if again, _, err := s.ReadEvents(ctx, next); err != nil || len(again) != 0 {
+		t.Errorf("read from the new cursor = %v, %v; want nothing (the mark is the new tab's)", again, err)
+	}
+	if err := s.AppendEvents(ctx, visit(late)); err != nil {
+		t.Fatal(err)
+	}
+	if more, _, err := s.ReadEvents(ctx, next); err != nil || len(more) != 1 {
+		t.Errorf("read after one more append = %v, %v; want just it", more, err)
+	}
+}
+
+// Drive cannot say who is appending: a new Events tab with no protected
+// sibling fails loudly rather than being protected against its own writer.
+func TestNewEventsTabCallerUnknown(t *testing.T) {
+	now := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+	s, fs := clockStore(t, &now)
+	ctx := t.Context()
+	fs.FailAbout(true)
+	if err := s.batchUpdate(ctx, []*sheetsapi.Request{addTab(77, "People", 7, true),
+		protectRequest(77, []string{"run@p.iam.gserviceaccount.com"}, toolTabNote)}, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AppendEvents(ctx, visit(now)); err == nil || !strings.Contains(err.Error(), "signed in") {
+		t.Errorf("AppendEvents = %v; want a failure naming the unknown account", err)
+	}
+	book, _ := s.meta(ctx)
+	if tabOf(book, "Events 2026-11") != nil {
+		t.Error("no Events tab may be created unprotected for its writer")
+	}
+}

@@ -191,7 +191,11 @@ func (s *Store) AppendEvents(ctx context.Context, events []api.RawEvent) error {
 			} else {
 				id = newSheetID(ids)
 				reqs = append(reqs, addTab(id, name, int64(len(eventColumns)), true), headerCells(id, 0, eventColumns))
-				if pr := protectionFor(book, name, id, s.callerEmail(ctx)); pr != nil {
+				pr, err := protectionFor(book, name, id, func() (string, error) { return s.callerEmail(ctx) })
+				if err != nil {
+					return fmt.Errorf("appending events: %w", err)
+				}
+				if pr != nil {
 					reqs = append(reqs, pr)
 				}
 			}
@@ -209,14 +213,17 @@ func (s *Store) AppendEvents(ctx context.Context, events []api.RawEvent) error {
 	}
 }
 
-// callerEmail is the signed-in account, as Drive reports it; "" when Drive
-// cannot say. Only a new Events tab with no protected sibling needs it.
-func (s *Store) callerEmail(ctx context.Context) string {
+// callerEmail is the signed-in account, as Drive reports it. Only a new
+// Events tab with no protected sibling needs it.
+func (s *Store) callerEmail(ctx context.Context) (string, error) {
 	about, err := s.svc.Drive.About.Get().Fields("user(emailAddress)").Context(ctx).Do()
-	if err != nil || about.User == nil {
-		return ""
+	if err != nil {
+		return "", fmt.Errorf("asking Drive which account is signed in: %w", err)
 	}
-	return about.User.EmailAddress
+	if about.User == nil || about.User.EmailAddress == "" {
+		return "", errors.New("Drive did not say which account is signed in")
+	}
+	return about.User.EmailAddress, nil
 }
 
 func alreadyExists(err error) bool {
@@ -259,12 +266,18 @@ func (s *Store) ReadEvents(ctx context.Context, cursor api.Cursor) ([]api.RawEve
 	}
 	tabs := eventTabs(book)
 	deleted := deletedMonths(book)
+	// recreated: months deleted and then made again by a lagging receiver.
+	// The cursor's mark may be for the deleted tab or for the new one; the
+	// new tab is read whole, and the mark is kept only if its row is there.
+	recreated := map[string]bool{}
 	for m, mk := range pos {
 		sh := tabs[m]
 		switch {
 		case mk.n == 0:
 		case sh == nil && deleted[m]:
 			delete(pos, m) // read whole, then deleted: nothing more to read there
+		case deleted[m]:
+			recreated[m] = true
 		case sh == nil:
 			return nil, cursor, fmt.Errorf("%w: tab %q is gone", api.ErrEventsShrank, model.EventsPrefix+m)
 		case gridRows(sh)-1 < int64(mk.n):
@@ -278,7 +291,7 @@ func (s *Store) ReadEvents(ctx context.Context, cursor api.Cursor) ([]api.RawEve
 	ranges := make([]string, len(months))
 	for i, m := range months {
 		start := pos[m].n + 1 // sheet row of the last data row read; the header is row 1
-		if pos[m].n == 0 {
+		if pos[m].n == 0 || recreated[m] {
 			start = 2
 		}
 		ranges[i] = fmt.Sprintf("%s!A%d:%s", QuoteTab(tabs[m].Properties.Title), start, colName(len(eventColumns)-1))
@@ -293,6 +306,14 @@ func (s *Store) ReadEvents(ctx context.Context, cursor api.Cursor) ([]api.RawEve
 		values := vrs[i].Values
 		title := tabs[m].Properties.Title
 		read := pos[m]
+		if recreated[m] {
+			// Read whole: skip up to the mark only if the mark is this tab's.
+			if read.n <= len(values) && cellAt(values[read.n-1], 0) == read.id {
+				values = values[read.n-1:]
+			} else {
+				read = mark{}
+			}
+		}
 		if read.n > 0 {
 			if len(values) == 0 || blankCells(values[0]) || cellAt(values[0], 0) != read.id {
 				return nil, cursor, fmt.Errorf("%w: rows of tab %q moved (sorted, inserted or deleted) under the cursor",

@@ -38,8 +38,8 @@ const MaxCellChars = 50_000
 // and a row delete is by position. So when a commit deletes or changes rows
 // of such a tab, it re-reads the tab just before sending and refuses if it
 // changed, and re-reads it after: a row that is gone but was not meant to go
-// (the person inserted or sorted rows at that moment) is put back and the
-// commit fails, so the next try deletes the right row.
+// (the person sorted rows at that moment) is put back and the commit returns
+// ErrCommittedWithProblems (everything was saved; a person should look).
 func (s *Store) Commit(ctx context.Context, writes []api.TableWrite) error {
 	for _, w := range writes {
 		if err := validate(w); err != nil {
@@ -66,7 +66,10 @@ func (s *Store) Commit(ctx context.Context, writes []api.TableWrite) error {
 		}
 	}
 	ids := sheetIDs(book)
-	protect := func(name string, id int64) *sheetsapi.Request { return protectionFor(book, name, id, "") }
+	protect := func(name string, id int64) *sheetsapi.Request {
+		pr, _ := protectionFor(book, name, id, nil) // a commit never creates an Events tab, the one case that can fail
+		return pr
+	}
 	var reqs []*sheetsapi.Request
 	var guarded []*work
 	for _, name := range order {
@@ -865,8 +868,10 @@ func (s *Store) unchanged(ctx context.Context, guarded []*work) error {
 // verify re-reads the guarded tabs after the write. Every row that should be
 // there must be, and every row meant to go must be gone. A row that went
 // missing (someone sorted rows between the check and the write, so a delete
-// by position hit it) is put back; either way the commit fails, so the next
-// try reads the tab again and deletes the intended row. A row typed in the
+// by position hit it) is put back. The write itself landed, so it returns
+// ErrCommittedWithProblems, never a plain error: a caller that resent the
+// writes would fail on keys already appended. The next run reads the tab
+// again and deletes the intended row. A row typed in the
 // same instant and deleted in place of the intended one cannot be known, so
 // the error says to check the tab.
 func (s *Store) verify(ctx context.Context, guarded []*work) error {
@@ -920,13 +925,13 @@ func (s *Store) verify(ctx context.Context, guarded []*work) error {
 	if len(problems) == 0 {
 		return nil
 	}
-	msg := "rows moved while saving: " + strings.Join(problems, "; ") + "; the next try deletes the intended rows"
+	msg := "rows moved while saving: " + strings.Join(problems, "; ") + "; the next run deletes the intended rows"
 	if len(restore) > 0 {
 		if err := s.batchUpdate(ctx, restore, readTries); err != nil {
-			return fmt.Errorf("%s, but putting rows back failed: %w", msg, err)
+			return fmt.Errorf("%w: %s, but putting rows back failed: %w", api.ErrCommittedWithProblems, msg, err)
 		}
 	}
-	return errors.New(msg)
+	return fmt.Errorf("%w: %s", api.ErrCommittedWithProblems, msg)
 }
 
 func guardRanges(guarded []*work) []string {

@@ -681,3 +681,25 @@ func TestRejectedRowsAreRecorded(t *testing.T) {
 		t.Errorf("rejected rows %d, logged %v", rejected, logged)
 	}
 }
+
+// A commit the store saved but flagged (ErrCommittedWithProblems) is done:
+// the run carries on without resending it (a resend would fail on keys
+// already appended) and shows the store's message in Health as a warning.
+func TestCommittedWithProblems(t *testing.T) {
+	in := basicInstall(t)
+	in.write("leads.csv", csvText("Email,Name,Title", "a@x.example,A,Head", "b@x.example,B,C"))
+	in.config("store: { type: flaky, path: leadscore.db }\n" + leadsCSV)
+	flaky.Lock()
+	flaky.savedWithProblems = 1
+	flaky.Unlock()
+	res, _, err := in.run(DefaultHooks())
+	if err != nil || !res.Healthy || !hasKey(res.Problems, "people_tab_check") {
+		t.Fatalf("run = %+v, %v; want a healthy run raising people_tab_check", res, err)
+	}
+	if len(in.rows(model.TablePeople)) != 2 {
+		t.Error("the flagged commit's rows must be saved once")
+	}
+	if !strings.Contains(in.health()["problem:people_tab_check"], "Overrides") {
+		t.Errorf("Health = %q; want the store's message", in.health()["problem:people_tab_check"])
+	}
+}

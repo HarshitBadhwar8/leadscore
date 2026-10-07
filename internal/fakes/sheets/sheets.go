@@ -51,6 +51,7 @@ type Server struct {
 	reads      []string       // "<render> <range>" for every range read
 	shareBlock string         // sharing any spreadsheet answers 403 with this message
 	caller     string         // the signed-in account Drive's about.get reports
+	aboutFails bool           // about.get answers 500
 	onBatch    func()         // called before each batchUpdate is applied
 	onRead     func()         // called before each values read
 }
@@ -143,6 +144,13 @@ func (s *Server) BlockSharing(id, msg string) {
 	if b := s.books[id]; b != nil {
 		b.shareBlock = msg
 	}
+}
+
+// FailAbout makes Drive's about.get fail.
+func (s *Server) FailAbout(fail bool) {
+	s.mu.Lock()
+	s.aboutFails = fail
+	s.mu.Unlock()
 }
 
 // SetCaller sets the account Drive's about.get reports as signed in.
@@ -478,6 +486,10 @@ func (s *Server) serveSheets(w http.ResponseWriter, r *http.Request, rest string
 
 func (s *Server) serveDrive(w http.ResponseWriter, r *http.Request, rest string, body []byte) {
 	if rest == "about" || strings.HasPrefix(rest, "about?") {
+		if s.aboutFails {
+			apiError(w, http.StatusInternalServerError, "INTERNAL", "Internal Error")
+			return
+		}
 		writeJSON(w, &drive.About{User: &drive.User{EmailAddress: s.caller}})
 		return
 	}

@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -83,6 +85,10 @@ func (s stubSource) Fetch(_ context.Context, c api.Cursor) ([]api.InputRow, []ap
 var flaky struct {
 	sync.Mutex
 	tooLarge, failRanked int
+	// savedWithProblems: the next commits that write People are saved, then
+	// answered with ErrCommittedWithProblems, as the Sheets store does when a
+	// people tab moved under it; the run must not send those writes again.
+	savedWithProblems int
 }
 
 type flakyStore struct{ *sqlite.Store }
@@ -111,9 +117,20 @@ func (f *flakyStore) Commit(ctx context.Context, writes []api.TableWrite) error 
 			flaky.failRanked--
 		}
 	}
+	problems := false
+	if flaky.savedWithProblems > 0 && slices.ContainsFunc(writes, func(w api.TableWrite) bool { return w.Table == model.TablePeople }) {
+		flaky.savedWithProblems--
+		problems = true
+	}
 	flaky.Unlock()
 	if refuse {
 		return api.ErrTooLarge
+	}
+	if problems {
+		if err := f.Store.Commit(ctx, writes); err != nil {
+			return err
+		}
+		return fmt.Errorf("%w: rows of Overrides moved while saving", api.ErrCommittedWithProblems)
 	}
 	if failRanked {
 		return errors.New("injected Ranked failure")

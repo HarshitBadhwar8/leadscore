@@ -198,6 +198,11 @@ var (
 	ErrLeaseHeld    = errors.New("lease held")
 	ErrLeaseLost    = errors.New("lease lost")
 	ErrEventsShrank = errors.New("event log shrank below a saved cursor") // engine scores but does not push
+	// ErrCommittedWithProblems: every write of the commit was saved, but a
+	// people-owned table needs a person to look at it (a row typed or moved
+	// while saving). The engine treats the commit as done and raises a Health
+	// problem; resending the writes would fail.
+	ErrCommittedWithProblems = errors.New("committed, but a people-owned table needs attention")
 )
 
 // RunLease is a held lease.

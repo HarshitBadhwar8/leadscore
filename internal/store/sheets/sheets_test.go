@@ -418,8 +418,8 @@ func TestOverridesDeleteSurvivesASort(t *testing.T) {
 	del := api.TableWrite{Table: model.TableOverrides, Op: api.OpDelete, Key: []string{"person", "action", "value", "note"},
 		Rows: []api.Row{{"person": "a@x.example", "action": "retry", "value": "", "note": "done"}}}
 	err := s.Commit(t.Context(), []api.TableWrite{del})
-	if err == nil || !strings.Contains(err.Error(), "put back") {
-		t.Fatalf("Commit = %v; want a failure that put the row back", err)
+	if !errors.Is(err, api.ErrCommittedWithProblems) || !strings.Contains(err.Error(), "put back") {
+		t.Fatalf("Commit = %v; want ErrCommittedWithProblems after putting the row back", err)
 	}
 	if got := overridesPeople(t, s); !slices.Equal(got, []string{"a@x.example", "b@x.example"}) {
 		t.Fatalf("Overrides after the race = %v; the unsubscribed row must be back", got)
@@ -445,8 +445,8 @@ func TestOverridesDeleteInsertAtWrite(t *testing.T) {
 	})
 	err := s.Commit(t.Context(), []api.TableWrite{{Table: model.TableOverrides, Op: api.OpDelete,
 		Key: []string{"person", "action"}, Rows: []api.Row{{"person": "a@x.example", "action": "retry"}}}})
-	if err == nil || !strings.Contains(err.Error(), "check the tab") {
-		t.Errorf("Commit = %v", err)
+	if !errors.Is(err, api.ErrCommittedWithProblems) || !strings.Contains(err.Error(), "check the tab") {
+		t.Errorf("Commit = %v; want ErrCommittedWithProblems naming the tab to check", err)
 	}
 }
 
@@ -508,10 +508,23 @@ func TestUpsertWritesOnlyChangedCells(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A team formula in a named column the upsert names but does not change.
+	destFormula := `=CONCAT("seq","")`
+	_, err = s.Services().Sheets.Spreadsheets.BatchUpdate(id, &sheetsapi.BatchUpdateSpreadsheetRequest{Requests: []*sheetsapi.Request{
+		{UpdateCells: &sheetsapi.UpdateCellsRequest{Start: &sheetsapi.GridCoordinate{SheetId: sid, RowIndex: 1, ColumnIndex: 4},
+			Rows:   []*sheetsapi.RowData{{Values: []*sheetsapi.CellData{{UserEnteredValue: &sheetsapi.ExtendedValue{FormulaValue: &destFormula}}}}},
+			Fields: "userEnteredValue"}},
+	}}).Do()
+	if err != nil {
+		t.Fatal(err)
+	}
 	commit(t, s, api.TableWrite{Table: model.TablePushes, Op: api.OpUpsert, Key: []string{"lead_id", "lane_id", "step"},
-		Rows: []api.Row{{"lead_id": "L1", "lane_id": "warm", "step": "contact", "state": "done", "vendor_id": "v1"}}})
+		Rows: []api.Row{{"lead_id": "L1", "lane_id": "warm", "step": "contact", "dest": destFormula, "state": "done", "vendor_id": "v1"}}})
 	if !f.Sheets.IsFormula(id, model.TablePushes, "N2") {
 		t.Error("the team's formula in N2 was overwritten")
+	}
+	if !f.Sheets.IsFormula(id, model.TablePushes, "E2") {
+		t.Error("the formula in E2 (dest, named but unchanged) was rewritten as text")
 	}
 	if got := f.Sheets.Cell(id, model.TablePushes, "F2"); got != "done" {
 		t.Errorf("state = %q", got)
