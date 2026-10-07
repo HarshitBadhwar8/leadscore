@@ -175,17 +175,7 @@ func runRanked(inv *invocation) int {
 	})
 	cols := rankedColumns(c, rows)
 	if _, asCSV := inv.flags["csv"]; asCSV {
-		w := csv.NewWriter(inv.stdout)
-		w.Write(cols)
-		for _, r := range rows {
-			rec := make([]string, len(cols))
-			for i, col := range cols {
-				rec[i] = r[col]
-			}
-			w.Write(csvsafe.Row(rec))
-		}
-		w.Flush()
-		if err := w.Error(); err != nil {
+		if err := writeCSV(inv.stdout, cols, rows); err != nil {
 			return inv.fail(err)
 		}
 		return exitOK
@@ -213,6 +203,22 @@ func runRanked(inv *invocation) int {
 	tw.Flush()
 	fmt.Fprintf(inv.stdout, "%d lead(s); `leadscore explain <person>` shows a lead's reasons\n", len(rows))
 	return exitOK
+}
+
+// writeCSV writes a header of cols, then each row's cells in that order,
+// every cell through csvsafe (`ranked --csv`, `facts --csv`).
+func writeCSV(out io.Writer, cols []string, rows []api.Row) error {
+	w := csv.NewWriter(out)
+	w.Write(cols)
+	for _, r := range rows {
+		rec := make([]string, len(cols))
+		for i, col := range cols {
+			rec[i] = r[col]
+		}
+		w.Write(csvsafe.Row(rec))
+	}
+	w.Flush()
+	return w.Error()
 }
 
 // runExplain prints a lead's verdict as the last run stored it in Ranked, in
