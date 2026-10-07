@@ -7,7 +7,7 @@ import (
 	"sort"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
-	"github.com/HarshitBadhwar8/leadscore/internal/logredact"
+	"github.com/HarshitBadhwar8/leadscore/internal/check"
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
 	"github.com/HarshitBadhwar8/leadscore/internal/store/codec"
 )
@@ -146,7 +146,7 @@ func (p *pusher) sink(laneID, typ, dest string) (api.Sink, []string, bool) {
 			}
 			b.sink, b.err = f(block)
 			if b.err != nil {
-				p.r.Problem("sink_failed:"+typ, logredact.Redact(fmt.Sprintf("the %s sink could not be built, so its lanes wait: %v", typ, b.err)),
+				p.r.Problem("sink_failed:"+typ, "the "+typ+" sink could not be built, so its lanes wait: "+errText(b.err),
 					fmt.Sprintf("check sinks.%s in leadscore.yml and the sink's key", typ), false)
 			}
 		}
@@ -179,7 +179,7 @@ func (p *pusher) reread() bool {
 		err = r.Model.Load(model.TableOverrides, rows)
 	}
 	if err != nil {
-		r.Problem("step_failed:reread", logredact.Redact("re-reading Overrides before a pushing batch failed, so pushing stopped for this run: "+err.Error()),
+		r.Problem("step_failed:reread", "re-reading Overrides before a pushing batch failed, so pushing stopped for this run: "+errText(err),
 			"check the store; the next run pushes again", false)
 		return false
 	}
@@ -234,6 +234,9 @@ func (p *pusher) batch(b []item) error {
 			}
 			if row.State != statePending {
 				continue
+			}
+			if it.lane.Kind == kindCold {
+				row.LaneKind = kindCold // never downgraded
 			}
 			marks = append(marks, mark{key: k, old: row, existed: existed})
 			if existed {
@@ -351,7 +354,7 @@ func (p *pusher) record(it item, k model.Key, id string, err error) bool {
 	row.UpdatedAt = now
 	msg := ""
 	if err != nil {
-		msg = logredact.Redact(err.Error())
+		msg = errText(err)
 	}
 	next := false
 	switch {
@@ -372,9 +375,8 @@ func (p *pusher) record(it item, k model.Key, id string, err error) bool {
 		row.LastError = msg
 		if row.Attempts >= maxAttempts {
 			row.State = stateFailed
-			r.Problem(fmt.Sprintf("push_failed:%s:%s:%s", it.lead, it.lane.ID, row.Step),
-				fmt.Sprintf("lead %s's step %s in lane %s failed %d times: %s", it.lead, row.Step, it.lane.ID, row.Attempts, msg),
-				fmt.Sprintf("fix the cause, then run leadscore retry --lane %s %s (or add a retry row in Overrides)", it.lane.ID, it.lead), false)
+			fp := check.PushFailed(row)
+			r.Problem(fp.Key, fp.Message, fp.Fix, fp.Warning)
 		}
 		r.log("warn", logPushFailed, it.lead, fmt.Sprintf("lane %s step %s: attempt %d failed: %s", it.lane.ID, row.Step, row.Attempts, msg))
 	}
@@ -409,21 +411,14 @@ func (v *view) related(id api.LeadID, sinkType string) []api.LedgerRef {
 	for _, f := range v.family(id) {
 		own[f] = true
 	}
-	leads := v.companyLeads(d)
-	closed := map[string]bool{}
-	for _, l := range leads {
-		if o := v.m.Outcomes[model.Key(l)]; o.DealID != "" && o.DealStage != "" && o.DealStage != "open" {
-			closed[o.DealID] = true
-		}
-	}
+	c := v.company(d)
 	var out []api.LedgerRef
-	for _, l := range leads {
+	for _, l := range c.leads {
 		if own[l] {
 			continue
 		}
 		for _, row := range v.rows(l) {
-			lane, ok := v.lanes[row.LaneID]
-			if row.State != stateDone || !ok || lane.Sink != sinkType || closed[row.VendorID] {
+			if row.State != stateDone || c.closed[row.VendorID] || !v.rowSink(row, sinkType) {
 				continue
 			}
 			out = append(out, api.LedgerRef{
@@ -445,10 +440,35 @@ func (v *view) related(id api.LeadID, sinkType string) []api.LedgerRef {
 	return out
 }
 
+// rowSink reports a row of a lane pushing to the sink type. A row of a lane
+// since removed from the rubric counts for the deals sink when its
+// destination is `deals` (its deal stays the company's); otherwise its sink
+// can no longer be told.
+func (v *view) rowSink(p model.Push, sinkType string) bool {
+	if l, ok := v.lanes[p.LaneID]; ok {
+		return l.Sink == sinkType
+	}
+	return sinkType == dealSink && p.Dest == dealDest
+}
+
 // commitPushes commits the ledger and State.ledger_rows under the lease
 // (contracts section 12.6: each pushing batch commits Pushes and
 // ledger_rows), retrying once.
-func commitPushes(r *Run, what string) error {
+func commitPushes(r *Run, what string) (err error) {
+	// ledger_rows is raised with the rows it counts, and put back when the
+	// commit fails: the caller may undo the rows, and a count saved without
+	// them would read as a ledger that shrank.
+	before, had := r.Model.State[model.Key(ledgerRowsKey)]
+	defer func() {
+		if err == nil {
+			return
+		}
+		if had {
+			r.Model.Put(model.TableState, before)
+		} else {
+			r.Model.Delete(model.TableState, []string{ledgerRowsKey})
+		}
+	}()
 	setLedgerRows(r.Model)
 	writes := codec.Encode(r.Model, model.TablePushes, model.TableState+":"+ledgerRowsKey)
 	if len(writes) == 0 {
@@ -460,9 +480,9 @@ func commitPushes(r *Run, what string) error {
 		}
 		return r.Store.Commit(r.Ctx, writes)
 	}
-	err := try()
+	err = try()
 	if errors.Is(err, api.ErrCommittedWithProblems) {
-		r.Problem("people_tab_check", err.Error(), "open the tab the message names and check its rows", true)
+		r.Problem("people_tab_check", errText(err), "open the tab the message names and check its rows", true)
 		err = nil // every write landed
 	}
 	if err != nil && !errors.Is(err, api.ErrLeaseLost) && r.Ctx.Err() == nil {

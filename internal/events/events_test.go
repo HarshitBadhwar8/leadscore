@@ -436,3 +436,15 @@ func TestOptOutSpreadLogsOnlyChanges(t *testing.T) {
 		t.Errorf("%d key_conflict lines, want 1; A %+v", n, outcome(m, "A"))
 	}
 }
+
+func TestLookupOrigin(t *testing.T) {
+	for typ, want := range map[string]string{"hubspot": OriginHubSpot, "apollo": OriginApolloLookup, "crm": "lookup:crm"} {
+		if got := LookupOrigin(typ); got != want {
+			t.Errorf("%s: %q, want %q", typ, got, want)
+		}
+	}
+	k := string(Key(api.Event{Kind: "optout", Email: "a@b.example", Origin: LookupOrigin("crm")}))
+	if !strings.HasPrefix(k, "lookup|") {
+		t.Errorf("a plug-in lookup's event is keyed as a lookup event: %q", k)
+	}
+}

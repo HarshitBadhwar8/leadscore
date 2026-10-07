@@ -567,7 +567,7 @@ func (x *exec) commit(name string, writes []api.TableWrite, phase1 bool) error {
 	if errors.Is(err, api.ErrCommittedWithProblems) {
 		// Every write landed; only a people tab needs a person. Resending
 		// would fail (keys already appended), so take it as committed.
-		x.problem("people_tab_check", err.Error(), "open the tab the message names and check its rows", true)
+		x.problem("people_tab_check", errText(err), "open the tab the message names and check its rows", true)
 		err = nil
 	}
 	if err != nil && !x.lost && r.Ctx.Err() == nil && !(phase1 && errors.Is(err, api.ErrTooLarge)) {

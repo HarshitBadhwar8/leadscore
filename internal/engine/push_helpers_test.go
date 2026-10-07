@@ -260,7 +260,7 @@ func stopAfter(stop chan struct{}) func(*api.RunOptions, *settings) {
 func coldPushes(w *world, email string) []string {
 	var lanes []string
 	for _, r := range w.rows(model.TablePushes) {
-		if r["lead_id"] == string(w.id(email)) && r["lane_kind"] == kindCold && holdsCold(mustPush(w.t, r)) {
+		if r["lead_id"] == string(w.id(email)) && r["lane_kind"] == kindCold && holdsCold(mustPush(w.t, r), true) {
 			lanes = append(lanes, r["lane_id"])
 		}
 	}

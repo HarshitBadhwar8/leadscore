@@ -34,6 +34,7 @@ type Vendor struct {
 	lookErr error                                  // the whole lookup fails
 	looked  [][]api.LeadRef                        // every Lookup call's leads
 	before  func(context.Context, api.StepRequest) // runs at the start of every Do
+	byCo    bool                                   // the lookup reads deals by company
 	reuse   map[string]bool                        // steps that reuse a Related object of the same step
 }
 
@@ -137,6 +138,15 @@ func (v *Vendor) SetDeal(domain, id, stage string) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	v.deals[domain] = deal{id: id, stage: stage}
+}
+
+// DealsByCompany makes the lookup read deals per company, as the HubSpot
+// lookup does: a company with no open or won deal is reported as deal_lost
+// with no deal id (contracts section 5.3).
+func (v *Vendor) DealsByCompany() {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.byCo = true
 }
 
 // FailLookup makes the lookup report the lead as failed.
@@ -268,10 +278,16 @@ func (l fakeLookup) Lookup(_ context.Context, leads []api.LeadRef) ([]api.Event,
 				evs = append(evs, api.Event{Kind: "optout", Email: e})
 			}
 		}
-		if d, ok := v.deals[lead.Domain]; ok && lead.Domain != "" && !domains[lead.Domain] {
+		if lead.Domain == "" || domains[lead.Domain] {
+			continue
+		}
+		if d, ok := v.deals[lead.Domain]; ok {
 			domains[lead.Domain] = true
 			evs = append(evs, api.Event{Kind: "deal_" + d.stage, Domain: lead.Domain,
 				Attrs: map[string]string{"deal_id": d.id, "stage": d.stage}})
+		} else if v.byCo {
+			domains[lead.Domain] = true
+			evs = append(evs, api.Event{Kind: "deal_lost", Domain: lead.Domain, Attrs: map[string]string{}})
 		}
 	}
 	return evs, failed, nil

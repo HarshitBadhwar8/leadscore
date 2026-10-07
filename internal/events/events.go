@@ -33,6 +33,21 @@ const (
 	OriginApolloLookup = "apollo_lookup"
 )
 
+// LookupOrigin is the Origin of an event a Lookup of type typ returned:
+// `hubspot` and `apollo_lookup` for the built-in types, else
+// `lookup:<type>`, so a plug-in lookup can never pose as a source or the
+// receiver. Its opt-outs are stored with unsubscribed_origin `lookup`, which
+// a `resubscribe` never clears.
+func LookupOrigin(typ string) string {
+	switch typ {
+	case "hubspot":
+		return OriginHubSpot
+	case "apollo":
+		return OriginApolloLookup
+	}
+	return "lookup:" + typ
+}
+
 // Unsubscribed origins (Outcomes.unsubscribed_origin).
 const (
 	UnsubEvent  = "event"
@@ -109,7 +124,7 @@ func Key(e api.Event) api.EventID {
 			subject = e.Email
 		}
 		return join("apollo", kind, subject, strings.ToLower(strings.TrimSpace(e.Attrs[apollo.AttrStage])))
-	case e.Origin == OriginHubSpot || e.Origin == OriginApolloLookup:
+	case e.Origin == OriginHubSpot || e.Origin == OriginApolloLookup || strings.HasPrefix(e.Origin, "lookup:"):
 		return join("lookup", e.Origin, kind, e.Attrs["deal_id"], personKey(e), at)
 	}
 	return join("source", e.Origin, personKey(e), kind, at)

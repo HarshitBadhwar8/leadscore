@@ -86,21 +86,25 @@ func assertOneColdPush(t *testing.T, w *world, email string) {
 }
 
 // RFC 8.1: a transient error, followed by the lead matching another cold
-// lane, never gives a second cold push.
+// lane, never gives a second cold push. The push's first step times out, so
+// only that pending (then cancelled) row's called_at holds the push.
 func TestColdPushTransientThenAnotherLane(t *testing.T) {
 	w := newWorld(t, "ana@acme.example,Ana A,Head of Ops,acme.example")
-	w.apollo.FailAfter("enroll", 1) // the vendor enrolled her, then the call timed out
+	w.apollo.FailAfter("contact", 1) // the vendor made the contact, then the call timed out
 	w.mustRun()
-	r := w.push("ana@acme.example", "seq-a", "enroll")
+	r := w.push("ana@acme.example", "seq-a", "contact")
 	if r["state"] != statePending || r["called_at"] == "" || r["attempts"] != "0" || r["intent_run"] != "" {
 		t.Fatalf("after a transient error the step is pending and called, no attempt counted: %v", r)
+	}
+	if r := w.push("ana@acme.example", "seq-a", "enroll"); r["state"] != statePending || r["called_at"] != "" {
+		t.Fatalf("the second step was never called: %v", r)
 	}
 	seqANoMatch(w)
 	res, out := w.mustRun()
 	if len(w.fake.Calls()) != 0 || res.Pushed != 0 {
 		t.Fatalf("the lead moved to another cold lane: %v\n%s", calls(w.fake), out)
 	}
-	if r := w.push("ana@acme.example", "seq-a", "enroll"); r["state"] != stateCancelled || r["called_at"] == "" {
+	if r := w.push("ana@acme.example", "seq-a", "contact"); r["state"] != stateCancelled || r["called_at"] == "" {
 		t.Errorf("the step is cancelled and keeps called_at: %v", r)
 	}
 	// The next run explains why seq-b is skipped, and still pushes nothing.

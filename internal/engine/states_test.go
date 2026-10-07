@@ -93,13 +93,14 @@ func TestThreeFailuresThenRetry(t *testing.T) {
 	}
 }
 
-// C8 `cancelled` by a refusal: the call went out, so it holds the cold push;
+// C8 `cancelled` by a refusal: the call went out, so the cancelled row's
+// called_at holds the cold push (a one-step push, so nothing else holds it);
 // it is logged, and does not make the run unhealthy.
 func TestRefusalCancelsAndHolds(t *testing.T) {
-	w := newWorld(t, "ana@acme.example,Ana A,Head of Ops,acme.example")
-	w.apollo.Fail("enroll", sinktest.Refused)
+	w := newWorld(t, "bo@beta.example,Bo B,Clerk,beta.example")
+	w.fake.Fail("push", sinktest.Refused)
 	res, _ := w.mustRun()
-	r := w.push("ana@acme.example", "seq-a", "enroll")
+	r := w.push("bo@beta.example", "seq-b", "push")
 	if r["state"] != stateCancelled || r["called_at"] == "" || !strings.HasPrefix(r["last_error"], "refused:") {
 		t.Fatalf("refused row %v", r)
 	}
@@ -108,8 +109,10 @@ func TestRefusalCancelsAndHolds(t *testing.T) {
 			t.Errorf("a refusal raised %s", p)
 		}
 	}
+	// A higher cold lane now matches Bo: his one cold push is held.
+	w.rubric("{ field: tier, eq: 1 }", "{ field: tier, eq: 2 }")
 	w.mustRun()
-	if len(w.fake.Calls()) != 0 || len(w.apollo.Calls()) != 2 {
+	if len(w.apollo.Calls()) != 0 || len(w.fake.Calls()) != 1 {
 		t.Errorf("a refused lead moved lanes or was called again: %v %v", calls(w.apollo), calls(w.fake))
 	}
 	found := false

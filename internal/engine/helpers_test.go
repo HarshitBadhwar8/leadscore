@@ -89,6 +89,8 @@ var flaky struct {
 	// answered with ErrCommittedWithProblems, as the Sheets store does when a
 	// people tab moved under it; the run must not send those writes again.
 	savedWithProblems int
+	// failPushes: the next commits that write Pushes fail.
+	failPushes int
 }
 
 type flakyStore struct{ *sqlite.Store }
@@ -122,7 +124,15 @@ func (f *flakyStore) Commit(ctx context.Context, writes []api.TableWrite) error 
 		flaky.savedWithProblems--
 		problems = true
 	}
+	failPushes := false
+	if flaky.failPushes > 0 && slices.ContainsFunc(writes, func(w api.TableWrite) bool { return w.Table == model.TablePushes }) {
+		flaky.failPushes--
+		failPushes = true
+	}
 	flaky.Unlock()
+	if failPushes {
+		return errors.New("injected Pushes failure")
+	}
 	if refuse {
 		return api.ErrTooLarge
 	}

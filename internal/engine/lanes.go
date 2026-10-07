@@ -82,12 +82,18 @@ func isSequence(l rules.Lane) bool {
 
 func isDealLane(l rules.Lane) bool { return l.Sink == dealSink && l.Dest == dealDest }
 
-// holdsCold reports a ledger row that holds a lead's one cold push (contracts
-// section 8): a cold step whose call may have gone out (called_at or
-// intent_run set), or that is done or failed. A cold step never called
-// releases it.
-func holdsCold(p model.Push) bool {
-	if p.LaneKind != kindCold {
+// holdsCold is the one-cold-push rule (RFC 6.10 rule 3, contracts section
+// 8): a cold step holds a lead's one cold push once its call may have gone
+// out, whatever the outcome: called_at is set (a timeout or a refusal
+// included), intent_run is set (the pre-batch write ran, so a crash may have
+// left the call in flight), or the step is done or failed. Only a cold step
+// never called releases it. cold says whether the row counts as cold: its
+// stored kind, or its lane's current kind (view.isCold), so changing a
+// lane's kind can never release a hold. Its backups: a stored cold kind is
+// never downgraded, the intent_run left by a crash becomes called_at at
+// load, and the check just before each push reads the in-memory ledger.
+func holdsCold(p model.Push, cold bool) bool {
+	if !cold {
 		return false
 	}
 	return !p.CalledAt.IsZero() || p.IntentRun != "" || p.State == stateDone || p.State == stateFailed
@@ -107,6 +113,7 @@ type view struct {
 	lanes  map[string]rules.Lane
 	refs   map[api.LeadID]int         // index into r.Input.Leads
 	byLead map[api.LeadID][]model.Key // ledger rows under each lead id
+	doms   map[string]*company        // per-domain deal summaries, built lazily
 }
 
 // view returns the run's view, building it on first use.
@@ -130,6 +137,7 @@ func newView(r *Run) *view {
 		lanes:  map[string]rules.Lane{},
 		refs:   map[api.LeadID]int{},
 		byLead: map[api.LeadID][]model.Key{},
+		doms:   map[string]*company{},
 	}
 	for _, l := range r.Rubric.Lanes() {
 		v.lanes[l.ID] = l
@@ -143,11 +151,27 @@ func newView(r *Run) *view {
 	return v
 }
 
+// isCold reports a row that counts as cold: its stored kind or its lane's
+// current kind is cold.
+func (v *view) isCold(p model.Push) bool {
+	if p.LaneKind == kindCold {
+		return true
+	}
+	l, ok := v.lanes[p.LaneID]
+	return ok && l.Kind == kindCold
+}
+
+// holds reports a row holding its lead's one cold push.
+func (v *view) holds(p model.Push) bool { return holdsCold(p, v.isCold(p)) }
+
 // putPush writes a ledger row, keeping the view's index current.
 func (v *view) putPush(p model.Push) {
 	k := model.K(string(p.LeadID), p.LaneID, p.Step)
 	if _, ok := v.m.Pushes[k]; !ok {
 		v.byLead[p.LeadID] = append(v.byLead[p.LeadID], k)
+		if v.dealStepRow(p) {
+			v.doms = map[string]*company{} // a new deal step: the companies' summaries change
+		}
 	}
 	v.m.Put(model.TablePushes, p)
 }
@@ -292,58 +316,116 @@ func (v *view) laneCheck(id api.LeadID, l rules.Lane) string {
 // its one cold push, other than the lead's own rows in lane; "" when none.
 func (v *view) coldHeldElsewhere(id api.LeadID, lane string) string {
 	for _, p := range v.familyRows(id) {
-		if holdsCold(p) && (p.LeadID != id || p.LaneID != lane) {
+		if v.holds(p) && (p.LeadID != id || p.LaneID != lane) {
 			return p.LaneID
 		}
 	}
 	return ""
 }
 
-// companyLeads returns the live leads at a domain and every lead merged into
-// them.
-func (v *view) companyLeads(domain string) []api.LeadID {
+// company is what the deal rule reads about a set of leads (a company's
+// leads, or one lead's merge family): whether one has a deal at an open or
+// won stage, the latest lookup that found a deal lost, the deal ids at a
+// stage other than open, and the ledger's deal steps.
+type company struct {
+	leads    []api.LeadID
+	open     bool
+	openID   string    // an open or won deal's id, when one has an id
+	lostAt   time.Time // the latest deal_checked_at with stage lost
+	closed   map[string]bool
+	dealRows []model.Key
+}
+
+// summarize reads Outcomes and the ledger for a set of leads.
+func (v *view) summarize(leads []api.LeadID) *company {
+	c := &company{leads: leads, closed: map[string]bool{}}
+	for _, l := range leads {
+		o := v.m.Outcomes[model.Key(l)]
+		switch o.DealStage {
+		case "open", "won":
+			c.open = true
+			if c.openID == "" {
+				c.openID = o.DealID
+			}
+		case "lost":
+			if o.DealCheckedAt.After(c.lostAt) {
+				c.lostAt = o.DealCheckedAt
+			}
+		}
+		if o.DealID != "" && o.DealStage != "" && o.DealStage != "open" {
+			c.closed[o.DealID] = true
+		}
+		for _, k := range v.byLead[l] {
+			if p, ok := v.m.Pushes[k]; ok && v.dealStepRow(p) {
+				c.dealRows = append(c.dealRows, k)
+			}
+		}
+	}
+	return c
+}
+
+// company returns a domain's summary, built once per view: its live leads
+// and every lead merged into them. A new deal step row drops the cache
+// (putPush); a lookup or re-read that changes Outcomes rebuilds the view.
+func (v *view) company(domain string) *company {
+	if c, ok := v.doms[domain]; ok {
+		return c
+	}
 	seen := map[api.LeadID]bool{}
-	var out []api.LeadID
+	var leads []api.LeadID
 	for _, id := range v.m.PeopleAt(domain) {
 		for _, f := range v.family(v.live(id)) {
 			if !seen[f] {
 				seen[f] = true
-				out = append(out, f)
+				leads = append(leads, f)
 			}
 		}
+	}
+	c := v.summarize(leads)
+	v.doms[domain] = c
+	return c
+}
+
+// companyLeads returns the live leads at a domain and every lead merged into
+// them.
+func (v *view) companyLeads(domain string) []api.LeadID { return v.company(domain).leads }
+
+// dealFacts merges the lead's family and its company: what the deal rule and
+// CompanyDealID read.
+func (v *view) dealFacts(id api.LeadID) []*company {
+	out := []*company{v.summarize(v.family(id))}
+	if d := v.domain(id); d != "" {
+		out = append(out, v.company(d))
 	}
 	return out
 }
 
 // deal is the deal rule (contracts section 7, rule 4), read from the
 // in-memory model: the lead or any lead at its company has a deal at an open
-// or won stage, or a hubspot:deals step at the company has called_at or
-// intent_run set (the deal may exist even if the call timed out) and no
-// lookup since has shown the company with no open or won deal. The lead's own
-// push in exceptLane is left out, so a cold deals lane does not block itself.
+// or won stage, or a hubspot:deals `deal` step at the company was called (the
+// deal may exist even if the call timed out) and no lookup since has shown the
+// company with no open or won deal. A step marked by this run's pre-batch
+// write but not yet called is no deal yet (an intent_run left by another run
+// became called_at at load). The lead's own push in exceptLane is left out,
+// so a cold deals lane does not block itself.
 func (v *view) deal(id api.LeadID, exceptLane string) bool {
-	leads := v.family(id)
-	if d := v.domain(id); d != "" {
-		leads = append(leads, v.companyLeads(d)...)
-	}
-	var lostAt time.Time // the latest lookup that found no open or won deal
-	for _, l := range leads {
-		o := v.m.Outcomes[model.Key(l)]
-		switch o.DealStage {
-		case "open", "won":
+	facts := v.dealFacts(id)
+	var lostAt time.Time
+	for _, c := range facts {
+		if c.open {
 			return true
-		case "lost":
-			if o.DealCheckedAt.After(lostAt) {
-				lostAt = o.DealCheckedAt
-			}
+		}
+		if c.lostAt.After(lostAt) {
+			lostAt = c.lostAt
 		}
 	}
-	for _, l := range leads {
-		for _, p := range v.rows(l) {
-			if !v.dealRow(p) || (p.LeadID == id && p.LaneID == exceptLane) {
+	for _, c := range facts {
+		for _, k := range c.dealRows {
+			p := v.m.Pushes[k]
+			if p.LeadID == id && p.LaneID == exceptLane {
 				continue
 			}
-			if p.IntentRun != "" || (!p.CalledAt.IsZero() && !lostAt.After(p.CalledAt)) {
+			if (p.IntentRun != "" && p.IntentRun != v.r.ID) || (!p.CalledAt.IsZero() && !lostAt.After(p.CalledAt)) {
 				return true
 			}
 		}
@@ -351,10 +433,15 @@ func (v *view) deal(id api.LeadID, exceptLane string) bool {
 	return false
 }
 
-// dealRow reports a ledger row of a hubspot:deals lane. A row of a lane since
-// removed from the rubric counts when its destination is `deals`, since its
-// sink can no longer be told.
-func (v *view) dealRow(p model.Push) bool {
+// dealStepRow reports a ledger row of a hubspot:deals lane's `deal` step, the
+// only step that can create a deal. A row of a lane since removed from the
+// rubric counts when its destination is `deals`, since its sink can no
+// longer be told.
+func (v *view) dealStepRow(p model.Push) bool { return p.Step == dealStep && v.dealsLaneRow(p) }
+
+// dealsLaneRow reports a row of a hubspot:deals lane (or of a removed lane
+// whose destination is `deals`).
+func (v *view) dealsLaneRow(p model.Push) bool {
 	if l, ok := v.lanes[p.LaneID]; ok {
 		return isDealLane(l)
 	}
@@ -363,27 +450,19 @@ func (v *view) dealRow(p model.Push) bool {
 
 // companyDealID is LeadRef.CompanyDealID: the stored open or won deal at the
 // lead's company, from Outcomes, else the newest done deal step there whose
-// deal no lookup has shown lost.
+// deal no lookup has shown won or lost.
 func (v *view) companyDealID(id api.LeadID) string {
-	leads := v.family(id)
-	if d := v.domain(id); d != "" {
-		leads = append(leads, v.companyLeads(d)...)
-	}
-	lost := map[string]bool{}
-	for _, l := range leads {
-		o := v.m.Outcomes[model.Key(l)]
-		if o.DealID == "" {
-			continue
+	facts := v.dealFacts(id)
+	for _, c := range facts {
+		if c.openID != "" {
+			return c.openID
 		}
-		if o.DealStage == "open" || o.DealStage == "won" {
-			return o.DealID
-		}
-		lost[o.DealID] = true
 	}
 	var best model.Push
-	for _, l := range leads {
-		for _, p := range v.rows(l) {
-			if v.dealRow(p) && p.Step == dealStep && p.State == stateDone && p.VendorID != "" && !lost[p.VendorID] &&
+	for _, c := range facts {
+		for _, k := range c.dealRows {
+			p := v.m.Pushes[k]
+			if p.State == stateDone && p.VendorID != "" && !c.closed[p.VendorID] && !facts[0].closed[p.VendorID] &&
 				p.UpdatedAt.After(best.UpdatedAt) {
 				best = p
 			}
@@ -396,8 +475,7 @@ func (v *view) companyDealID(id api.LeadID) string {
 type pushState int
 
 const (
-	pushNew      pushState = iota // no rows, or only rows a reselection returns to pending
-	pushOpen                      // steps left to call
+	pushCallable pushState = iota // no rows yet, or steps left to call (never-called cancelled rows return to pending)
 	pushComplete                  // every step done
 	pushStuck                     // a step failed, or was cancelled after its call may have gone out
 )
@@ -405,8 +483,8 @@ const (
 // state classifies the lead's own rows in a lane, and whether the push
 // already started (a retry, free of the budget).
 func (v *view) state(id api.LeadID, lane string) (pushState, bool) {
-	var n, done int
-	started, open, stuck := false, false, false
+	n, done := 0, 0
+	started, stuck := false, false
 	for _, p := range v.rows(id) {
 		if p.LaneID != lane {
 			continue
@@ -416,25 +494,17 @@ func (v *view) state(id api.LeadID, lane string) (pushState, bool) {
 		switch {
 		case p.State == stateDone:
 			done++
-		case p.State == stateFailed:
+		case p.State == stateFailed, p.State == stateCancelled && (!p.CalledAt.IsZero() || p.IntentRun != ""):
 			stuck = true
-		case p.State == stateCancelled && (!p.CalledAt.IsZero() || p.IntentRun != ""):
-			stuck = true
-		case p.State == statePending:
-			open = true
 		}
 	}
 	switch {
-	case n == 0:
-		return pushNew, false
 	case stuck:
 		return pushStuck, started
-	case done == n:
+	case n > 0 && done == n:
 		return pushComplete, started
-	case open || done > 0:
-		return pushOpen, started
 	}
-	return pushNew, started // only cancelled rows never called: they return to pending
+	return pushCallable, started
 }
 
 // pushedUnderMerged reports a done step in the lane under a lead merged into
@@ -549,7 +619,7 @@ func (v *view) coldRoute(id api.LeadID, matching []rules.Lane, score float64, sk
 // holdsIn reports an own row of the lead in the lane that holds its cold push.
 func (v *view) holdsIn(id api.LeadID, lane string) bool {
 	for _, p := range v.rows(id) {
-		if p.LaneID == lane && holdsCold(p) {
+		if p.LaneID == lane && v.holds(p) {
 			return true
 		}
 	}
@@ -567,7 +637,7 @@ func (v *view) openColdLanes(id api.LeadID) []rules.Lane {
 		if !ok || l.Kind != kindCold || p.State != statePending {
 			continue
 		}
-		holds[l.ID] = holds[l.ID] || holdsCold(p)
+		holds[l.ID] = holds[l.ID] || v.holds(p)
 		if !seen[l.ID] {
 			seen[l.ID] = true
 			out = append(out, l)

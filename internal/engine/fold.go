@@ -33,7 +33,10 @@ const (
 // (contracts section 8): a ledger with fewer rows than State.ledger_rows
 // blocks pushing; a row whose intent_run another run left gets called_at and
 // loses intent_run; a merged lead's pending rows never called are
-// cancelled, as are pending rows of a lane removed from the rubric. It then
+// cancelled, as are pending rows of a lane removed from the rubric; a row
+// of a lane that is now cold becomes cold (never the reverse); and a pending
+// row whose lane's destination changed moves to it if never called, else is
+// cancelled. It then
 // applies each new `retry` and `resubscribe` Overrides row once (Applied
 // overrides), and folds every live lead's status (contracts section 7).
 // Everything it changes is saved in phase 1.
@@ -55,10 +58,8 @@ func loadLedger(r *Run, v *view) {
 	n := len(m.Pushes)
 	stored, _ := strconv.Atoi(m.StateValue(ledgerRowsKey))
 	if n < stored {
+		// The store check (in run) raises ledger_shrank on the same comparison.
 		r.blockPushes("the ledger has fewer rows than it had")
-		r.Problem("ledger_shrank",
-			fmt.Sprintf("the ledger (Pushes) has %d rows, but %d were saved before: rows were deleted, so the run cannot tell who was already contacted, and nothing is pushed", n, stored),
-			"restore the deleted Pushes rows from a backup or the spreadsheet's version history; pushing waits until then", false)
 	}
 	setLedgerRows(m)
 	for _, k := range sortedPushKeys(m) {
@@ -72,12 +73,22 @@ func loadLedger(r *Run, v *view) {
 			}
 			p.IntentRun, changed = "", true
 		}
+		lane, inRubric := v.lanes[p.LaneID]
+		if inRubric && lane.Kind == kindCold && p.LaneKind != kindCold {
+			p.LaneKind, changed = kindCold, true // a lane that became cold: never downgraded after
+		}
 		switch {
 		case p.State != statePending:
 		case m.People[model.Key(p.LeadID)].MergedInto != "" && p.CalledAt.IsZero() && p.IntentRun == "":
 			p.State, p.LastError, changed = stateCancelled, "the lead was merged into another lead", true
-		case !hasLane(v, p.LaneID):
+		case !inRubric:
 			p.State, p.LastError, changed = stateCancelled, "the lane was removed from the rubric", true
+		case lane.Dest != p.Dest && p.CalledAt.IsZero() && p.IntentRun == "":
+			p.Dest, changed = lane.Dest, true // never called: it goes to the lane's new destination
+		case lane.Dest != p.Dest:
+			// Called at the old destination: the vendor may hold the person
+			// there, so the new one is never called for this push.
+			p.State, p.LastError, changed = stateCancelled, "the lane's destination changed after the step was called", true
 		}
 		if changed {
 			p.UpdatedAt = now
@@ -85,8 +96,6 @@ func loadLedger(r *Run, v *view) {
 		}
 	}
 }
-
-func hasLane(v *view, id string) bool { _, ok := v.lanes[id]; return ok }
 
 // setLedgerRows raises State.ledger_rows to the ledger's row count; it is
 // never lowered, so a ledger that shrank stays flagged until restored.
@@ -143,10 +152,9 @@ func applyRetries(r *Run, v *view) {
 // applyResubscribes applies each `resubscribe` row not yet applied, once
 // (contracts section 7): it clears the lead's opt-out only where its origin
 // is `manual`; an automated opt-out (an event or a lookup) stays. A
-// `resubscribe` row is applied before the manual status rows are read, so a
-// manual `unsubscribed` row still naming the lead keeps it unsubscribed (the
-// fold then sets it again); the resubscribe is used up either way, and the
-// log says what it did.
+// `resubscribe` row while a manual `unsubscribed` row still names the lead
+// does nothing (the opt-out keeps its date) and is used up; the log says what
+// each row did.
 func applyResubscribes(r *Run, v *view) {
 	m := r.Model
 	for _, o := range v.ov.Rows {
@@ -154,7 +162,11 @@ func applyResubscribes(r *Run, v *view) {
 			continue
 		}
 		cleared, kept := 0, 0
+		stays := v.ov.Status[o.Lead] == statusUnsubscribed
 		for _, f := range v.family(o.Lead) {
+			if stays {
+				break // the unsubscribed row still names the lead: its opt-out keeps its date
+			}
 			out := m.Outcomes[model.Key(f)]
 			if out.UnsubscribedAt.IsZero() {
 				continue
@@ -172,8 +184,8 @@ func applyResubscribes(r *Run, v *view) {
 		if kept > 0 {
 			msg += fmt.Sprintf("; %d opt-out(s) from an event or lookup stay, since automation's opt-outs are never undone", kept)
 		}
-		if v.ov.Status[o.Lead] == statusUnsubscribed {
-			msg += "; an unsubscribed row in Overrides still names the lead, so it stays unsubscribed"
+		if stays {
+			msg = fmt.Sprintf("Overrides row %d (resubscribe) did nothing: an unsubscribed row in Overrides still names the lead, so it stays unsubscribed", o.Row)
 		}
 		r.log("info", logResubscribe, o.Lead, msg)
 	}
@@ -268,7 +280,7 @@ func (v *view) coldPushedAt(id api.LeadID) time.Time {
 	n, done := map[push]int{}, map[push]int{}
 	last := map[push]time.Time{}
 	for _, p := range v.familyRows(id) {
-		if p.LaneKind != kindCold {
+		if !v.isCold(p) {
 			continue
 		}
 		k := push{string(p.LeadID), p.LaneID}

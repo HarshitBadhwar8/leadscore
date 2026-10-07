@@ -32,7 +32,7 @@ func TestPushesCheck(t *testing.T) {
 	if got[0].Key != "push_failed:lead-x1:a:push" || !strings.Contains(got[0].Fix, "leadscore retry --lane a lead-x1") || got[0].Warning {
 		t.Errorf("failed: %+v", got[0])
 	}
-	if got[1].Key != "push_pending" || !strings.Contains(got[1].Message, "2 step(s)") ||
+	if got[1].Key != "push_pending" || !got[1].Warning || !strings.Contains(got[1].Message, "2 step(s)") ||
 		!strings.Contains(got[1].Message, model.FormatTime(now.Add(-48*time.Hour))) {
 		t.Errorf("pending: %+v", got[1])
 	}

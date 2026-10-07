@@ -145,10 +145,12 @@ func TestUnsubscribedRowBeatsWaitingResubscribe(t *testing.T) {
 	w := newWorld(t, "ana@acme.example,Ana A,Head of Ops,acme.example")
 	w.pushesOff()
 	w.override("ana@acme.example", "status", "unsubscribed", "")
+	w.mustRun()
+	since := w.outcome("ana@acme.example")["unsubscribed_at"]
 	w.override("ana@acme.example", "status", "resubscribe", "2026-10-07T00:00:00.000Z")
 	w.mustRun()
-	if s := w.outcome("ana@acme.example")["status"]; s != statusUnsubscribed {
-		t.Fatalf("status %q", s)
+	if o := w.outcome("ana@acme.example"); o["status"] != statusUnsubscribed || o["unsubscribed_at"] != since || since == "" {
+		t.Fatalf("outcome %v; the opt-out keeps its date %q", o, since)
 	}
 	if len(w.rows(model.TableAppliedOverrides)) != 1 {
 		t.Error("the resubscribe row applies once")

@@ -72,10 +72,7 @@ func (c storeCheck) Run(ctx context.Context, env Env) []Problem {
 	// contacted; the run pushes nothing until they are restored.
 	if env.Model != nil {
 		if saved, err := strconv.Atoi(state["ledger_rows"]); err == nil && len(env.Model.Pushes) < saved {
-			out = append(out, Problem{Key: "ledger_shrank",
-				Message: "the ledger (Pushes) has " + strconv.Itoa(len(env.Model.Pushes)) + " rows, but " + strconv.Itoa(saved) +
-					" were saved before: rows were deleted, so pushing is blocked",
-				Fix: "restore the deleted Pushes rows from a backup or the spreadsheet's version history"})
+			out = append(out, LedgerShrank(len(env.Model.Pushes), saved))
 		}
 	}
 	if env.Config != nil && c.getenv != nil {

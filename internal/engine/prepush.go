@@ -94,14 +94,14 @@ func lookups(r *Run, v *view, provisional map[api.LeadID]bool, st *pushRun) erro
 			for _, id := range ids {
 				failed[id] = true
 			}
-			r.Problem("lookup_failed:"+typ, logredact.Redact(fmt.Sprintf("the %s lookup failed, so its %d lead(s) wait: %v", typ, len(ids), err)),
+			r.Problem("lookup_failed:"+typ, fmt.Sprintf("the %s lookup failed, so its %d lead(s) wait: %s", typ, len(ids), errText(err)),
 				"check the key and the vendor's status; the next run looks them up again", false)
-			r.log("warn", logLookupFailed, "", logredact.Redact(fmt.Sprintf("the %s lookup failed for %d lead(s): %v", typ, len(ids), err)))
+			r.log("warn", logLookupFailed, "", fmt.Sprintf("the %s lookup failed for %d lead(s): %s", typ, len(ids), errText(err)))
 			continue
 		}
 		for id, e := range bad {
 			failed[id] = true
-			r.log("warn", logLookupFailed, id, logredact.Redact(fmt.Sprintf("the %s lookup failed for this lead, which waits: %v", typ, e)))
+			r.log("warn", logLookupFailed, id, fmt.Sprintf("the %s lookup failed for this lead, which waits: %s", typ, errText(e)))
 		}
 		if len(bad) > 0 {
 			r.Problem("lookup_failed:"+typ, fmt.Sprintf("the %s lookup failed for %d lead(s); they wait for the next run", typ, len(bad)),
@@ -149,12 +149,12 @@ func lookupOne(ctx context.Context, typ string, block api.Config, leads []api.Le
 }
 
 // dealCompanies picks, for the deal lookup, one live lead (the lowest id) at
-// each company with a stored open deal (in Outcomes, or a deal step in the
-// ledger that may have opened one, even one that timed out) or a row in any
-// Export table, unless a
-// lead there is already among the provisional leads (contracts section 8). A
-// closed-lost deal then releases its company even when no lead there is a
-// candidate (RFC 6.9 step 8).
+// each company with a stored open deal (in Outcomes, or a called deal step in
+// the ledger, even one that timed out) or a row in any Export table, unless a
+// candidate there is already being looked up (contracts section 8). A
+// closed-lost deal, or a company found with no open or won deal, then
+// releases the company even when no lead there is a candidate (RFC 6.9 step
+// 8).
 func dealCompanies(v *view, sent map[api.LeadID]bool) []api.LeadID {
 	domains := map[string]bool{}
 	for _, id := range v.idx.LiveLeads() {
@@ -212,13 +212,7 @@ func (v *view) leadRef(id api.LeadID) api.LeadRef {
 // are not de-duplicated: applying them is idempotent. An event with no time
 // takes the run's clock, so an opt-out is never stored at the zero time.
 func applyLookupEvents(r *Run, typ string, evs []api.Event) {
-	origin := typ
-	switch typ {
-	case "hubspot":
-		origin = events.OriginHubSpot
-	case "apollo":
-		origin = events.OriginApolloLookup
-	}
+	origin := events.LookupOrigin(typ)
 	for _, e := range evs {
 		e = merge.NormalizeEventKeys(e)
 		e.Kind = strings.ToLower(e.Kind)
@@ -226,11 +220,13 @@ func applyLookupEvents(r *Run, typ string, evs []api.Event) {
 		if e.ReceivedAt.IsZero() {
 			e.ReceivedAt = r.Now()
 		}
-		if e.At.IsZero() {
-			e.At = e.ReceivedAt
+		if e.At.IsZero() || strings.HasPrefix(e.Kind, "deal_") {
+			// deal_checked_at is the lookup time (contracts section 7): a
+			// release compares it with the deal step's called_at.
+			e.At = r.Now()
 		}
 		if e.Kind != "optout" && !strings.HasPrefix(e.Kind, "deal_") {
-			r.log("warn", "event_ignored", "", fmt.Sprintf("the %s lookup returned a %s event; lookups report only optout and deal_* events", typ, e.Kind))
+			r.log("warn", "event_ignored", "", fmt.Sprintf("the %s lookup returned a %s event; lookups report only optout and deal_* events", typ, clip(logredact.Redact(e.Kind))))
 			continue
 		}
 		lead, _ := merge.FindPerson(r.Model, e)
