@@ -52,8 +52,11 @@ func TestReceiverSilence(t *testing.T) {
 		{"polling expects no sent", visitsOnly, map[string]time.Time{"first_run_at": now.Add(-30 * day)}, []string{"silent:visit_pricing"}},
 		{"receiver not configured", polling, map[string]time.Time{"first_run_at": now.Add(-30 * day)}, nil},
 		{"receiver never set up (no public_url)", notSetUp, map[string]time.Time{"first_run_at": now.Add(-30 * day)}, nil},
-		{"a future received time counts as now", receiver, map[string]time.Time{
-			"first_run_at": now.Add(-30 * day), "last_received:sent": now.Add(400 * day), "last_received:visit_pricing": now.Add(-time.Hour)}, nil},
+		{"a future received time counts as never heard", receiver, map[string]time.Time{
+			"first_run_at": now.Add(-30 * day), "last_received:sent": now.Add(400 * day), "last_received:visit_pricing": now.Add(-time.Hour)},
+			[]string{"silent:sent"}},
+		{"a future received time, new install", receiver, map[string]time.Time{
+			"first_run_at": now.Add(-day), "last_received:sent": now.Add(400 * day), "last_received:visit_pricing": now.Add(-time.Hour)}, nil},
 		{"the team's threshold", week, map[string]time.Time{"first_run_at": now.Add(-30 * day), "last_received:sent": now.Add(-6 * day)}, nil},
 	}
 	for _, c := range cases {
@@ -71,6 +74,23 @@ func TestReceiverSilence(t *testing.T) {
 		}
 		if !reflect.DeepEqual(keys, c.want) {
 			t.Errorf("%s: problems %v, want %v", c.name, keys, c.want)
+		}
+	}
+	// A receiver that falls quiet after a received time from a clock that ran
+	// ahead is still flagged at every later clock.
+	m := model.New()
+	m.SetState("first_run_at", model.FormatTime(now))
+	m.SetState("last_received:sent", model.FormatTime(now.Add(time.Hour)))
+	m.SetState("last_received:visit_pricing", model.FormatTime(now.Add(400*day)))
+	for _, later := range []time.Duration{10 * day, 30 * day} {
+		at := now.Add(later)
+		got := receiverSilence{}.Run(context.Background(), Env{Config: receiver, Model: m, Now: func() time.Time { return at }})
+		var keys []string
+		for _, p := range got {
+			keys = append(keys, p.Key)
+		}
+		if !reflect.DeepEqual(keys, []string{"silent:sent", "silent:visit_pricing"}) {
+			t.Errorf("at +%v: %v, want both kinds silent", later, keys)
 		}
 	}
 	// With no model (doctor could not load the store) the check skips.

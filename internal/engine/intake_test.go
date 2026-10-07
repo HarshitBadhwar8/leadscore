@@ -157,7 +157,9 @@ func TestDedupeAcrossDeliveriesAndRuns(t *testing.T) {
 }
 
 // The safety proof: an opt-out for an email that belongs to a lead merged
-// away lands on the live lead, and creates no new lead.
+// away is stored on that lead (the key's owner, so an un-merge keeps it with
+// the person), blocks the live lead through the family, and creates no new
+// lead.
 func TestOptOutLandsOnTheLiveLeadThroughMergedInto(t *testing.T) {
 	in := newInstall(t, "sources:\n  - { id: rows, type: stub }\n", testRubric)
 	setStub(t, "rows", &stubOut{next: "1", rows: []api.InputRow{
@@ -194,15 +196,18 @@ func TestOptOutLandsOnTheLiveLeadThroughMergedInto(t *testing.T) {
 	if _, out, err := in.run(DefaultHooks()); err != nil {
 		t.Fatal(err, out)
 	}
-	if o := outcomeOf(in, live); o["unsubscribed_at"] == "" || o["unsubscribed_origin"] != "event" {
-		t.Errorf("live lead outcome %v", o)
+	if o := outcomeOf(in, absorbed); o["unsubscribed_at"] == "" || o["unsubscribed_origin"] != "event" {
+		t.Errorf("the key owner's outcome %v", o)
+	}
+	if o := outcomeOf(in, live); o["status"] != "unsubscribed" {
+		t.Errorf("live lead outcome %v, want unsubscribed through the family", o)
 	}
 	if n := len(in.rows(model.TablePeople)); n != 2 {
 		t.Errorf("%d leads after the opt-out; it must not create one", n)
 	}
 	for _, r := range in.rows(model.TablePeople) {
-		if r["lead_id"] == live && r["apollo_held_at"] == "" {
-			t.Error("an unsubscribe event makes the live lead Apollo-held")
+		if r["lead_id"] == absorbed && r["apollo_held_at"] == "" {
+			t.Error("an unsubscribe event makes its key owner Apollo-held (read across the family)")
 		}
 	}
 }

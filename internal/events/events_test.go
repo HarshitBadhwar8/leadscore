@@ -203,8 +203,9 @@ func TestOptOutEarliestAndOrigin(t *testing.T) {
 	}
 }
 
-// An opt-out for a lead that was merged away lands on the live lead, and an
-// event resolved by a merged lead's email does too.
+// An opt-out for an email of a lead that was merged away is stored on that
+// lead, the key's owner (the fold reads it across the family); an opt-out
+// whose keys name no lead lands on the resolved live lead.
 func TestOptOutFollowsMergedInto(t *testing.T) {
 	m := newModel(t, "LIVE")
 	m.Put(model.TablePeople, model.Person{LeadID: "OLD", CreatedAt: t0.Add(time.Hour), MergedInto: "LIVE"})
@@ -215,9 +216,14 @@ func TestOptOutFollowsMergedInto(t *testing.T) {
 	if lead != "LIVE" {
 		t.Fatalf("resolved %q, want the live lead", lead)
 	}
-	Apply(m, lead, e, nil)
-	if o := outcome(m, "LIVE"); o.UnsubscribedAt.IsZero() {
-		t.Errorf("opt-out did not land on the live lead: %+v", o)
+	if changed := Apply(m, lead, e, nil); len(changed) != 1 || changed[0] != "LIVE" {
+		t.Errorf("changed %v, want the live lead", changed)
+	}
+	if o := outcome(m, "OLD"); o.UnsubscribedAt.IsZero() {
+		t.Errorf("opt-out did not land on the key's owner: %+v", o)
+	}
+	if o := outcome(m, "LIVE"); !o.UnsubscribedAt.IsZero() {
+		t.Errorf("opt-out copied onto the survivor: %+v", o)
 	}
 	// Called with the absorbed lead's id, it still writes the live lead only:
 	// the fold reads opt-outs across the family, and an un-merge must leave

@@ -292,15 +292,16 @@ func optOutOrigin(kind string, e api.Event, labels map[string]string) string {
 // team's reply_labels overrides. It returns the live leads whose Outcomes row
 // or Apollo hold it changed, sorted (the re-read folds them again).
 //
-// An opt-out (unsubscribed, optout, a polled unsubscribe label) also reaches
-// every other live lead that holds one of the event's identity keys (its
-// contact id, well-formed email or LinkedIn URL), logged as key_conflict with
+// An opt-out (unsubscribed, optout, a polled unsubscribe label) is written on
+// every lead holding one of the event's identity keys (its contact id,
+// well-formed email or LinkedIn URL) as stored, before following
+// merged_into, and on the resolved live lead only when no key has an owner
+// (applyOptOutEvent): the fold reads it across the merge family while
+// merged, and undoing a wrong merge leaves it with the person who opted out.
+// An owner outside the resolved lead's family is logged as key_conflict, with
 // lead ids only: wrongly not contacting someone is acceptable, contacting an
-// opted-out person is not. A reached lead in a hand-edited merged_into cycle
-// gets it on every member of the cycle too, so fixing the cycle by hand never
-// drops it; a plain merge needs no copy, since the fold reads opt-outs across
-// the family, and an un-merge then leaves the other person contactable.
-// Replies and visits stay on the resolved lead.
+// opted-out person is not. A lead in a hand-edited merged_into cycle gets it
+// on every member of the cycle. Replies and visits stay on the resolved lead.
 //
 // A visit or custom kind has no outcome effect (it feeds detectors only).
 // Applying an event twice changes nothing the second time.
@@ -320,25 +321,8 @@ func Apply(m *model.Model, lead api.LeadID, e api.Event, labels map[string]strin
 			lead = ""
 		}
 	}
-	var changed []api.LeadID
 	if origin := optOutOrigin(kind, e, labels); origin != "" {
-		held := kind != "optout"
-		if lead != "" && applyOptOutCycle(m, lead, at, origin, held) {
-			changed = append(changed, lead)
-		}
-		for _, other := range holders(m, e) {
-			if other == lead || !applyOptOutCycle(m, other, at, origin, held) {
-				continue
-			}
-			changed = append(changed, other)
-			msg := fmt.Sprintf("an opt-out that matched no lead carries an identity key of lead %s; the opt-out was applied to it", other)
-			if lead != "" {
-				msg = fmt.Sprintf("an opt-out resolved to lead %s carries an identity key of lead %s; the opt-out was applied to both", lead, other)
-			}
-			m.Put(model.TableLog, model.LogEntry{At: received, Level: "warn", LeadID: other, Kind: merge.LogKeyConflict, Message: msg})
-		}
-		sort.Slice(changed, func(i, j int) bool { return changed[i] < changed[j] })
-		return changed
+		return applyOptOutEvent(m, lead, e, at, received, origin, kind != "optout")
 	}
 	if lead == "" {
 		return nil
@@ -394,17 +378,51 @@ func applyOptOut(m *model.Model, lead api.LeadID, at time.Time, origin string, h
 	return changed
 }
 
-// applyOptOutCycle records an opt-out on a live lead and, when the lead
-// stands for a hand-edited merged_into cycle, on every lead of that cycle
-// (and every lead merged into one), so the opt-out stays on each of them
-// when a person later fixes the merged_into cells. Only the live lead is
-// marked Apollo-held. It reports whether the live lead changed.
-func applyOptOutCycle(m *model.Model, lead api.LeadID, at time.Time, origin string, held bool) bool {
-	changed := applyOptOut(m, lead, at, origin, held)
-	for _, f := range cycleMembers(m, lead) {
-		applyOptOut(m, f, at, origin, false)
+// applyOptOutEvent records an opt-out on the raw owners of the event's
+// identity keys: the lead each key names in Identities (its well-formed
+// email, its LinkedIn URL) and the lead the receiver contact's Applied rows
+// name, before following merged_into, so the opt-out stays with the person
+// who opted out if a wrong merge is later undone; the fold reads it across
+// the merge family while merged. Only when no key has an owner does it go on
+// the resolved live lead. A target in a hand-edited merged_into cycle gets
+// it on every member of the cycle too. An owner whose live lead is not the
+// resolved one is logged as key_conflict, with lead ids only. It returns the
+// live leads it changed.
+func applyOptOutEvent(m *model.Model, lead api.LeadID, e api.Event, at, received time.Time, origin string, held bool) []api.LeadID {
+	targets := owners(m, e)
+	if len(targets) == 0 && lead != "" {
+		targets = []api.LeadID{lead}
 	}
-	return changed
+	set := map[api.LeadID]bool{}
+	for _, t := range targets {
+		live := merge.Live(m, t)
+		changed := applyOptOut(m, t, at, origin, held)
+		if cycle := cycleMembers(m, live); len(cycle) > 0 {
+			for _, f := range append([]api.LeadID{live}, cycle...) {
+				if f != t && applyOptOut(m, f, at, origin, false) {
+					changed = true
+				}
+			}
+		}
+		if !changed {
+			continue
+		}
+		set[live] = true
+		if live == lead {
+			continue
+		}
+		msg := fmt.Sprintf("an opt-out that matched no lead carries an identity key of lead %s; the opt-out was applied to it", live)
+		if lead != "" {
+			msg = fmt.Sprintf("an opt-out resolved to lead %s carries an identity key of lead %s; the opt-out was applied to both", lead, live)
+		}
+		m.Put(model.TableLog, model.LogEntry{At: received, Level: "warn", LeadID: live, Kind: merge.LogKeyConflict, Message: msg})
+	}
+	out := make([]api.LeadID, 0, len(set))
+	for id := range set {
+		out = append(out, id)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
 }
 
 // cycleMembers returns the leads other than lead that resolve to it through a
@@ -424,18 +442,14 @@ func cycleMembers(m *model.Model, lead api.LeadID) []api.LeadID {
 	return out
 }
 
-// holders are the live leads holding one of the event's identity keys: its
-// contact id (through Applied rows), its email when well-formed, its LinkedIn
-// URL. Sorted.
-func holders(m *model.Model, e api.Event) []api.LeadID {
+// owners are the leads holding one of the event's identity keys, as stored
+// (merged_into not followed): its contact id (through Applied rows), its
+// email when well-formed, its LinkedIn URL. Known leads only, sorted.
+func owners(m *model.Model, e api.Event) []api.LeadID {
 	set := map[api.LeadID]bool{}
 	add := func(id api.LeadID) {
-		if id == "" {
-			return
-		}
-		live := merge.Live(m, id)
-		if _, ok := m.People[model.Key(live)]; ok {
-			set[live] = true
+		if _, ok := m.People[model.Key(id)]; ok && id != "" {
+			set[id] = true
 		}
 	}
 	if cid := strings.TrimSpace(e.Attrs[apollo.AttrContactID]); cid != "" {

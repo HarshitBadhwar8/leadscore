@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -24,8 +25,6 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/store/codec"
 	"github.com/HarshitBadhwar8/leadscore/internal/store/sqlite"
 )
-
-func codecLoad(s api.Backend) (*model.Model, error) { return codec.Load(context.Background(), s) }
 
 const apolloTestKey = "s15-test-key"
 
@@ -668,71 +667,88 @@ func TestResubscribeLogsPerPerson(t *testing.T) {
 	}
 }
 
-// A wrong merge undone by hand leaves the other person contactable: an
-// opt-out on the survivor is not copied onto the lead merged into it.
-func TestUnmergeLeavesTheOtherPersonContactable(t *testing.T) {
-	w := newWorld(t,
-		"bea@beta.example,Bea B,Head of Ops,beta.example",
-		"ana@acme.example,Ana A,Head of Ops,acme.example")
-	w.override("bea@beta.example", "same_as", "ana@acme.example", "")
-	w.pushesOff()
-	ana := w.id("ana@acme.example")
-	w.appendEvents(replyRaw("email_unsubscribed", "bea@beta.example", "", time.Now().UTC()))
-	w.config("pushes_enabled: true", "pushes_enabled: false")
-	w.mustRun()
-	if s := w.outcome("bea@beta.example")["status"]; s != statusUnsubscribed {
-		t.Fatalf("bea %q", s)
-	}
-	// A person undoes the wrong merge by hand.
-	w.edit(func(m *model.Model) {
-		p := m.People[model.Key(ana)]
-		p.MergedInto = ""
-		m.Put(model.TablePeople, p)
-		for _, o := range m.Overrides {
-			if o.Action == "same_as" {
-				m.Delete(model.TableOverrides, []string{o.Person, o.Action, o.Value, o.Note})
+// A wrong merge undone by hand keeps each opt-out with the person who opted
+// out, in both directions: while merged the whole family is blocked; after
+// the un-merge the opted-out person stays blocked and the other is
+// contactable.
+func TestUnmergeKeepsTheOptOutWithItsOwner(t *testing.T) {
+	for _, optedOut := range []string{"ana@acme.example", "bea@beta.example"} {
+		t.Run(optedOut, func(t *testing.T) {
+			w := newWorld(t,
+				"bea@beta.example,Bea B,Head of Ops,beta.example",
+				"ana@acme.example,Ana A,Head of Ops,acme.example")
+			w.override("bea@beta.example", "same_as", "ana@acme.example", "")
+			w.pushesOff()
+			ana := w.id("ana@acme.example")
+			if !slices.Contains(mergedInto(w), ana) {
+				t.Fatal("ana was not merged into bea")
 			}
-		}
-	})
-	w.config("pushes_enabled: false", "pushes_enabled: true")
-	w.mustRun()
-	if got := pushedLeads(w); !slices.Equal(got, []string{"ana@acme.example"}) {
-		t.Errorf("pushed %v, want ana (contactable again) and not bea", got)
+			w.appendEvents(replyRaw("email_unsubscribed", optedOut, "", time.Now().UTC()))
+			w.config("pushes_enabled: true", "pushes_enabled: false")
+			w.mustRun()
+			if s := w.outcome("bea@beta.example")["status"]; s != statusUnsubscribed {
+				t.Fatalf("the merged family %q, want unsubscribed", s)
+			}
+			// A person undoes the wrong merge by hand.
+			w.edit(func(m *model.Model) {
+				p := m.People[model.Key(ana)]
+				p.MergedInto = ""
+				m.Put(model.TablePeople, p)
+				for _, o := range m.Overrides {
+					if o.Action == "same_as" {
+						m.Delete(model.TableOverrides, []string{o.Person, o.Action, o.Value, o.Note})
+					}
+				}
+			})
+			w.config("pushes_enabled: false", "pushes_enabled: true")
+			w.mustRun()
+			other := "ana@acme.example"
+			if optedOut == other {
+				other = "bea@beta.example"
+			}
+			if got := pushedLeads(w); !slices.Equal(got, []string{other}) {
+				t.Errorf("pushed %v, want only %s (contactable); %s opted out", got, other, optedOut)
+			}
+			if s := w.outcome(optedOut)["status"]; s != statusUnsubscribed {
+				t.Errorf("%s %q after the un-merge, want unsubscribed", optedOut, s)
+			}
+		})
 	}
 }
 
-// RecordCrash reads only Health: it writes even when loading the whole
-// store would fail (a newer schema) or panic (a table that cannot be read),
-// and a panic of its own comes back as an error.
+// RecordCrash reads only State's schema_version and Health: it writes even
+// when loading the whole store would panic (a table that cannot be read), a
+// panic of its own comes back as an error, and a store from a newer major
+// schema gets no write at all.
 func TestRecordCrashWithABrokenStore(t *testing.T) {
 	w := twoLeads(t)
 	w.pushesOff()
 	s := w.store()
 	start := time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC)
-	if err := s.Commit(context.Background(), []api.TableWrite{{Table: model.TableState, Op: api.OpUpsert, Key: []string{"key"},
-		Rows: []api.Row{{"key": "schema_version", "value": "99.0"}}}}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := codecLoad(s); err == nil {
-		t.Fatal("the store still loads; the test needs a newer schema")
-	}
-	if err := RecordCrash(context.Background(), s, start, errors.New("panic: boom")); err != nil {
-		t.Fatalf("newer schema: %v", err)
+
+	panicky := &panickyStore{Store: s}
+	if err := RecordCrash(context.Background(), panicky, start, errors.New("panic: boom")); err != nil {
+		t.Fatalf("a store whose other tables panic: %v", err)
 	}
 	if h := w.health(); h["result:last_run_at"] != model.FormatTime(start) || !strings.Contains(h["problem:run_failed"], "boom") {
 		t.Errorf("Health %v", h)
 	}
-
-	panicky := &panickyStore{Store: s}
-	if err := RecordCrash(context.Background(), panicky, start.Add(time.Hour), errors.New("panic: again")); err != nil {
-		t.Fatalf("a store whose other tables panic: %v", err)
-	}
-	if h := w.health(); h["result:last_run_at"] != model.FormatTime(start.Add(time.Hour)) {
-		t.Errorf("Health %v", h)
-	}
 	panicky.commitPanics = true
-	if err := RecordCrash(context.Background(), panicky, start, errors.New("panic: third")); err == nil || !strings.Contains(err.Error(), "panicked") {
+	if err := RecordCrash(context.Background(), panicky, start.Add(time.Hour), errors.New("panic: again")); err == nil || !strings.Contains(err.Error(), "panicked") {
 		t.Errorf("err %v, want the write's panic recovered into the error", err)
+	}
+
+	if err := s.Commit(context.Background(), []api.TableWrite{{Table: model.TableState, Op: api.OpUpsert, Key: []string{"key"},
+		Rows: []api.Row{{"key": "schema_version", "value": "99.0"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	before := w.rows(model.TableHealth)
+	err := RecordCrash(context.Background(), s, start.Add(2*time.Hour), errors.New("panic: newer"))
+	if !errors.Is(err, codec.ErrNewerSchema) {
+		t.Errorf("err %v, want ErrNewerSchema", err)
+	}
+	if after := w.rows(model.TableHealth); !reflect.DeepEqual(before, after) {
+		t.Errorf("wrote Health into a newer-schema store:\n%v\n%v", before, after)
 	}
 }
 
@@ -755,4 +771,47 @@ func (p *panickyStore) Commit(ctx context.Context, w []api.TableWrite) error {
 		panic("commit")
 	}
 	return p.Store.Commit(ctx, w)
+}
+
+// A redelivery inside one re-read is taken once, as Intake takes it: the
+// later copy of a positive reply never overrides the neutral reply that came
+// between.
+func TestReReadTakesADuplicateInOneReadOnce(t *testing.T) {
+	w := newWorld(t, clerks(30)...)
+	w.pushesOff()
+	now := time.Now().UTC()
+	positive := replyRaw("email_replied_positive", "p29@p29.example", "Meeting", now.Add(-2*time.Minute))
+	again := positive
+	again.ReceivedAt = now
+	appendDuring(w, positive, replyRaw("email_replied", "p29@p29.example", "Follow up", now.Add(-time.Minute)), again)
+	w.mustRun()
+	if s := w.outcome("p29@p29.example")["reply_status"]; s != "replied_neutral" {
+		t.Errorf("after the re-read: reply_status %q, want replied_neutral (the repeat is skipped)", s)
+	}
+	w.mustRun() // Intake takes the same events: the same answer
+	if s := w.outcome("p29@p29.example")["reply_status"]; s != "replied_neutral" {
+		t.Errorf("the next run: reply_status %q, want replied_neutral", s)
+	}
+}
+
+// Intake never stores a last_received later than the run's clock, and
+// replaces a stored one that is.
+func TestIntakeCapsLastReceivedAtNow(t *testing.T) {
+	w := twoLeads(t)
+	w.pushesOff()
+	start := time.Now().UTC()
+	w.appendEvents(replyRaw("email_sent", "ana@acme.example", "Contacted", start.Add(400*24*time.Hour)))
+	w.mustRun()
+	got, err := model.ParseTime(w.state("last_received:sent"))
+	if err != nil || got.After(time.Now()) || got.Before(start) {
+		t.Errorf("last_received:sent %v (%v), want capped at the run's clock", got, err)
+	}
+	w.edit(func(m *model.Model) {
+		m.SetState("last_received:sent", model.FormatTime(start.Add(400*24*time.Hour)))
+	})
+	w.appendEvents(replyRaw("email_sent", "bo@beta.example", "Contacted", time.Now().UTC()))
+	w.mustRun()
+	if got, _ := model.ParseTime(w.state("last_received:sent")); got.After(time.Now()) {
+		t.Errorf("a stored future last_received:sent %v was kept", got)
+	}
 }

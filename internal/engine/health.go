@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -133,10 +134,12 @@ const crashLeaseTTL = 2 * time.Minute
 // holds the lease it writes nothing and returns an error wrapping
 // api.ErrLeaseHeld: that run writes Health itself.
 //
-// It reads only the Health table, never the whole store, so it still writes
-// when loading the store is what failed (a newer schema, a table that cannot
-// be read), and it recovers a panic of its own into its error, so the
-// receiver calling it stays up.
+// It reads only State's schema_version and the Health table, never the
+// whole store, so it still writes when loading the store is what failed (a
+// table that cannot be read), and it recovers a panic of its own into its
+// error, so the receiver calling it stays up. A store from a newer major
+// schema version gets no write (an error wrapping codec.ErrNewerSchema): this
+// binary never writes old-shaped rows into it.
 func RecordCrash(ctx context.Context, store api.Backend, startAt time.Time, err error) (rerr error) {
 	defer func() {
 		if p := recover(); p != nil {
@@ -156,6 +159,19 @@ func RecordCrash(ctx context.Context, store api.Backend, startAt time.Time, err 
 		defer cancel()
 		_ = lease.Release(rctx)
 	}()
+	// Never write old-shaped rows into a store a newer major version wrote.
+	state, lerr := store.ReadTable(ctx, model.TableState)
+	if lerr != nil {
+		return fmt.Errorf("reading State to record the crash: %w", lerr)
+	}
+	for _, row := range state {
+		if row["key"] != "schema_version" {
+			continue
+		}
+		if _, verr := codec.CheckVersion(row["value"]); errors.Is(verr, codec.ErrNewerSchema) {
+			return fmt.Errorf("not recording the crash: %w", verr)
+		}
+	}
 	rows, lerr := store.ReadTable(ctx, model.TableHealth)
 	if lerr != nil {
 		return fmt.Errorf("reading Health to record the crash: %w", lerr)

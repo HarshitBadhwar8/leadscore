@@ -50,10 +50,9 @@ func (receiverSilence) Run(_ context.Context, env Env) []Problem {
 	for _, kind := range ExpectedKinds(env.Config) {
 		since := firstRun
 		last, err := model.ParseTime(m.StateValue(lastReceivedPrefix + kind))
-		heard := err == nil && !last.IsZero()
-		if heard && last.After(now) {
-			last = now // a received time in the future (a clock that ran ahead) counts as now
-		}
+		// A received time later than now (a clock that ran ahead) counts as
+		// never heard, so it cannot hide silence however long it lasts.
+		heard := err == nil && !last.IsZero() && !last.After(now)
 		if heard && last.After(since) {
 			since = last
 		}
