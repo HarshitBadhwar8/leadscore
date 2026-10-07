@@ -34,7 +34,8 @@ anything.
 - Never edit the tool tabs or tables (`People`, `Pushes`, `Outcomes`,
   `Health`, `State`, ...) by hand to make a problem go away. Change a lead
   through `Overrides`: `leadscore set-status`, `merge`, `mark-distinct`,
-  `retry`.
+  `retry`. The one exception is a `merge_cycle` (see "duplicates" below),
+  which is fixed in `People`.
 - Before sending from an export list, filter on `do_not_contact`.
 
 ## Changing the rules (the rule-change loop)
@@ -219,6 +220,7 @@ CSV-only team uses export lanes only).
 
 In run. `namesake:<lead>`: two leads share a company and a name; decide with
 `leadscore merge <a> <b>` (same person) or `leadscore mark-distinct <a> <b>`.
-`merge_cycle:<lead>`: `merged_into` was hand-edited into a loop; fix it in
-`People`. `key_conflicts` (a warning): rows carried an email or LinkedIn URL
+`merge_cycle:<lead>`: `merged_into` was hand-edited into a loop; a person
+clears the wrong `merged_into` cell in `People` (the one exception to never
+editing tool tabs). `key_conflicts` (a warning): rows carried an email or LinkedIn URL
 another lead holds; check the sources.

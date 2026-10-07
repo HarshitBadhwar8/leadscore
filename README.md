@@ -13,6 +13,23 @@ coding agent can follow it too: each step says who does it.
 - **[person]**: a person must do it: paste a key, approve billing, create an
   account, or say yes to a dry run. An agent stops and asks.
 
+## Words used here
+
+- **Lane:** where a lead goes, set in your rubric. Each lead goes to at most
+  one lane per run.
+- **Cold lane:** first outreach to someone who has not talked to you (an
+  Apollo sequence, a new HubSpot contact). A person gets a cold push once,
+  ever.
+- **Sink:** a tool a lane pushes to: Apollo or HubSpot, set up in the
+  `sinks` block of `leadscore.yml`.
+- **Export lane:** a lane that only keeps a list (a CSV file or a Sheet tab)
+  for you to send from your own tool. It pushes nothing.
+- **`do_not_contact`:** a column on every list. `yes` means do not email this
+  person (opted out, already contacted, in a deal, or claimed by a cold
+  lane).
+- **Receiver:** the always-on web address Apollo sends replies, opt-outs and
+  website visits to (`leadscore serve`).
+
 ## Pick your path
 
 | Path | For | Store | Runs on |
@@ -21,6 +38,11 @@ coding agent can follow it too: each step says who does it.
 | **Docker on a server** | technical users with a VM and a domain | SQLite (optionally a Sheet view) | your server, with Caddy for HTTPS |
 | **Docker on a laptop** | technical users trying it out, or a small team | SQLite | your machine, while it is awake |
 | **CSV only** | a first try, or a team that only wants scored lists | SQLite | Docker or the plain binary |
+
+Until the first release, every path needs someone comfortable with a
+terminal: the CLI is built from source, and Google Cloud setup runs
+`gcloud` and `setup/gcp.sh` commands. After release, a non-technical person
+can follow Path 2 with a coding agent.
 
 Not sure? Start with **CSV only**: ten minutes, no accounts, and you see your
 leads ranked. Every other path builds on it.
@@ -98,8 +120,10 @@ CSV files in, scored lists out. No vendor accounts.
    - **Plain binary. [agent]** In `leadscore.yml`, change `store.path` to
      `leadscore.db` and `export.dir` to `out` (paths are relative to the
      folder). Set a receiver secret (doctor checks it is set, even though a
-     CSV-only install receives no webhooks):
-     `export LEADSCORE_RECEIVER_SECRET=$(openssl rand -hex 32)`. Then
+     CSV-only install receives no webhooks), and keep it for new terminals
+     by adding the line to your shell profile (`~/.zshrc` or `~/.bashrc`):
+     `export LEADSCORE_RECEIVER_SECRET=<the output of openssl rand -hex 32>`.
+     Then
      `leadscore run --dry-run` (what a run would do, writing nothing; it
      names leads by id, and after the first real run
      `leadscore explain <lead id>` shows who each is), and `leadscore run`.
@@ -201,21 +225,23 @@ a new `deadline` `setup/gcp.sh redeploy`. Each run records the bundle version
 it read in `State` (`config_version`), and `doctor`'s `rubric-version` line
 warns when the last run used another rubric than your file.
 
-**Keys on your machine.** Local commands on a Google Cloud install read an
-API key you have not set as a variable from Secret Manager, as the run
-account, and only the keys the command's adapters need (`doctor` included).
-Inside Cloud Run the keys come from the service's and job's own secret
-references.
+**Keys on your machine.** You do not need the API keys on your machine. When
+a local command (`doctor` too) needs a key you have not set, it reads it
+from Secret Manager. It signs in as the run account to do that. It reads
+only the keys that command needs. Inside Cloud Run, the service and the job
+get their keys from Secret Manager on their own.
 
 **Your spreadsheet.** You own it, so Google lets you edit the tabs
 leadscore protects (`Ranked`, `Health`, `Pushes`, ...) **with no warning**.
-Do not: type only in `Leads`, `Companies` and `Overrides`, and change a lead
-through `Overrides` (or `leadscore set-status`, `merge`, `mark-distinct`,
-`retry`). Editors other than you and the service accounts cannot edit the
+Do not edit the protected tabs. Type only in `Leads`, `Companies` and
+`Overrides`; change a lead through `Overrides` (or `leadscore set-status`,
+`merge`, `mark-distinct`, `retry`). Editors other than you and the service accounts cannot edit the
 protected tabs, and cannot share the file further.
 
-**Rotating a secret.** No webhook is refused at any point. Replace `P` with
-your project id:
+**Rotating a secret. [person]** Step 3 prints the secret, so a person runs
+this block, not an agent (or pipe step 3 to `pbcopy` on macOS so it never
+shows). No webhook is refused at any point. Replace `P` with your project
+id:
 
 ```sh
 # 1. Keep the current secret as the previous one, and add a new current one.
@@ -294,10 +320,12 @@ Steps:
    or `examples/leadscore.server.yml`, renamed `leadscore.yml`; or
    `examples/leadscore.csv-only.yml` for CSV only), the example rubric as
    `rubric.yml`, and your CSV files. The folder is mounted read-only at
-   `/config`; the export lists land in `./out`. On Linux, also run
-   `mkdir -p out && sudo chown 10001:10001 out` and
-   `chmod o+rx . && chmod o+r leadscore.yml rubric.yml *.csv` (the container
-   runs as its own user, uid 10001).
+   `/config`; the export lists land in `./out`. On Linux the container runs
+   as its own user (uid 10001), so also run:
+   - `mkdir -p out && sudo chown 10001:10001 out`: the container can write
+     the lists into `./out`.
+   - `chmod o+rx . && chmod o+r leadscore.yml rubric.yml *.csv`: the
+     container can read your settings, rubric and leads (not secrets).
 2. **[person]** Create `.env` in the folder, holding the keys (only those you
    use) and a receiver secret:
 
@@ -310,8 +338,9 @@ Steps:
 
    `LEADSCORE_IMAGE` is for before the first release only (the private
    image; `gcloud auth configure-docker asia-south1-docker.pkg.dev` first).
-   Remove that line after the release. Keep `.env` private: Docker reads it,
-   the container does not, so it needs no extra permissions.
+   Remove that line after the release. Keep `.env` private with
+   `chmod 600 .env`: Docker reads it, the container does not. **Never commit
+   `.env` (or a service-account key file) to git.**
 3. **[person]** Write the rubric from your CSV headers and the example (see
    "The rubric"); **[agent]** check it with `leadscore rules check rubric.yml`
    (or, once the container is up,
@@ -319,14 +348,18 @@ Steps:
    In `leadscore.yml`, set `sinks.apollo.mailbox_id`, uncomment
    `sinks.hubspot` if you use HubSpot, and remove the blocks and the rubric
    lanes for tools you do not use.
-4. **On a server: [person]** point your domain's DNS at the server and open
-   ports 80 and 443. **[agent]** In `compose.yaml`, replace
-   `leads.example.com` in the Caddy service with your domain, and set
-   `receiver.public_url: https://<your domain>` in `leadscore.yml`. **On a
-   laptop with a tunnel: [person]** start the tunnel to `localhost:8080`, and
-   set `replies: receiver` and `receiver.public_url` to its URL. **Either
-   way: [person]** create the Apollo workflows from `setup/apollo/`, pointing
-   at that address.
+4. Give the receiver an address (skip this for CSV only):
+   - **A server. [person]** Point your domain's DNS at the server and open
+     ports 80 and 443. **[agent]** In `compose.yaml`, replace
+     `leads.example.com` in the Caddy service with your domain, and set
+     `receiver.public_url: https://<your domain>` in `leadscore.yml`.
+   - **A laptop that polls.** Nothing to do: keep `replies: polling`.
+   - **A laptop with a tunnel. [person]** Start the tunnel to
+     `localhost:8080`; **[agent]** set `replies: receiver` and
+     `receiver.public_url` to the tunnel's URL.
+   - **A server or a tunnel: [person]** create the Apollo workflows from
+     `setup/apollo/`, pointing at that address. A polling laptop with no
+     tunnel gets no webhooks, so it skips the workflows.
 5. **[agent]** Start it: `docker compose up -d` (a server:
    `docker compose --profile caddy up -d`, so Caddy gets the certificate).
    It runs once at start, then every `schedule`. Pushes are off, so these
@@ -362,24 +395,42 @@ volume first if you want a backup for a store damaged some other way.
 
 ### A Google Sheet on Docker
 
+Both need a service account and its key file:
+
+1. **[person]** Create a Google Cloud project (no billing needed for the
+   view), and enable the Google Sheets and Google Drive APIs (and Cloud
+   Storage for a Sheets store).
+2. **[person]** Create one service account and a JSON key for it. Save the
+   key in the folder as `sa-key.json`. On Linux, let the container read it
+   and nobody else: `sudo chgrp 10001 sa-key.json && chmod 640 sa-key.json`.
+   Never commit it to git.
+3. **[agent]** In `leadscore.yml`, set `store.credentials: sa-key.json` (a
+   path relative to the folder, so it works on your machine and in the
+   container).
+
+Then:
+
 - **A read-only view of a SQLite store** (`Ranked`, `Health` and one tab
-  per export lane, rewritten after every run). **[person]** Create a Google
-  Cloud project (no billing needed), enable the Sheets and Drive APIs,
-  create a service account and a key file for it, and put the key file in
-  the folder. **[agent]** In `leadscore.yml`, set
-  `store.credentials: sa-key.json` (a path relative to the folder, so it
-  works both on your machine and in the container). **[person]**
+  per export lane, rewritten after every run). **[person]**
   `gcloud auth login --enable-gdrive-access`, then **[agent]** on your
   machine, in the folder: `leadscore setup sheet --view`. It creates the
   spreadsheet with your login, shares it with the service account, and
   writes `store.view_spreadsheet`. Runs write it through the Sheets API with
-  no lease; a failed write shows in `Health` as the warning
-  `view_write_failed` and the run stays healthy. The Workspace exception and
-  the owner warning under Google Cloud step 6 and "Your spreadsheet" apply
+  no lease, one tab at a time (a failure can leave some tabs newer than
+  others until the next run). A failed write, or a view that cannot be
+  opened, shows in `Health` as a warning (`view_write_failed`,
+  `sheet-access`) and the run stays healthy. **The view holds personal data
+  (names, emails): share it only with named people, never by link.** The
+  Workspace exception (Google Cloud step 6) and "Your spreadsheet" apply
   here too.
-- **The store itself** (instead of SQLite): Google Cloud steps 3, 4 and 6
-  with one service account and its key file in `store.credentials`, plus a
-  lease bucket the account can write (`store.lease_bucket`).
+- **The store itself** (instead of SQLite): **[agent]** set
+  `store: { type: sheets, credentials: sa-key.json }`; **[person]**
+  `gcloud auth login --enable-gdrive-access`, then **[agent]**
+  `leadscore setup sheet` (creates the spreadsheet, shares it with the
+  service account, writes `store.spreadsheet`). **[person]** Create a Cloud
+  Storage bucket for the run lease, give the service account Storage Object
+  Admin on it, and **[agent]** set `store.lease_bucket` to its name. Do not
+  run `setup/gcp.sh`: it is the Google Cloud path's script.
 
 ## Using it
 

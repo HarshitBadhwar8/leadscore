@@ -145,3 +145,30 @@ func TestExampleFiles(t *testing.T) {
 		}
 	}
 }
+
+// The Sheets-on-Docker section lists its own actions: C9.1's step numbers
+// are not the README's, and the Google Cloud script must not be run there.
+func TestReadmeSheetsOnDockerListsItsSteps(t *testing.T) {
+	readme := readFile(t, "README.md")
+	sec := strings.Join(strings.Fields(section(t, readme, "### A Google Sheet on Docker")), " ")
+	for _, want := range []string{"enable the Google Sheets and Google Drive APIs", "Create one service account and a JSON key",
+		"store.credentials: sa-key.json", "leadscore setup sheet --view", "leadscore setup sheet` (creates the spreadsheet",
+		"Create a Cloud Storage bucket for the run lease", "Do not run `setup/gcp.sh`",
+		"sudo chgrp 10001 sa-key.json && chmod 640 sa-key.json", "share it only with named people, never by link"} {
+		if !strings.Contains(sec, want) {
+			t.Errorf("the Sheets-on-Docker section lacks %q", want)
+		}
+	}
+	for _, bad := range []string{"Google Cloud steps 3, 4 and 6", "steps 3 and 4"} {
+		if strings.Contains(sec, bad) {
+			t.Errorf("the Sheets-on-Docker section points at another path's step numbers: %q", bad)
+		}
+	}
+	flat := strings.Join(strings.Fields(readme), " ")
+	for _, want := range []string{"chmod 600 .env", "Never commit `.env`", "Do not edit the protected tabs.",
+		"## Words used here", "**Rotating a secret. [person]**"} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("README lacks %q", want)
+		}
+	}
+}
