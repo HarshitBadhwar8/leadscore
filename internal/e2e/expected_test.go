@@ -177,3 +177,38 @@ var (
 	pollingPushes   = map[string]string{tom: "demo-followup", anna: "fleet-ops", jonas: "fleet-ops", pia: "fleet-ops", lea: "fleet-ops"}
 	pollingStatuses = map[string]string{tom: "replied_positive", ines: "unsubscribed", sam: "new"}
 )
+
+// otto is in no source: only an identified receiver visit reports him.
+const otto = "otto.berg@kranlogistik.example"
+
+// Safety case (a): Jonas becomes hot in run 2 but already holds his cold
+// push; Ines opts out after contact (expected.md, "Safety cases").
+var (
+	// Kran 65; warm path 10 + hot 20 + 2 sources 10 = 40; contacted in run 1; not pushed, listed on nurture.
+	jonasHotV2 = ranked{jonas, "", "Jonas Brandt", "kranlogistik.example", "yes", "1", "A", "yes", "65", "40", "105", "contacted", "nurture"}
+	// The five fleet-ops pushes of run 1, and nothing more after runs 2 and 3.
+	laneChangePushes = map[string]string{anna: "fleet-ops", jonas: "fleet-ops", pia: "fleet-ops", lea: "fleet-ops", ines: "fleet-ops"}
+	inesExportV2     = exported{ines, "40", "contacted", "yes"}
+	inesExportV3     = exported{ines, "40", "unsubscribed", "yes"}
+)
+
+// Safety case (b): Otto is receiver-only. Kran 65; hot 20; one source; no
+// cold lane holds; listed on nurture with do_not_contact no.
+var (
+	ottoRanked         = ranked{otto, "", "", "kranlogistik.example", "yes", "1", "A", "yes", "65", "20", "85", "new", "nurture"}
+	ottoExport         = exported{otto, "85", "new", "no"}
+	receiverOnlyPushes = laneChangePushes
+)
+
+// Safety case (c): Anna and Jonas reply positive; one Kran deal; Pia's cold
+// push is blocked by it.
+var (
+	dealPushes = map[string]string{anna: "demo-followup", jonas: "demo-followup", lea: "fleet-ops", ines: "fleet-ops"}
+	// Created on the run-1 verdict: Anna 65 + head 15 + 2 sources 10 = 90; Jonas 65 + warm 10 + 2 sources 10 = 85.
+	dealContacts = map[string]map[string]string{
+		anna:  {"leadscore_lane": "demo-followup", "leadscore_tier": "1", "leadscore_priority": "A", "leadscore_score": "90"},
+		jonas: {"leadscore_lane": "demo-followup", "leadscore_tier": "1", "leadscore_priority": "A", "leadscore_score": "85"},
+	}
+	dealApolloContacts = []string{lea, ines}
+	dealStatusesRun2   = map[string]string{anna: "deal", jonas: "deal", pia: "deal"}
+)

@@ -286,3 +286,77 @@ would otherwise put Sam on demo-followup).
   Ines and Sam are not pushed.
 - Outcomes: Tom `replied_positive`; Ines `unsubscribed`; Sam `new` with no
   reply status.
+
+## Notes added after review
+
+- **Change log lines.** The run logs a tier or priority change as
+  `<name> <old> -> <new>` (the format is `internal/engine/score.go`,
+  `buildRanked`; the contracts fix only the kinds `tier_change` and
+  `priority_change`). So Marie's run-2 lines end `-> 2` and `-> B`.
+- **Blocked leads' reasons.** A lead blocked by an opt-out keeps its
+  matching lanes in the evaluator's result, and each lane it is skipped on
+  is explained in `reasons`; the reason names the status, so the text
+  contains `unsubscribed`.
+- **Not covered:** proving `pricing_visits` fires in the CSV-only variant
+  (Route Clair's tier is null there before the detector rule is reached).
+
+## Safety cases (vendor variant, both stores)
+
+All three start like the opt-out case: no visits and no replies unless
+listed, enrichment on (Marie tier 3). Without visits Anna is not hot, so run 1
+pushes Anna, Jonas, Pia, Lea and Ines to fleet-ops unless a case says
+otherwise.
+
+### (a) Never cold-contacted twice after a lane change, then an opt-out after contact
+
+- Run 1 (T1): fleet-ops pushes Anna, Jonas, Pia, Lea, Ines: 5 pushes, 10
+  ledger rows, 5 Apollo contacts, 5 enrollments, all "Fleet ops intro".
+- T1+30m: an identified `visit_demo` for Jonas, visited at T1+30m.
+- Run 2 (T2): Jonas's first demo visit is inside 7 days, so `demo_visit`
+  fires and he is hot; hot-visitors' `when` now holds for him. He already
+  holds his one cold push (fleet-ops, done), so **nothing is pushed**: still
+  10 ledger rows, 5 contacts, 5 enrollments, and Jonas is only in "Fleet ops
+  intro". His Ranked row: Kran tier 1 A, account 65; contact: warm path 10 +
+  hot 20 + 2 sources (his visit adds a receiver row) 10 = 40; score 105;
+  status `contacted`; lane `nurture` (not pushed this run; listed there).
+  Ines's export row: status `contacted`, `do_not_contact` yes.
+- T2+30m: an Apollo `unsubscribed` webhook for Ines.
+- Run 3 (T3 = T2 + 1h): Ines is `unsubscribed`. Her export row flips to
+  status `unsubscribed`, `do_not_contact` yes, score still 40. Her Ranked
+  row: status `unsubscribed`, empty lane, reasons contain `unsubscribed`.
+  Nothing is pushed.
+
+### (b) A receiver-only lead is never cold-pushed
+
+- T0: an identified `visit_demo` for otto.berg@kranlogistik.example (in no
+  source), visited at T1 − 1d, account domain kranlogistik.example. The
+  visit creates his lead under the receiver; he is receiver-only.
+- Run 1: Kran still tier 1 A, account 65 (leads_seen 4 pays the same 10 as
+  3; Otto has no title, so ops_contacts stays 2). Otto: hot (demo visit
+  within 7 days), contact 20 (no title, no warm path, one source), score 85.
+  Neither cold lane's `when` holds (both need receiver_only false), so no
+  ledger row, no Apollo contact, and no `receiver_only_push` problem.
+  nurture (tier 1 ≤ 3) lists him: status `new`, `do_not_contact` no (no
+  cold lane matches, nothing blocks him). Pushed: Anna, Jonas, Pia, Lea,
+  Ines (5).
+- Otto's Ranked row: email otto.berg@kranlogistik.example, no LinkedIn, no
+  name, domain kranlogistik.example, fit yes, tier 1, priority A, hot yes,
+  65 / 20 / 85, `new`, lane `nurture`.
+
+### (c) One deal per company; a colleague's cold push blocked
+
+- T0: `replied_positive` webhooks for Anna and Jonas (Kran).
+- Run 1: both are `replied_positive`, which blocks cold lanes, and match
+  demo-followup. Within Kran the non-cold steps run first; the first deal
+  step opens Kran's deal and the second reuses it. The check before Pia's
+  cold push then sees a deal step called at Kran (rule 4), so **Pia is not
+  pushed** (no called ledger row for her, no Apollo contact). Lea and Ines go
+  to fleet-ops. Pushed: Anna, Jonas, Lea, Ines (4).
+- HubSpot: 2 contacts, 1 deal named `kranlogistik.example`, associated with
+  both. Anna's contact: lane demo-followup, tier 1, priority A, score 90
+  (account 65; contact: head 15 + 2 sources 10, since her reply adds a
+  receiver row; not hot). Jonas's: score 85 (65 + warm path 10 + 2 sources
+  10).
+- Apollo: 2 contacts (Lea, Ines).
+- Run 2: Anna, Jonas and Pia are `deal` (rule 4). Nothing is pushed; Pia
+  still has no Apollo contact.
