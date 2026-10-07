@@ -1,0 +1,53 @@
+# leadscore.yml for Google Cloud (contracts section 9.1): the receiver runs as
+# a Cloud Run service, each run as a Cloud Run job that Cloud Scheduler starts,
+# and the store is a Google Sheet. Copy it into an empty folder as
+# leadscore.yml, beside your rubric, and follow the README's Google Cloud
+# steps; setup/gcp.sh and `leadscore setup sheet` fill in what is marked
+# below. Every key is in the contracts doc, section 3.
+#
+# On Google Cloud this file and the rubric are uploaded together with
+# `leadscore config push`; the next run uses them, with no redeploy.
+version: 1
+
+# The rubric file, beside this one.
+rubric: rubric.yml
+
+store:
+  type: sheets
+  # Written by `leadscore setup sheet`.
+  spreadsheet: ""
+  # The run lease's Cloud Storage bucket is <project>-leadscore-lease, which
+  # setup/gcp.sh bucket creates. Bucket names are global: only if that name
+  # is taken, set another here:
+  # lease_bucket: my-own-bucket-name
+
+# Your lead tabs in that spreadsheet. Cloud Run keeps no files, so on Google
+# Cloud every source is a Sheet tab.
+sources:
+  - { id: leads, type: sheetsource, tabs: [Leads] }
+
+# Replies, sends and opt-outs arrive as Apollo workflow webhooks at the
+# receiver service.
+replies: receiver
+
+receiver:
+  # The receiver service's address, which setup/gcp.sh deploy prints; set it,
+  # then leadscore config push again.
+  # public_url: https://leadscore-receiver-xxxxxxxx.a.run.app
+  # The visit workflows you created from setup/apollo/, as visit_<name>, so a
+  # silent workflow is noticed.
+  visit_events: [visit_pricing]
+
+# Off until you have reviewed a dry run (`leadscore run --dry-run`); turning
+# it on is `pushes_enabled: true` and `leadscore config push`.
+pushes_enabled: false
+
+# How often Cloud Scheduler starts a run: whole minutes dividing 60 or hours
+# dividing 24. A run's deadline plus 90 seconds must end before the next one.
+# After changing it, run setup/gcp.sh schedule (and redeploy for a new
+# deadline).
+schedule: 15m
+deadline: 12m
+
+# hosting: written by setup/gcp.sh (project, region, the two service
+# accounts, and the image).

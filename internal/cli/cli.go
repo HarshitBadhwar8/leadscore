@@ -120,9 +120,9 @@ var commands = []*command{
 		run:     runRetry,
 	},
 	{
-		path:  []string{"config", "push"},
-		help:  "upload leadscore.yml and the rubric as one Secret Manager version",
-		slice: "S14b",
+		path: []string{"config", "push"},
+		help: "upload leadscore.yml and the rubric as one Secret Manager version",
+		run:  runConfigPush,
 	},
 	{
 		path: []string{"setup", "hubspot"},
