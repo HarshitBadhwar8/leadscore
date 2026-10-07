@@ -203,6 +203,12 @@ func TestRejects(t *testing.T) {
 		{"missing store type", "version: 1\nstore: { path: x }\n", "store.type"},
 		{"source without id", minimal + "sources: [ { type: csv } ]\n", "sources[0].id"},
 		{"duplicate source id", minimal + "sources: [ { id: a, type: csv }, { id: a, type: csv } ]\n", "another source"},
+		{"source id receiver", minimal + "sources: [ { id: receiver, type: csv } ]\n", "reserved"},
+		{"source id polling", minimal + "sources: [ { id: polling, type: csv } ]\n", "reserved"},
+		{"source id hubspot", minimal + "sources: [ { id: hubspot, type: csv } ]\n", "reserved"},
+		{"source id apollo_lookup", minimal + "sources: [ { id: apollo_lookup, type: csv } ]\n", "reserved"},
+		{"unsubscribe override in another case", minimal + "reply_labels: { Unsubscribe: none }\n", "unsubscribe"},
+		{"reply_labels colliding in case", minimal + "reply_labels: { Not_Interested: none, not_interested: replied_neutral }\n", "twice"},
 		{"bad replies", minimal + "replies: webhook\n", "replies"},
 		{"bad duration", minimal + "schedule: soon\n", "schedule"},
 		{"numeric duration", minimal + "deadline: 12\n", "deadline"},
@@ -431,5 +437,13 @@ func TestBundleRejects(t *testing.T) {
 	write(t, p, minimal+"config: x\n")
 	if _, err := Load(Options{ConfigPath: p, Getenv: noEnv}); err == nil || !strings.Contains(err.Error(), `"config"`) {
 		t.Errorf("stray config key: err = %v", err)
+	}
+}
+
+// Polled labels compare lowercased, so reply_labels keys are lowercased too.
+func TestReplyLabelKeysAreLowercased(t *testing.T) {
+	c := mustParse(t, minimal+"reply_labels: { Not_Interested: replied_neutral }\n")
+	if c.ReplyLabels["not_interested"] != "replied_neutral" || len(c.ReplyLabels) != 1 {
+		t.Errorf("%v", c.ReplyLabels)
 	}
 }

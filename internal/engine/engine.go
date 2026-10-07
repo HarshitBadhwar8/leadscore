@@ -35,6 +35,7 @@ type Run struct {
 	HTTPClient   *http.Client
 	SourceEvents []api.Event                                  // step 3 source events, keys already normalized, set by S10a before Intake
 	NoPush       string                                       // non-empty: score and save, but push nothing (the reason)
+	EventsShrank bool                                         // Intake returned ErrEventsShrank: no processed event is deleted this run
 	Problem      func(key, message, fix string, warning bool) // raise an open problem this run
 	// ReRead calls Hooks.ReRead (S15) for S10b's push loop before each batch;
 	// with no hook it returns nothing. Its error also raises step_failed:reread.
@@ -59,12 +60,14 @@ type Hooks struct {
 }
 
 // DefaultHooks is the production set. Each hook slice sets its field here in
-// its own PR; slices sharing AfterSave (S13's CSV rewrite, S16's view) each
-// add one function to its Chain.
+// its own PR; slices sharing AfterSave each add one function to its Chain
+// (S9's deletion of processed events, S13's CSV rewrite, S16's view).
 func DefaultHooks() Hooks {
 	return Hooks{
+		Intake:    intake,
 		Fold:      defaultFold,
-		AfterSave: Chain(),
+		Detect:    detectHook,
+		AfterSave: Chain(deleteProcessed),
 	}
 }
 

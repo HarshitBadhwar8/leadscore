@@ -51,9 +51,9 @@ func (x *exec) ingest(chunk int) {
 			f.rows = append(f.rows, merge.Normalize(row, aliases))
 		}
 		for _, e := range events {
-			if e.Origin == "" {
-				e.Origin = src.ID
-			}
+			// Always the source's own id: a source must never pose as the
+			// receiver, polling or a lookup, whose events carry opt-outs.
+			e.Origin = src.ID
 			r.SourceEvents = append(r.SourceEvents, merge.NormalizeEventKeys(e))
 		}
 		all = append(all, f)

@@ -279,9 +279,10 @@ func (x *exec) main() error {
 		return nil
 	}
 
-	// Phase 2: everything else but Ranked, with the Log trim and Health. The
-	// Window events and Seen events trims are Intake's (S9).
+	// Phase 2: everything else but Ranked, with the retention trims (Log,
+	// Window events, Seen events) and Health.
 	r.Model.Trim(model.TableLog, "at", r.Now().Add(-x.cfg.LogRetention))
+	trimEvents(r)
 	x.putHealth(!x.cutShort)
 	if err := x.commit("phase 2", codec.Encode(r.Model, phase2Tables(r.Model)...), false); err != nil {
 		return err
@@ -353,6 +354,7 @@ func (x *exec) beforePhase1(chunk int) error {
 		err := h(r)
 		switch {
 		case errors.Is(err, api.ErrEventsShrank):
+			r.EventsShrank = true
 			x.noPush("the event log shrank below a saved cursor")
 			x.problem("events_shrank", "the event log holds fewer events than a saved cursor says were read: "+err.Error(),
 				"restore the deleted events (or rows) from a backup; pushing waits until then", false)
@@ -423,7 +425,7 @@ func (x *exec) resetAttempt() {
 	x.problems = map[string]problem{}
 	x.mu.Unlock()
 	r := x.run
-	r.NoPush, r.SourceEvents = "", nil
+	r.NoPush, r.SourceEvents, r.EventsShrank = "", nil, false
 	r.Input, r.Result = rules.Input{}, rules.Result{}
 	x.columns, x.merged, x.backlog, x.cursors = nil, 0, 0, nil
 	x.scored, x.cutShort = false, false

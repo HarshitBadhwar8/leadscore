@@ -98,6 +98,10 @@ var (
 // decomposed "é" match), trimmed and lowercased.
 func normText(s string) string { return strings.ToLower(strings.TrimSpace(norm.NFC.String(s))) }
 
+// NormText is the rubric's text-matching form (contracts section 2): trimmed,
+// Unicode NFC, lowercased. The change detector compares with it too.
+func NormText(s string) string { return normText(s) }
+
 // normOrdered is the ordered-list matching form: normText, also ignoring every
 // Unicode space, hyphen and underscore, so `Series B` matches `series_b`.
 func normOrdered(s string) string {

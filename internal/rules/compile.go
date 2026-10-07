@@ -490,6 +490,9 @@ func (c *compiler) compileDetectors(n *yaml.Node, a at) {
 			spec.Subject = s
 		}
 		kindName, _, ok := str("kind")
+		// Kind names compare lowercased, here and in internal/detect: a
+		// built-in kind written in another case gets the built-in checks.
+		kindName = strings.ToLower(strings.TrimSpace(kindName))
 		if !ok || kindName == "" {
 			c.errf(pa, "kind is required: count_in_window, first_seen, change, or a registered kind")
 			continue
