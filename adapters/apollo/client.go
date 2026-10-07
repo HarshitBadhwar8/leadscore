@@ -204,7 +204,7 @@ func (c *Client) attempt(ctx context.Context, req Request) (vendorhttp.Reply, er
 	if err != nil {
 		return vendorhttp.Reply{}, fmt.Errorf("apollo: building the request: %w", err)
 	}
-	hr.Header.Set("X-Api-Key", c.key) // S0 confirms: the key goes in this header
+	hr.Header.Set("X-Api-Key", c.key) // a live API test showed a key in the query is refused with 422
 	hr.Header.Set("Accept", "application/json")
 	hr.Header.Set("Cache-Control", "no-cache")
 	if body != nil {

@@ -231,6 +231,8 @@ const (
 	statusNone       = "none"
 )
 
+// Besides _unlabelled, the keys are the eight reply_class values Apollo
+// documents; a live API test saw null (most replies) and person_referral.
 var baseLabels = map[string]string{
 	"willing_to_meet":    "replied_positive",
 	"unsubscribe":        "unsubscribed",

@@ -1,5 +1,6 @@
 {
   "provisional": true,
+  "confirmed_from": "A live API test (record: Apollo transport spike, 2026-08-10): POST /v1/contacts/search answers 200. Only the endpoint and method; the body is not confirmed.",
   "note": "S0 confirms: the search spends no credits, matches by email through q_keywords, and the opt-out flag's name (email_unsubscribed) and that it is always sent",
   "method": "POST",
   "path": "/api/v1/contacts/search",

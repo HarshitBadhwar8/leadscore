@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -46,24 +44,28 @@ func NewPoller(cfg api.Config) (api.Poller, error) {
 // Every page is read; any failure (a 429 included) fails the whole poll, so
 // the engine keeps last_poll_at and reads the same window next time.
 //
-// S0 confirms: the call, its filters (replied, by sent date), the label's
-// values and field name (reply_class), the reply time's field (replied_at,
-// else the send's completed_at), and to_email.
+// A live API test called this search as a POST (body encoding not recorded;
+// this sends JSON, as the other searches do) and showed
+// that the replied filter is applied by Apollo (every record it returned had
+// replied true), that the label field is reply_class (null on most replies),
+// and that each message carries to_email. S0 confirms: the date filter by day
+// on completed_at, and the reply time's field (replied_at, else the send's
+// completed_at).
 func (p *Poller) Poll(ctx context.Context, since time.Time) ([]api.Event, error) {
 	var out []api.Event
 	err := eachPage(maxPollPages, func(page int) (int, pagination, error) {
-		q := url.Values{
-			"emailer_message_stats[]":         {"replied"},
-			"emailer_message_date_range_mode": {"completed_at"},
-			"emailerMessageDateRange[min]":    {since.UTC().Format(time.DateOnly)},
-			"page":                            {strconv.Itoa(page)},
-			"per_page":                        {strconv.Itoa(perPage)},
+		body := map[string]any{
+			"emailer_message_stats":           []string{"replied"},
+			"emailer_message_date_range_mode": "completed_at",
+			"emailerMessageDateRange":         map[string]string{"min": since.UTC().Format(time.DateOnly)},
+			"page":                            page,
+			"per_page":                        perPage,
 		}
 		var reply struct {
 			Messages   []polledMessage `json:"emailer_messages"`
 			Pagination pagination      `json:"pagination"`
 		}
-		if err := p.c.Do(ctx, Request{Method: http.MethodGet, Path: messagesSearchPath, Query: q}, &reply); err != nil {
+		if err := p.c.Do(ctx, Request{Method: http.MethodPost, Path: messagesSearchPath, Body: body}, &reply); err != nil {
 			return 0, pagination{}, err
 		}
 		for _, m := range reply.Messages {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -341,11 +342,20 @@ func TestPollUsesSinceAndCarriesLabelAndMessageID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	pages := 0
 	for _, c := range fake.Calls() {
-		if c.Path == messagesSearchPath && (c.Query.Get("emailerMessageDateRange[min]") != "2026-09-01" ||
-			c.Query.Get("emailer_message_stats[]") != "replied") {
-			t.Errorf("poll query = %v", c.Query)
+		if c.Path != messagesSearchPath {
+			continue
 		}
+		pages++
+		var body map[string]any
+		_ = json.Unmarshal(c.Body, &body)
+		if c.Method != http.MethodPost || len(c.Query) != 0 || body["page"] != float64(pages) {
+			t.Errorf("poll call %d: %s, query %v, body %v", pages, c.Method, c.Query, body)
+		}
+	}
+	if pages != 2 {
+		t.Errorf("%d search pages read, want 2 (one reply per page)", pages)
 	}
 	if len(evs) != 2 {
 		t.Fatalf("events = %+v, want the two replies sent since", evs)
@@ -357,6 +367,47 @@ func TestPollUsesSinceAndCarriesLabelAndMessageID(t *testing.T) {
 	}
 	if b.Attrs[AttrMessageID] != "msg-2" || b.Attrs[AttrLabel] != "" || !b.At.Equal(sent.Add(time.Hour)) {
 		t.Errorf("an unlabelled reply = %+v (timed at its send when it has no reply time)", b)
+	}
+}
+
+// The reply search is a POST, as a live API test used (body encoding not
+// recorded; it is sent as JSON, like the other searches):
+// the replied filter as a list, the date filter by completed_at from since's
+// UTC day, and the page asked for. The body is the replies fixture's request.
+func TestPollSendsTheSearchAsAJSONBody(t *testing.T) {
+	fake, cfg := outreachFake(t)
+	p, err := NewPoller(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	since := time.Date(2026, 8, 1, 23, 30, 0, 0, time.FixedZone("x", 2*3600)) // 21:30 UTC on 1 August
+	if _, err := p.Poll(context.Background(), since); err != nil {
+		t.Fatal(err)
+	}
+	calls := fake.Calls()
+	if len(calls) != 1 {
+		t.Fatalf("calls = %+v, want one search", calls)
+	}
+	fx, err := fakeapollo.Load("emailer_messages_search/replies")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := calls[0]
+	if c.Method != fx.Method || c.Method != http.MethodPost || c.Path != fx.Path || len(c.Query) != 0 {
+		t.Errorf("call = %s %s?%v, want %s %s with no query", c.Method, c.Path, c.Query, fx.Method, fx.Path)
+	}
+	var got, want map[string]any
+	if err := json.Unmarshal(c.Body, &got); err != nil {
+		t.Fatalf("body %q is not JSON: %v", c.Body, err)
+	}
+	if err := json.Unmarshal(fx.RequestBody, &want); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("body\n got %v\nwant %v (the fixture's request)", got, want)
+	}
+	if got["per_page"] != float64(perPage) || got["emailerMessageDateRange"].(map[string]any)["min"] != "2026-08-01" {
+		t.Errorf("body = %v", got)
 	}
 }
 

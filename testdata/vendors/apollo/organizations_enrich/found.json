@@ -1,6 +1,6 @@
 {
   "provisional": true,
-  "note": "S0 confirms: the field names (name, estimated_num_employees, latest_funding_stage, latest_funding_round_date, country), from Apollo's public docs",
+  "confirmed_from": "Enrichment code that runs in production reads these field names: organization.name, estimated_num_employees, latest_funding_stage, latest_funding_round_date (a plain date, not a timestamp) and country. The values are made up.",
   "method": "GET",
   "path": "/api/v1/organizations/enrich",
   "query": {

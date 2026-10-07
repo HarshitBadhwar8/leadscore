@@ -1,5 +1,6 @@
 {
   "provisional": true,
+  "confirmed_from": "A live API test (record: Apollo transport spike, 2026-08-10): GET /v1/email_accounts answers 200. Only the endpoint and method; the reply shape is not confirmed.",
   "note": "S0 confirms: the call and that one reply lists every mailbox",
   "method": "GET",
   "path": "/api/v1/email_accounts",

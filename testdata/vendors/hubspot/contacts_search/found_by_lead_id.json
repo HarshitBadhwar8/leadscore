@@ -42,5 +42,6 @@
       }
     ]
   },
+  "confirmed_from": "HubSpot code that runs in production searches at /crm/v3/objects/{object}/search. Only the path and method; the reply is not confirmed.",
   "provisional": true
 }

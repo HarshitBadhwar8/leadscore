@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -211,7 +210,7 @@ func outreachCall(r *http.Request) string {
 		return CallAddToSequence
 	case r.Method == http.MethodGet && p == "/api/v1/email_accounts":
 		return CallEmailAccounts
-	case r.Method == http.MethodGet && p == "/api/v1/emailer_messages/search":
+	case r.Method == http.MethodPost && p == "/api/v1/emailer_messages/search":
 		return CallSearchMessages
 	}
 	return ""
@@ -289,7 +288,7 @@ func (s *Server) answerOutreach(call string, r *http.Request, raw []byte) (Fixtu
 		}
 		return f, mustJSON(map[string]any{"email_accounts": nonNil(list)})
 	case CallSearchMessages:
-		return s.searchMessages(r)
+		return s.searchMessages(body)
 	}
 	return Fixture{Status: http.StatusNotFound}, []byte(`{"error":"not faked"}`)
 }
@@ -392,10 +391,17 @@ func (s *Server) skipBody(fixtureCase, contactID string) []byte {
 	return mustJSON(saved)
 }
 
-func (s *Server) searchMessages(r *http.Request) (Fixture, []byte) {
+// searchMessages answers the replied-email search from its JSON body. Only
+// the replied filter is served; a search without it, or without a day to
+// start from, is refused as Apollo would refuse a bad filter.
+func (s *Server) searchMessages(body map[string]any) (Fixture, []byte) {
 	o := s.out
-	q := r.URL.Query()
-	min, err := time.Parse(time.DateOnly, q.Get("emailerMessageDateRange[min]"))
+	stats, _ := body["emailer_message_stats"].([]any)
+	if len(stats) != 1 || stats[0] != "replied" || str(body["emailer_message_date_range_mode"]) != "completed_at" {
+		return Fixture{Status: http.StatusUnprocessableEntity}, []byte(`{"error":"the fake serves only the replied filter on completed_at"}`)
+	}
+	rng, _ := body["emailerMessageDateRange"].(map[string]any)
+	min, err := time.Parse(time.DateOnly, str(rng["min"]))
 	if err != nil {
 		return Fixture{Status: http.StatusUnprocessableEntity}, []byte(`{"error":"bad date range"}`)
 	}
@@ -405,9 +411,7 @@ func (s *Server) searchMessages(r *http.Request) (Fixture, []byte) {
 			hits = append(hits, rp)
 		}
 	}
-	page, _ := strconv.Atoi(q.Get("page"))
-	per, _ := strconv.Atoi(q.Get("per_page"))
-	from, to, pg := o.page(len(hits), page, per)
+	from, to, pg := o.page(len(hits), num(body["page"]), num(body["per_page"]))
 	f := s.fixtures["emailer_messages_search/replies"]
 	tmpl := firstRecord(f.ResponseBody, "emailer_messages")
 	var list []any

@@ -4,9 +4,11 @@
 // input row its person yields. Parsing is pure; the engine keys, resolves and
 // applies what comes back (internal/events).
 //
-// The body shapes are built from our workflow templates; which fields
-// Apollo's workflow variables can actually fill is marked "S0 confirms"
-// where it matters.
+// The body shapes are built from our workflow templates. The workflow setup
+// in a real Apollo account shows the reply variables (email, stage,
+// conversation link; the catalogue seen lists no contact id) and the visit body (the contact's email,
+// name, title and LinkedIn URL, and an account block). Fields still unknown
+// are marked "S0 confirms" where it matters.
 package apollo
 
 import (

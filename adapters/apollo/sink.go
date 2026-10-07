@@ -18,9 +18,10 @@ import (
 // `sequence/<name>` has two steps, `contact` (create the contact, with
 // Apollo's own de-duplication on) and `enroll` (add it to the sequence).
 //
-// Everything below about Apollo's calls is taken from its public API docs, not
-// from S0's captures: the paths, the field names, and how a refusal looks are
-// marked "S0 confirms".
+// What follows about Apollo's calls is mostly taken from its public API docs.
+// Where a live API test or production code backs a part, the comment says so;
+// the rest (paths' bodies, field names, how a refusal looks) is marked
+// "S0 confirms".
 
 func init() {
 	api.RegisterSink("apollo", NewSink)
@@ -39,13 +40,16 @@ const (
 // SequencePrefix starts every Apollo destination: apollo:sequence/<name>.
 const SequencePrefix = "sequence/"
 
-// Paths of the outreach calls. S0 confirms each one.
+// Paths of the outreach calls. Production code creates contacts with POST,
+// and a live API test reached the three searches with POST and the mailbox
+// list with GET. Enrichment answers on /api/v1/; the others were seen on
+// /v1/. S0 confirms the rest.
 const (
 	contactsPath        = "/api/v1/contacts"                 // POST: create; GET /<id>: read one
 	contactsSearchPath  = "/api/v1/contacts/search"          // POST: search the team's contacts (no credits)
 	sequencesSearchPath = "/api/v1/emailer_campaigns/search" // POST: find sequences by name
 	emailAccountsPath   = "/api/v1/email_accounts"           // GET: the team's sending mailboxes
-	messagesSearchPath  = "/api/v1/emailer_messages/search"  // GET: sent emails, filtered to replied
+	messagesSearchPath  = "/api/v1/emailer_messages/search"  // POST: sent emails, filtered to replied
 	addContactsPathFmt  = "/api/v1/emailer_campaigns/%s/add_contact_ids"
 )
 
@@ -156,7 +160,9 @@ func (s *Sink) contact(ctx context.Context, lead api.LeadRef) (string, error) {
 	return id, classify(err)
 }
 
-// CreateContact creates a contact and returns Apollo's id for it.
+// CreateContact creates a contact and returns Apollo's id for it. The call
+// (POST with run_dedupe, a 200 or 201, the id under contact.id) is the one
+// production code makes.
 //
 // run_dedupe is always on, so a step replayed after a crash (the create went
 // out, the id was never saved) gets the contact Apollo already holds for the

@@ -50,7 +50,8 @@ type Organization struct {
 // domain? Until then a 404 is an ordinary failure (the path could be wrong),
 // so it never marks a company not-found for a whole max age.
 //
-// S0 confirms the field names below, taken from Apollo's public docs.
+// The field names below are the ones enrichment code running in production
+// reads.
 func (c *Client) EnrichOrganization(ctx context.Context, domain string) (*Organization, error) {
 	domain = strings.ToLower(strings.TrimSpace(domain))
 	if domain == "" {
@@ -198,8 +199,9 @@ func FundingStage(label string) string {
 	return fundingStages[strings.ToLower(strings.TrimSpace(label))]
 }
 
-// fundingDate reads the round date as YYYY-MM-DD. Apollo sends a date (S0
-// confirms); a full timestamp is cut to its UTC date. Anything else is "".
+// fundingDate reads the round date as YYYY-MM-DD. Apollo sends a date, as
+// production enrichment code reads it; a full timestamp is cut to its UTC
+// date. Anything else is "".
 func fundingDate(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {

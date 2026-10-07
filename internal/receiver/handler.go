@@ -33,8 +33,9 @@ const (
 
 // SecretHeader carries the secret.
 //
-// S0 confirms: that Apollo's workflow webhook action can send a custom
-// header. The body field leadscore_secret is the fallback when it cannot.
+// Apollo's workflow action can send a custom header with a fixed value
+// (production use of the workflows shows it; it cannot compute a signature).
+// The body field leadscore_secret is the fallback for a sender that cannot.
 const SecretHeader = "X-Leadscore-Secret"
 
 // Routes.
