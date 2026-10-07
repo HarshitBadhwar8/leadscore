@@ -1,0 +1,49 @@
+adapters/hubspot/check.go
+  s_9dab9ff7f2c580::t_641711860c6d18 49,52-55,60,143-164
+adapters/hubspot/check_test.go
+  s_9dab9ff7f2c580::t_d18321a0be92c5 13,113-126
+adapters/hubspot/domains.go
+  s_9dab9ff7f2c580::t_8af4d23bc2f8a8 1-71
+adapters/hubspot/lookup.go
+  s_9dab9ff7f2c580::t_985bd71b64007c 30-31,104,325,411,455,493-495,500-524,530-532,535,559-562
+adapters/hubspot/lookup_test.go
+  s_9dab9ff7f2c580::t_66941d279f6e0c 297-332
+adapters/hubspot/sink.go
+  s_9dab9ff7f2c580::t_1eab8afb4e73b0 170-174,189,202-204,219,250,259-264,274-275,288,310-314
+adapters/hubspot/sink_test.go
+  s_9dab9ff7f2c580::t_a939d796afe48a 352,393-426
+docs/design/oss-outbound-engine-contracts.md
+  s_9dab9ff7f2c580::t_32842fae6fe9b6 618-619,746
+docs/design/oss-outbound-engine-tasks.md
+  s_9dab9ff7f2c580::t_0d428f3123185c 77
+docs/design/oss-outbound-engine.md
+  s_9dab9ff7f2c580::t_ab6d43c24dd90b 620
+internal/engine/hubspot_test.go
+  s_9dab9ff7f2c580::t_bdd1521b61b36d 252-285
+internal/engine/push.go
+  s_9dab9ff7f2c580::t_16862ccab4dc76 449-452,456-457
+internal/fakes/hubspot/fixtures_test.go
+  s_9dab9ff7f2c580::t_e61f4675dce4ab 65-71
+testdata/vendors/hubspot/README.md
+  s_9dab9ff7f2c580::t_11cbbc239eeac8 26
+testdata/vendors/hubspot/associations_batch_read/deals_companies.json
+  s_9dab9ff7f2c580::t_3110fc5db538ef 1-45
+testdata/vendors/hubspot/companies_batch_read/by_id.json
+  s_9dab9ff7f2c580::t_be0645135be4b5 1-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7d1abf1e760cb2f1ded5f358c559189e41d8c936",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
