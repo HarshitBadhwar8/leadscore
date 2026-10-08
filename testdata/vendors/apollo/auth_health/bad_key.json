@@ -1,6 +1,5 @@
 {
-  "provisional": true,
-  "note": "S0 confirms: 401 (or 403) for a bad key, sent in the X-Api-Key header",
+  "recorded_from": "The read-only live check (TestLiveApolloReadOnly, 2026-10-08): GET /v1/auth/health with a made-up key in X-Api-Key answered 200 with this body, not 401. AuthHealth reads is_logged_in false as a refused key (ErrKeyRefused). No rate-limit headers on this path.",
   "method": "GET",
   "path": "/v1/auth/health",
   "query": {},
@@ -10,12 +9,12 @@
     "X-Api-Key"
   ],
   "request_body": null,
-  "status": 401,
+  "status": 200,
   "response_headers": {
     "Content-Type": "application/json; charset=utf-8"
   },
   "response_body": {
-    "error": "Invalid access credentials.",
-    "error_code": "INVALID_API_KEY"
+    "healthy": true,
+    "is_logged_in": false
   }
 }

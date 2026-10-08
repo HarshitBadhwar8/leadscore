@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -91,35 +90,32 @@ func TestLiveApolloReadOnly(t *testing.T) {
 		}
 	})
 
-	// 3. The mailbox list: our mailbox is in it, and the reply's shape. The
-	// sink sends from a mailbox id; an address in APOLLO_MAILBOX_ID is
-	// reported, since the sink cannot use it.
+	// 3. The mailbox list: APOLLO_MAILBOX_ID (an id or the mailbox's
+	// address, as sinks.apollo.mailbox_id) resolves to a listed mailbox id.
 	mailbox := env["APOLLO_MAILBOX_ID"]
 	mailboxEmail := ""
 	if strings.Contains(mailbox, "@") {
 		mailboxEmail = mailbox
 	}
 	t.Run("email_accounts", func(t *testing.T) {
-		ids, err := c.EmailAccountIDs(ctx)
+		accounts, err := c.emailAccounts(ctx)
 		if err != nil {
-			t.Fatalf("EmailAccountIDs: %v", err)
+			t.Fatalf("the mailbox list: %v", err)
 		}
-		var m struct {
-			Accounts []map[string]any `json:"email_accounts"`
-		}
-		_ = json.Unmarshal(g.last(), &m)
-		byEmail := false
-		for _, a := range m.Accounts {
-			if a["id"] == mailbox {
-				mailboxEmail, _ = a["email"].(string)
-			}
-			if e, _ := a["email"].(string); strings.EqualFold(e, mailbox) {
-				byEmail = true
+		id, err := c.ResolveMailbox(ctx, mailbox) // an id: no call; an address: one more list call
+		listed := false
+		for _, a := range accounts {
+			if a.ID == id {
+				listed = true
+				if mailboxEmail == "" {
+					mailboxEmail = a.Email
+				}
 			}
 		}
-		t.Logf("EmailAccountIDs: %d mailboxes; listed by id: %v; listed by address: %v", len(ids), slices.Contains(ids, mailbox), byEmail)
-		if !slices.Contains(ids, mailbox) {
-			t.Errorf("APOLLO_MAILBOX_ID is not a listed mailbox id (it matches a mailbox's address: %v); the sink needs the id", byEmail)
+		t.Logf("%d mailboxes; APOLLO_MAILBOX_ID is an address: %v; resolves to a listed id: %v (err %v)",
+			len(accounts), strings.Contains(mailbox, "@"), listed, err)
+		if err != nil || !listed {
+			t.Errorf("APOLLO_MAILBOX_ID does not resolve to a listed mailbox: %v", err)
 		}
 		t.Logf("shape: %s", shapeOf(rawJSON(g.last())))
 	})
@@ -164,9 +160,9 @@ func TestLiveApolloReadOnly(t *testing.T) {
 		t.Logf("%s: err=%v records=%d pagination=%v range=%s", label, errShape(err), n, m["pagination"], completedRange(m))
 		return m
 	}
-	// The first live run showed emailerMessageDateRange (what Poll sends) is
-	// ignored: a min of tomorrow still returned old replies, while
-	// emailer_message_date_range with that min returned none.
+	// The first live run showed emailerMessageDateRange is ignored: a min of
+	// tomorrow still returned old replies, while emailer_message_date_range
+	// (what Poll now sends) with that min returned none.
 	since := func(min string) map[string]any {
 		return map[string]any{"emailer_message_date_range_mode": "completed_at",
 			"emailer_message_date_range": map[string]string{"min": min}}
@@ -181,22 +177,42 @@ func TestLiveApolloReadOnly(t *testing.T) {
 		t.Logf("message shape: %s", shapeOf(p1))
 		p2 := search(t, "replied, no date, page 2", map[string]any{"page": 2})
 		t.Logf("page 2 shares ids with page 1: %v", sharesIDs(p1, p2))
-		// The real Poller over the last 7 days.
+	})
+	// The real Poller: a 7-day window holds no more than a 400-day one, and
+	// every event before the window's day is filtered out by Apollo.
+	t.Run("poller", func(t *testing.T) {
 		p := &Poller{c: c, now: time.Now}
-		evs, err := p.Poll(ctx, now.Add(-7*24*time.Hour))
-		labelled, untimed, noContact := 0, 0, 0
-		for _, e := range evs {
-			if e.Attrs[AttrLabel] != "" {
-				labelled++
+		poll := func(days int) int {
+			since := now.Add(-time.Duration(days) * 24 * time.Hour)
+			evs, err := p.Poll(ctx, since)
+			if err != nil {
+				t.Fatalf("Poll(%d days): %v", days, err)
 			}
-			if e.Attrs[AttrNoReplyTime] != "" {
-				untimed++
+			labelled, untimed, noContact, early := 0, 0, 0, 0
+			for _, e := range evs {
+				if e.Attrs[AttrLabel] != "" {
+					labelled++
+				}
+				if e.Attrs[AttrNoReplyTime] != "" {
+					untimed++
+				}
+				if e.Attrs[AttrContactID] == "" {
+					noContact++
+				}
+				if e.At.Before(since.Truncate(24 * time.Hour)) {
+					early++
+				}
 			}
-			if e.Attrs[AttrContactID] == "" {
-				noContact++
+			t.Logf("Poll(%d days): %d events, %d labelled, %d without a time, %d without a contact id, %d sent before the window",
+				days, len(evs), labelled, untimed, noContact, early)
+			if early > 0 {
+				t.Errorf("Poll(%d days): %d events sent before the window", days, early)
 			}
+			return len(evs)
 		}
-		t.Logf("Poller.Poll(7 days): %d events, %d labelled, %d without a reply time, %d without a contact id, err=%v", len(evs), labelled, untimed, noContact, err)
+		if week, long := poll(7), poll(400); week > long {
+			t.Errorf("7 days gave %d events, 400 days %d", week, long)
+		}
 	})
 
 	// 6. A contact search by an address that is ours: the mailbox's own.

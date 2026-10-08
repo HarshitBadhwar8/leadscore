@@ -297,7 +297,7 @@ func TestPolledReplyWithNoTime(t *testing.T) {
 	if !ok || !e.At.Equal(now) || e.Attrs[AttrNoReplyTime] != "yes" || e.Attrs[AttrLabel] != "not_interested" {
 		t.Errorf("event %+v", e)
 	}
-	if e, _ := (polledMessage{ID: "m", ContactID: "c1", RepliedAt: "2026-09-30T08:00:00Z"}).event(now); e.Attrs[AttrNoReplyTime] != "" {
+	if e, _ := (polledMessage{ID: "m", ContactID: "c1", CompletedAt: "2026-09-30T08:00:00.000+00:00"}).event(now); e.Attrs[AttrNoReplyTime] != "" {
 		t.Errorf("a timed reply is marked: %+v", e)
 	}
 }

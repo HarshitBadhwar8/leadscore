@@ -114,3 +114,47 @@ func TestApolloSequences(t *testing.T) {
 		t.Errorf("doctor: problems %+v, want apollo-sequences:miss", ps)
 	}
 }
+
+// sinks.apollo.mailbox_id may be the mailbox's address. Doctor says which
+// mailbox id it resolves to (a warning row, never the address itself); a run
+// says nothing; an address no mailbox has fails as apollo-sequences:mailbox.
+func TestApolloSequencesMailboxAddress(t *testing.T) {
+	fake := fakeapollo.New("good-key")
+	fake.AddMailboxAddress("mailbox-7", "sales@acme.example")
+	fake.AddSequence("seq-1", "Founders")
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	r, err := rules.Compile([]byte("version: 1\nlanes:\n  - { id: a, kind: cold, when: { field: status, eq: new }, push: \"apollo:sequence/Founders\" }\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ck := apolloSequences{getenv: func(k string) string {
+		if k == "APOLLO_API_KEY" {
+			return "good-key"
+		}
+		return ""
+	}}
+	run := func(mailbox string, doctor bool) []Problem {
+		c := &config.Config{Sinks: map[string]api.Config{"apollo": {"base_url": srv.URL, "_http_client": srv.Client(), "mailbox_id": mailbox}}}
+		ps := ck.Run(context.Background(), Env{Config: c, Rubric: r, Doctor: doctor})
+		for _, p := range ps {
+			if strings.Contains(p.Message, "@") {
+				t.Errorf("%s: message carries an email: %q", p.Key, p.Message)
+			}
+		}
+		return ps
+	}
+	if ps := run("Sales@Acme.example", true); len(ps) != 1 || ps[0].Key != "apollo-sequences:mailbox_address" || !ps[0].Warning ||
+		!strings.Contains(ps[0].Message, `"mailbox-7"`) {
+		t.Errorf("doctor, a known address: %+v", ps)
+	}
+	if ps := run("sales@acme.example", false); len(ps) != 0 {
+		t.Errorf("a run, a known address: %+v", ps)
+	}
+	if ps := run("nobody@acme.example", false); len(ps) != 1 || ps[0].Key != "apollo-sequences:mailbox" || ps[0].Warning {
+		t.Errorf("an unknown address: %+v", ps)
+	}
+	if ps := run("mailbox-7", true); len(ps) != 0 {
+		t.Errorf("doctor, an id: %+v", ps)
+	}
+}

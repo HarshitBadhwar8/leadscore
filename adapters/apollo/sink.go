@@ -66,9 +66,10 @@ func SequenceName(dest string) (string, bool) {
 	return name, true
 }
 
-// MailboxID reads sinks.apollo.mailbox_id: the sending mailbox (an email
-// account id) enrollment sends from. It must be text; an unquoted id that
-// YAML read as a number is refused rather than guessed back into text.
+// MailboxID reads sinks.apollo.mailbox_id: the sending mailbox enrollment
+// sends from, as its id or its address (ResolveMailbox turns an address
+// into the id). It must be text; an unquoted id that YAML read as a number is
+// refused rather than guessed back into text.
 func MailboxID(cfg api.Config) (string, error) {
 	v, ok := cfg["mailbox_id"]
 	if !ok || v == nil {
@@ -89,10 +90,35 @@ func MailboxID(cfg api.Config) (string, error) {
 // the next one.
 type Sink struct {
 	c       *Client
-	mailbox string
+	mailbox string // mailbox_id as written: an id or an address
 
 	mu        sync.Mutex
 	sequences map[string]string // name -> id, for names resolved this run
+	mailboxID string            // the mailbox id, once resolved this run
+}
+
+// sendingMailbox is the mailbox id enrollment sends from, resolved once per run
+// (an address needs the mailbox list). An address no mailbox has is
+// ErrTransient: the step waits until mailbox_id is fixed, and the
+// apollo-sequences check says so.
+func (s *Sink) sendingMailbox(ctx context.Context) (string, error) {
+	s.mu.Lock()
+	id := s.mailboxID
+	s.mu.Unlock()
+	if id != "" {
+		return id, nil
+	}
+	id, err := s.c.ResolveMailbox(ctx, s.mailbox)
+	switch {
+	case errors.Is(err, ErrMailboxNotFound):
+		return "", fmt.Errorf("%w: %w", api.ErrTransient, err)
+	case err != nil:
+		return "", classify(err)
+	}
+	s.mu.Lock()
+	s.mailboxID = id
+	s.mu.Unlock()
+	return id, nil
 }
 
 // NewSink builds the sink from sinks.apollo: the key from APOLLO_API_KEY,
@@ -285,7 +311,11 @@ func (s *Sink) enroll(ctx context.Context, name, contactID string, lead api.Lead
 			}
 		}
 	}
-	reply, err := s.c.addToSequence(ctx, seqID, contactID, s.mailbox)
+	mailbox, err := s.sendingMailbox(ctx)
+	if err != nil {
+		return "", err
+	}
+	reply, err := s.c.addToSequence(ctx, seqID, contactID, mailbox)
 	var se *StatusError
 	inSequence := errors.As(err, &se) && se.Status >= 400 && se.Status < 500 && refusalOf(errorFields(se.Body())) == reasonInSequence
 	if err != nil && !inSequence {
@@ -487,22 +517,60 @@ func (c *Client) ResolveSequence(ctx context.Context, name string) (string, erro
 	return "", ErrSequenceAmbiguous
 }
 
-// EmailAccountIDs lists the ids of the team's sending mailboxes. Unconfirmed:
-// the call and that one page holds them all.
-func (c *Client) EmailAccountIDs(ctx context.Context) ([]string, error) {
+// emailAccount is a sending mailbox: its id and its address.
+type emailAccount struct {
+	ID    string `json:"id"`
+	Email string `json:"email"`
+}
+
+// emailAccounts lists the team's sending mailboxes. The live check
+// (2026-10-08) showed one reply holds them all, with no pagination record.
+func (c *Client) emailAccounts(ctx context.Context) ([]emailAccount, error) {
 	var reply struct {
-		Accounts []struct {
-			ID string `json:"id"`
-		} `json:"email_accounts"`
+		Accounts []emailAccount `json:"email_accounts"`
 	}
 	if err := c.Do(ctx, Request{Method: http.MethodGet, Path: emailAccountsPath}, &reply); err != nil {
 		return nil, err
 	}
-	ids := make([]string, 0, len(reply.Accounts))
-	for _, a := range reply.Accounts {
+	return reply.Accounts, nil
+}
+
+// EmailAccountIDs lists the ids of the team's sending mailboxes.
+func (c *Client) EmailAccountIDs(ctx context.Context) ([]string, error) {
+	accounts, err := c.emailAccounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(accounts))
+	for _, a := range accounts {
 		ids = append(ids, a.ID)
 	}
 	return ids, nil
+}
+
+// ErrMailboxNotFound is ResolveMailbox's answer when no mailbox of the team
+// has the address mailbox_id gives.
+var ErrMailboxNotFound = errors.New("apollo: no mailbox of this Apollo account has the address sinks.apollo.mailbox_id gives")
+
+// ResolveMailbox turns sinks.apollo.mailbox_id into the mailbox id
+// enrollment sends from. A value with no "@" is an id and is returned as
+// given, with no call. An address is looked up in the team's mailbox list
+// (matched case-insensitively on the mailbox's address); no match is
+// ErrMailboxNotFound.
+func (c *Client) ResolveMailbox(ctx context.Context, mailbox string) (string, error) {
+	if !strings.Contains(mailbox, "@") {
+		return mailbox, nil
+	}
+	accounts, err := c.emailAccounts(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, a := range accounts {
+		if a.ID != "" && strings.EqualFold(strings.TrimSpace(a.Email), mailbox) {
+			return a.ID, nil
+		}
+	}
+	return "", ErrMailboxNotFound
 }
 
 // apolloContact is what the enroll step reads of a contact.
@@ -656,9 +724,12 @@ func refusalOf(text string) string {
 }
 
 // errorFields is the text of an error reply's top-level error and error_code
-// fields: the only part of a body a refusal is read from, since the rest may
-// echo the contact back (an email like unsubscribe-me@..., a flag set false).
-// Apollo's error shape is unconfirmed.
+// fields and its error_details.code: the only part of a body a refusal is
+// read from, since the rest may echo the contact back (an email like
+// unsubscribe-me@..., a flag set false). The live check (2026-10-08) saw
+// Apollo's errors as {error} (422) and {error, error_details: {code, context,
+// message, suggestions}} (401); error_details' message, context and
+// suggestions are left out, as free text that could carry data.
 func errorFields(body []byte) string {
 	var reply map[string]any
 	if json.Unmarshal(body, &reply) != nil {
@@ -667,6 +738,11 @@ func errorFields(body []byte) string {
 	var parts []string
 	for _, k := range []string{"error", "error_code"} {
 		if v, ok := reply[k].(string); ok {
+			parts = append(parts, v)
+		}
+	}
+	if d, ok := reply["error_details"].(map[string]any); ok {
+		if v, ok := d["code"].(string); ok {
 			parts = append(parts, v)
 		}
 	}

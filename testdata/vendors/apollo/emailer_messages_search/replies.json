@@ -1,7 +1,5 @@
 {
-  "provisional": true,
-  "confirmed_from": "A live API test (record: Apollo transport spike, 2026-08-10): POST /v1/emailer_messages/search answers 200 (body encoding not recorded); emailer_message_stats [\"replied\"] is applied by Apollo (all 9 records returned had replied true); records carry contact_id, emailer_campaign_id, to_email, to_name, status, completed_at and reply_class (null on 6 of 9, person_referral on 3). Not confirmed: the date filter, replied_at, the pagination record.",
-  "note": "S0 confirms: the date filter by day on completed_at, replied_at, and the pagination record",
+  "recorded_from": "The read-only live check (TestLiveApolloReadOnly, 2026-10-08): the request body, status, header names and the reply's field names, types and nesting are as recorded; every value is made up. Seen live: no pagination record (pages end on a short page), no replied_at (completed_at is the send), contact_id null on some messages, to_email always set, reply_class null or one of willing_to_meet, person_referral, follow_up_question. The date filter key is emailer_message_date_range; emailerMessageDateRange is ignored. The first message has the full recorded field set; the second (a null contact_id) is cut to the fields that matter here.",
   "method": "POST",
   "path": "/api/v1/emailer_messages/search",
   "query": {},
@@ -16,7 +14,7 @@
       "replied"
     ],
     "emailer_message_date_range_mode": "completed_at",
-    "emailerMessageDateRange": {
+    "emailer_message_date_range": {
       "min": "2026-08-01"
     },
     "page": 1,
@@ -24,40 +22,133 @@
   },
   "status": 200,
   "response_headers": {
-    "Content-Type": "application/json; charset=utf-8"
+    "Content-Type": "application/json; charset=utf-8",
+    "X-Rate-Limit-Minute": "200",
+    "X-Rate-Limit-Hourly": "400",
+    "X-Rate-Limit-24-Hour": "2000",
+    "X-Minute-Requests-Left": "199",
+    "X-Hourly-Requests-Left": "399",
+    "X-24-Hour-Requests-Left": "1999",
+    "X-Minute-Usage": "1",
+    "X-Hourly-Usage": "1",
+    "X-24-Hour-Usage": "1"
   },
   "response_body": {
+    "breadcrumbs": [],
     "emailer_messages": [
       {
-        "id": "msg-0001",
+        "account_id": null,
+        "ai_variables_status": null,
+        "async_sending": false,
+        "attachment_ids": [],
+        "bcc_emails": [],
+        "block_sending_for_unhealthy_domain": false,
+        "body_text": "Hi Dana, ...",
+        "bounce": false,
+        "campaign_max_emails_per_day": null,
+        "campaign_name": "Qualified founders",
+        "campaign_position": 1,
+        "cc_emails": [],
+        "click_tracking_enabled": false,
+        "completed_at": "2026-09-02T09:00:00.000+00:00",
         "contact_id": "contact-0001",
+        "conversation_id": null,
+        "created_at": "2026-09-01T09:00:00.000+00:00",
+        "crm_id": null,
+        "demoed": null,
+        "domain_enforcement_action": "none",
+        "due_at": "2026-09-02T09:00:00.000+00:00",
+        "due_at_manually_changed": false,
+        "due_at_source": "schedule",
+        "email_account_id": "mailbox-0001",
         "emailer_campaign_id": "seq-0001",
-        "to_email": "dana.reyes@acme-robotics.example",
-        "to_name": "Dana Reyes",
-        "status": "completed",
+        "emailer_step_id": "step-0001",
+        "emailer_touch_id": "touch-0001",
+        "enable_tracking": false,
+        "failed_at": null,
+        "failure_reason": null,
+        "from_email": "outreach@leadscore-demo.example",
+        "from_name": "Leadscore Demo",
+        "id": "msg-0001",
+        "needs_dynamic_assemble": false,
+        "not_sent_reason": null,
+        "open_tracking_enabled": false,
+        "personalized_opener": null,
+        "provider_message_id": "<provider-0001@leadscore-demo.example>",
+        "provider_thread_id": "thread-0001",
+        "recipients": [
+          {
+            "contact_id": "contact-0001",
+            "email": "dana.reyes@acme-robotics.example",
+            "raw_name": "Dana Reyes",
+            "recipient_type_cd": "to",
+            "user_id": null
+          }
+        ],
         "replied": true,
         "reply_class": "willing_to_meet",
-        "completed_at": "2026-09-02T09:00:00.000+00:00",
-        "replied_at": "2026-09-03T14:30:00.000+00:00"
-      },
-      {
-        "id": "msg-0002",
-        "contact_id": "contact-0001",
-        "emailer_campaign_id": "seq-0001",
+        "schedule_delayed_limit_reason": null,
+        "schedule_delayed_reason": null,
+        "schedule_delayed_reason_details": null,
+        "send_from": {
+          "contact_id": null,
+          "email": "outreach@leadscore-demo.example",
+          "raw_name": "Leadscore Demo",
+          "recipient_type_cd": null,
+          "user_id": null
+        },
+        "send_from_info": "outreach@leadscore-demo.example",
+        "sensitive_info_redacted": null,
+        "spam_blocked": false,
+        "status": "completed",
+        "step_max_emails_per_day": null,
+        "subject": "Quick question",
+        "time_zone": null,
         "to_email": "dana.reyes@acme-robotics.example",
         "to_name": "Dana Reyes",
-        "status": "completed",
+        "tracking_disabled_reason": null,
+        "type": "email",
+        "user_id": "user-0001"
+      },
+      {
+        "account_id": null,
+        "completed_at": "2026-09-02T10:00:00.000+00:00",
+        "contact_id": null,
+        "created_at": "2026-09-01T10:00:00.000+00:00",
+        "due_at": "2026-09-02T10:00:00.000+00:00",
+        "email_account_id": "mailbox-0001",
+        "emailer_campaign_id": "seq-0001",
+        "failed_at": null,
+        "id": "msg-0002",
+        "recipients": [
+          {
+            "contact_id": null,
+            "email": "eli.park@acme-robotics.example",
+            "raw_name": "Eli Park",
+            "recipient_type_cd": "to",
+            "user_id": null
+          }
+        ],
         "replied": true,
         "reply_class": null,
-        "completed_at": "2026-09-02T09:00:00.000+00:00",
-        "replied_at": "2026-09-04T08:00:00.000+00:00"
+        "status": "completed",
+        "to_email": "eli.park@acme-robotics.example",
+        "to_name": "Eli Park",
+        "type": "email"
       }
     ],
-    "pagination": {
-      "page": 1,
-      "per_page": 100,
-      "total_entries": 2,
-      "total_pages": 1
-    }
+    "emailer_steps": [
+      {
+        "auto_skip_in_x_days": null,
+        "emailer_campaign_id": "seq-0001",
+        "exact_datetime": null,
+        "id": "step-0001",
+        "max_emails_per_day": null,
+        "position": 1,
+        "wait_mode": "day",
+        "wait_time": 0
+      }
+    ],
+    "num_fetch_result": null
   }
 }

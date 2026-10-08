@@ -2,6 +2,7 @@ package apollo
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -339,8 +340,10 @@ func TestAuthHealth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := bad.AuthHealth(context.Background()); !IsStatus(err, http.StatusUnauthorized) {
-		t.Errorf("a bad key: err = %v, want a 401", err)
+	// The live check saw a bad key answered 200 with is_logged_in false on
+	// this path, not 401: AuthHealth must still read it as a refused key.
+	if err := bad.AuthHealth(context.Background()); !errors.Is(err, ErrKeyRefused) || !KeyRefused(err) {
+		t.Errorf("a bad key: err = %v, want ErrKeyRefused", err)
 	}
 	for _, call := range fake.Calls() {
 		if call.Path != "/v1/auth/health" {
@@ -350,6 +353,27 @@ func TestAuthHealth(t *testing.T) {
 	fake.ServeAuth("not_logged_in")
 	if err := c.AuthHealth(context.Background()); !errors.Is(err, ErrKeyRefused) || !KeyRefused(err) {
 		t.Errorf("is_logged_in false: err = %v", err)
+	}
+}
+
+// Off the auth-health path a bad key is a 401 whose machine code is
+// error_details.code (live check 2026-10-08). The code is kept, in the log
+// detail and the refusal text; error_details' prose message is not.
+func TestBadKeyErrorShape(t *testing.T) {
+	c, _ := fakeClient(t)
+	bad, err := NewClientWithKey(api.Config{"base_url": c.baseURL, "_http_client": c.http}, "wrong")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = bad.Do(context.Background(), Request{Method: http.MethodGet, Path: emailAccountsPath}, nil)
+	var se *StatusError
+	if !KeyRefused(err) || !errors.As(err, &se) {
+		t.Fatalf("a bad key on the mailbox list: err = %v", err)
+	}
+	if fields := errorFields(se.Body()); !strings.Contains(se.Detail, "code=AUTH.AUTHENTICATION.API_KEY_INVALID") ||
+		strings.Contains(se.Detail, "not valid") || strings.Contains(fields, "not valid") ||
+		!strings.Contains(fields, "AUTH.AUTHENTICATION.API_KEY_INVALID") {
+		t.Errorf("a bad key on the mailbox list: detail %q, error fields %q", se.Detail, fields)
 	}
 }
 
@@ -470,9 +494,9 @@ func TestFundingStage(t *testing.T) {
 	}
 }
 
-// Every fixture has the full fixture shape and is marked provisional until a
-// real capture replaces it.
-func TestFixturesAreProvisionalAndComplete(t *testing.T) {
+// Every fixture has the full fixture shape and is either marked provisional
+// or names the real call its shape was recorded from, never both.
+func TestFixturesAreProvisionalOrRecordedAndComplete(t *testing.T) {
 	files, err := filepath.Glob(filepath.Join(fakeapollo.Dir(), "*", "*.json"))
 	if err != nil || len(files) == 0 {
 		t.Fatalf("no fixtures: %v", err)
@@ -484,12 +508,87 @@ func TestFixturesAreProvisionalAndComplete(t *testing.T) {
 			t.Errorf("%s: %v", rel, err)
 			continue
 		}
-		if !fx.Provisional || fx.Method == "" || fx.Path == "" || fx.Status == 0 || len(fx.ResponseBody) == 0 {
+		if fx.Provisional == (fx.RecordedFrom != "") || fx.Method == "" || fx.Path == "" || fx.Status == 0 || len(fx.ResponseBody) == 0 {
 			t.Errorf("%s: %+v", rel, fx)
 		}
 		raw, _ := os.ReadFile(f)
 		if strings.Contains(strings.ToLower(string(raw)), testKey) {
 			t.Errorf("%s holds a key", rel)
+		}
+	}
+}
+
+// The fixtures hold what the read-only live check (2026-10-08) recorded,
+// scrubbed: each fact here was seen live and differs from the earlier
+// guesses.
+func TestFixturesHoldTheRecordedShapes(t *testing.T) {
+	load := func(name string) (fakeapollo.Fixture, map[string]any) {
+		t.Helper()
+		fx, err := fakeapollo.Load(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body map[string]any
+		if err := json.Unmarshal(fx.ResponseBody, &body); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		return fx, body
+	}
+
+	// Replies: no pagination record, no replied_at, a null contact_id.
+	fx, body := load("emailer_messages_search/replies")
+	if _, has := body["pagination"]; has || fx.Provisional {
+		t.Errorf("replies: pagination or provisional left in: %v", fx.Provisional)
+	}
+	nullContact := false
+	for _, m := range body["emailer_messages"].([]any) {
+		rec := m.(map[string]any)
+		if _, has := rec["replied_at"]; has {
+			t.Errorf("replies: a message has replied_at")
+		}
+		if v, has := rec["contact_id"]; has && v == nil && rec["to_email"] != "" {
+			nullContact = true
+		}
+	}
+	if !nullContact {
+		t.Errorf("replies: no message with a null contact_id and a to_email")
+	}
+	var req map[string]any
+	_ = json.Unmarshal(fx.RequestBody, &req)
+	if _, ok := req["emailer_message_date_range"]; !ok || req["emailerMessageDateRange"] != nil {
+		t.Errorf("replies request = %v", req)
+	}
+
+	// A bad key on auth health: 200 with is_logged_in false.
+	if fx, body := load("auth_health/bad_key"); fx.Status != http.StatusOK || body["is_logged_in"] != false {
+		t.Errorf("auth_health/bad_key: %d %v", fx.Status, body)
+	}
+	// A bad key elsewhere: 401 with error_details.code.
+	if fx, body := load("email_accounts/bad_key"); fx.Status != http.StatusUnauthorized ||
+		body["error_details"].(map[string]any)["code"] != "AUTH.AUTHENTICATION.API_KEY_INVALID" {
+		t.Errorf("email_accounts/bad_key: %d %v", fx.Status, body)
+	}
+	// An unknown contact id: 422, not 404.
+	if fx, _ := load("contacts_get/not_found"); fx.Status != http.StatusUnprocessableEntity {
+		t.Errorf("contacts_get/not_found: %d", fx.Status)
+	}
+	// Rate limits: the real header names, 200 a minute, 400 an hour, 2,000 a day.
+	files, _ := filepath.Glob(filepath.Join(fakeapollo.Dir(), "*", "rate_limited.json"))
+	for _, f := range files {
+		rel, _ := filepath.Rel(fakeapollo.Dir(), f)
+		fx, _ := load(strings.TrimSuffix(filepath.ToSlash(rel), ".json"))
+		h := fx.ResponseHeaders
+		if h["X-Rate-Limit-Minute"] != "200" || h["X-Rate-Limit-Hourly"] != "400" || h["X-Rate-Limit-24-Hour"] != "2000" ||
+			h["X-Hourly-Requests-Left"] == "" || !strings.Contains(fx.Note, "429 body still unseen") {
+			t.Errorf("%s: headers %v, note %q", rel, h, fx.Note)
+		}
+	}
+	// Mailboxes: the recorded field names, the address at email.
+	_, body = load("email_accounts/list")
+	acct := body["email_accounts"].([]any)[0].(map[string]any)
+	for _, k := range []string{"id", "email", "aliases", "user_id", "active", "default", "type", "deliverability_score", "email_daily_threshold"} {
+		if _, ok := acct[k]; !ok {
+			t.Errorf("email_accounts/list: no %s", k)
 		}
 	}
 }

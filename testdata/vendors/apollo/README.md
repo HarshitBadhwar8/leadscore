@@ -1,6 +1,7 @@
-# Provisional Apollo fixtures
+# Apollo fixtures
 
-These files are **provisional**. They are built from earlier working code's
+Most of these files are **provisional** (a few are recorded; see "Recorded
+shapes" below). They are built from earlier working code's
 Apollo client tests and Apollo's public API docs, with made-up companies and example
 domains, not from S0's real captures. Each file carries `"provisional": true`;
 a shape taken from the docs because a real reply cannot be had safely (the
@@ -23,8 +24,23 @@ depends on an S0 answer says "S0 confirms" next to it.
 | `contacts_search` (`POST /api/v1/contacts/search`, the opt-out lookup) | `found`, `opted_out`, `rate_limited` |
 | `emailer_campaigns_search` (`POST /api/v1/emailer_campaigns/search`, sequence names) | `found`, `rate_limited`, `forbidden` |
 | `emailer_campaigns_add_contact_ids` (`POST /api/v1/emailer_campaigns/<id>/add_contact_ids`, the enroll step) | `added`, `skipped_other_sequence`, `skipped_unsubscribed`, `skipped_invalid_email`, `rate_limited`, `server_error`, `forbidden`, `bad_request`, `already_in_sequence` |
-| `email_accounts` (`GET /api/v1/email_accounts`, the apollo-sequences check) | `list` |
+| `email_accounts` (`GET /api/v1/email_accounts`, the apollo-sequences check and an address in `mailbox_id`) | `list`, `bad_key` (the 401 every outreach call gets with a wrong key) |
 | `emailer_messages_search` (`POST /api/v1/emailer_messages/search`, reply polling) | `replies`, `rate_limited` |
+
+## Recorded shapes
+
+The read-only live check (`adapters/apollo/live_test.go`, 2026-10-08) ran
+against a real account. Files whose shape now matches it carry
+`recorded_from` (naming what was recorded) instead of `provisional`: real
+field names, types, nesting, status and header names; every value made up.
+They are `auth_health/bad_key` and `not_logged_in` (a bad key gets 200 with
+`is_logged_in: false` there), `email_accounts/list` and `bad_key` (a 401 with
+`error_details.code`), `contacts_get/not_found` (422, not 404) and
+`emailer_messages_search/replies` (no `pagination`, no `replied_at`, a null
+`contact_id`, the `emailer_message_date_range` filter). The `rate_limited`
+files carry the recorded rate-limit header names and limits (200 a minute,
+400 an hour, 2,000 a day); no 429 was provoked, so their bodies stay
+provisional. Raw replies are never saved in the repo.
 
 ## What is already confirmed
 
@@ -47,7 +63,7 @@ nothing it holds is a saved response:
 Everything else below is still unconfirmed.
 
 A `note` field says what S0 must confirm about a file. Assumptions taken from
-Apollo's docs rather than seen: 401 (or 403) for a bad key, and what an
+Apollo's docs rather than seen: 403 for a key without master scope, and what an
 unknown domain gets back (a 200
 with no organization is not-found; a 404 is treated as a failure until S0 says
 otherwise).
@@ -59,7 +75,5 @@ returning the existing contact,
 `contact_campaign_statuses` on a contact, the `skipped_contact_ids` shape and
 its reasons, whether adding a contact already in the sequence is a no-op, the
 opt-out flag's name (`email_unsubscribed`) and that the contact search costs
-no credits, the reply time field (`replied_at`) and the filter by sent date, the
-`pagination` record (`page`,
-`total_pages`), the contact search's `q_keywords` filter, and that a key
+no credits, the contact search's `q_keywords` filter, and that a key
 without master scope gets 401 or 403 on the sequence calls.

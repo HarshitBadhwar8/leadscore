@@ -186,9 +186,9 @@ func TestOptOutsCSVOnly(t *testing.T) {
 func TestPolling(t *testing.T) {
 	in := newInstall(t, "sqlite", variant{vendor: true, polling: true})
 	in.apollo.AddReply(fakeapollo.Reply{MessageID: "m-tom", Email: tom, Label: "willing_to_meet",
-		SentAt: t1.Add(-48 * time.Hour), RepliedAt: t1.Add(-24 * time.Hour)})
+		SentAt: t1.Add(-48 * time.Hour)})
 	in.apollo.AddReply(fakeapollo.Reply{MessageID: "m-ines", Email: ines, Label: "unsubscribe",
-		SentAt: t1.Add(-72 * time.Hour), RepliedAt: t1.Add(-24 * time.Hour)})
+		SentAt: t1.Add(-72 * time.Hour)})
 	in.receive(t0, replyBody("replied_positive", sam))
 
 	in.run(t1)

@@ -26,7 +26,7 @@ var outreachFixtures = []string{
 	"emailer_campaigns_add_contact_ids/skipped_unsubscribed", "emailer_campaigns_add_contact_ids/skipped_invalid_email",
 	"emailer_campaigns_add_contact_ids/rate_limited", "emailer_campaigns_add_contact_ids/server_error",
 	"emailer_campaigns_add_contact_ids/forbidden", "emailer_campaigns_add_contact_ids/bad_request", "emailer_campaigns_add_contact_ids/already_in_sequence",
-	"email_accounts/list",
+	"email_accounts/list", "email_accounts/bad_key",
 	"emailer_messages_search/replies", "emailer_messages_search/rate_limited",
 }
 
@@ -49,11 +49,13 @@ type Contact struct {
 	Sequences    map[string]string // sequence id -> status (active, paused, finished)
 }
 
-// Reply is a replied sequence email the message search returns.
+// Reply is a replied sequence email the message search returns. Apollo gives
+// no reply time, only the send's (completed_at); ContactID empty is a null
+// contact_id, as some live messages have.
 type Reply struct {
 	MessageID, ContactID, Email string
 	Label                       string // empty: no label yet
-	SentAt, RepliedAt           time.Time
+	SentAt                      time.Time
 }
 
 type outreach struct {
@@ -61,7 +63,7 @@ type outreach struct {
 	byEmail   map[string]string   // lowercased email -> id
 	nextID    int
 	sequences [][2]string // id, name, in the order added
-	mailboxes []string
+	mailboxes [][2]string // id, address
 	replies   []Reply
 	pageSize  int            // overrides the per_page asked, when set
 	created   map[string]int // sinktest step -> objects created
@@ -79,11 +81,17 @@ func (s *Server) AddSequence(id, name string) {
 	s.out.sequences = append(s.out.sequences, [2]string{id, name})
 }
 
-// AddMailbox makes the fake hold a sending mailbox (email account).
+// AddMailbox makes the fake hold a sending mailbox (email account), with the
+// address <id>@leadscore-demo.example.
 func (s *Server) AddMailbox(id string) {
+	s.AddMailboxAddress(id, id+"@leadscore-demo.example")
+}
+
+// AddMailboxAddress makes the fake hold a sending mailbox with this address.
+func (s *Server) AddMailboxAddress(id, address string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.out.mailboxes = append(s.out.mailboxes, id)
+	s.out.mailboxes = append(s.out.mailboxes, [2]string{id, address})
 }
 
 // AddContact puts a contact in the fake as if the team already had it. It is
@@ -281,9 +289,9 @@ func (s *Server) answerOutreach(call string, r *http.Request, raw []byte) (Fixtu
 		f := s.fixtures["email_accounts/list"]
 		tmpl := firstRecord(f.ResponseBody, "email_accounts")
 		var list []any
-		for _, id := range o.mailboxes {
+		for _, mb := range o.mailboxes {
 			rec := clone(tmpl)
-			rec["id"] = id
+			rec["id"], rec["email"], rec["aliases"] = mb[0], mb[1], []any{mb[1]}
 			list = append(list, rec)
 		}
 		return f, mustJSON(map[string]any{"email_accounts": nonNil(list)})
@@ -328,7 +336,7 @@ func (s *Server) addToSequence(r *http.Request, body map[string]any) (Fixture, [
 	}
 	mailboxOK := false
 	for _, m := range o.mailboxes {
-		mailboxOK = mailboxOK || m == str(body["send_email_from_email_account_id"])
+		mailboxOK = mailboxOK || m[0] == str(body["send_email_from_email_account_id"])
 	}
 	if !mailboxOK {
 		return Fixture{Status: http.StatusUnprocessableEntity}, []byte(`{"error":"Email account not found"}`)
@@ -391,45 +399,62 @@ func (s *Server) skipBody(fixtureCase, contactID string) []byte {
 	return mustJSON(saved)
 }
 
-// searchMessages answers the replied-email search from its JSON body. Only
-// the replied filter is served; a search without it, or without a day to
-// start from, is refused as Apollo would refuse a bad filter.
+// searchMessages answers the replied-email search from its JSON body, as the
+// live check saw Apollo do: the date filter is emailer_message_date_range's
+// min day on the send (completed_at), and any other key for it (the camelCase
+// emailerMessageDateRange) is ignored, so every reply comes back; the reply
+// has no pagination record; a message has no reply time. Only the replied
+// filter is served. SetPageSize does not apply: with no total_pages, a short
+// page is the end, so the fake keeps the per_page asked.
 func (s *Server) searchMessages(body map[string]any) (Fixture, []byte) {
 	o := s.out
 	stats, _ := body["emailer_message_stats"].([]any)
-	if len(stats) != 1 || stats[0] != "replied" || str(body["emailer_message_date_range_mode"]) != "completed_at" {
-		return Fixture{Status: http.StatusUnprocessableEntity}, []byte(`{"error":"the fake serves only the replied filter on completed_at"}`)
+	if len(stats) != 1 || stats[0] != "replied" {
+		return Fixture{Status: http.StatusUnprocessableEntity}, []byte(`{"error":"the fake serves only the replied filter"}`)
 	}
-	rng, _ := body["emailerMessageDateRange"].(map[string]any)
-	min, err := time.Parse(time.DateOnly, str(rng["min"]))
-	if err != nil {
-		return Fixture{Status: http.StatusUnprocessableEntity}, []byte(`{"error":"bad date range"}`)
+	var start time.Time
+	if rng, ok := body["emailer_message_date_range"].(map[string]any); ok {
+		if str(body["emailer_message_date_range_mode"]) != "completed_at" {
+			return Fixture{Status: http.StatusUnprocessableEntity}, []byte(`{"error":"the fake serves only the date filter on completed_at"}`)
+		}
+		var err error
+		if start, err = time.Parse(time.DateOnly, str(rng["min"])); err != nil {
+			return Fixture{Status: http.StatusUnprocessableEntity}, []byte(`{"error":"bad date range"}`)
+		}
 	}
 	var hits []Reply
 	for _, rp := range o.replies {
-		if !rp.SentAt.Before(min) {
+		if !rp.SentAt.Before(start) {
 			hits = append(hits, rp)
 		}
 	}
-	from, to, pg := o.page(len(hits), num(body["page"]), num(body["per_page"]))
+	per := num(body["per_page"])
+	if per <= 0 {
+		per = 25
+	}
+	page := max(num(body["page"]), 1)
+	from, to := min(len(hits), (page-1)*per), min(len(hits), page*per)
 	f := s.fixtures["emailer_messages_search/replies"]
 	tmpl := firstRecord(f.ResponseBody, "emailer_messages")
 	var list []any
 	for _, rp := range hits[from:to] {
 		rec := clone(tmpl)
-		rec["id"], rec["contact_id"], rec["to_email"] = rp.MessageID, rp.ContactID, rp.Email
+		rec["id"], rec["to_email"] = rp.MessageID, rp.Email
+		rec["contact_id"] = nil
+		if rp.ContactID != "" {
+			rec["contact_id"] = rp.ContactID
+		}
 		rec["reply_class"] = nil
 		if rp.Label != "" {
 			rec["reply_class"] = rp.Label
 		}
 		rec["completed_at"] = rp.SentAt.UTC().Format("2006-01-02T15:04:05.000+00:00")
-		delete(rec, "replied_at")
-		if !rp.RepliedAt.IsZero() {
-			rec["replied_at"] = rp.RepliedAt.UTC().Format("2006-01-02T15:04:05.000+00:00")
-		}
 		list = append(list, rec)
 	}
-	return f, mustJSON(map[string]any{"emailer_messages": nonNil(list), "pagination": pg})
+	var saved map[string]any
+	_ = json.Unmarshal(f.ResponseBody, &saved)
+	saved["emailer_messages"] = nonNil(list)
+	return f, mustJSON(saved)
 }
 
 // renderContact is the contact in the fixtures' shape.

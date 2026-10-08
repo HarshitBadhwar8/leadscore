@@ -48,7 +48,7 @@ func TestALaterLabelIsANewEvent(t *testing.T) {
 	f, cfg := fake(t)
 	sent := time.Date(2026, 9, 2, 9, 0, 0, 0, time.UTC)
 	f.AddReply(fakeapollo.Reply{MessageID: "msg-1", ContactID: "contact-1", Email: "dana@acme-robotics.example",
-		SentAt: sent, RepliedAt: sent.Add(time.Hour)})
+		SentAt: sent})
 	p, err := apollo.NewPoller(cfg)
 	if err != nil {
 		t.Fatal(err)

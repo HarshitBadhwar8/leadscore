@@ -1,11 +1,8 @@
 {
-  "provisional": true,
-  "note": "Not called live (enrichment spends credits). The 401 body is the one the read-only live check recorded on GET /api/v1/email_accounts with a bad key (email_accounts/bad_key), assumed the same on this path.",
+  "recorded_from": "The read-only live check (TestLiveApolloReadOnly, 2026-10-08): GET /api/v1/email_accounts with a made-up key answered 401 with this body, Apollo's own text. The machine code is error_details.code; message, context and suggestions are prose and links. The fake answers this to every outreach call with a wrong key.",
   "method": "GET",
-  "path": "/api/v1/organizations/enrich",
-  "query": {
-    "domain": "acme-robotics.example"
-  },
+  "path": "/api/v1/email_accounts",
+  "query": {},
   "request_headers": [
     "Accept",
     "Cache-Control",

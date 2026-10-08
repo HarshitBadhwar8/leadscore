@@ -16,7 +16,8 @@ func init() { Register(apolloSequences{getenv: os.Getenv}) }
 
 // apolloSequences is the `apollo-sequences` check: for
 // an install with lanes pushing to Apollo, sinks.apollo.mailbox_id must be
-// one of the team's sending mailboxes (apollo-sequences:mailbox), and every
+// one of the team's sending mailboxes, by id or by address (apollo-sequences:mailbox;
+// doctor shows the id an address resolves to as apollo-sequences:mailbox_address), and every
 // such lane must name one sequence that exists, by its exact name
 // (apollo-sequences:<lane id>). A lane whose name does not resolve waits
 // (the sink returns ErrTransient), so this check is what tells the team.
@@ -64,10 +65,28 @@ func (a apolloSequences) Run(ctx context.Context, env Env) []Problem {
 
 	var out []Problem
 	mailbox, err := apollo.MailboxID(block)
-	if err != nil {
+	switch {
+	case err != nil:
 		out = append(out, Problem{Key: "apollo-sequences:mailbox", Message: err.Error(),
-			Fix: "set sinks.apollo.mailbox_id to the id of the mailbox sequences send from (quoted)"})
-	} else {
+			Fix: "set sinks.apollo.mailbox_id to the id or the address of the mailbox sequences send from (quoted)"})
+	case strings.Contains(mailbox, "@"):
+		// An address: resolved to its mailbox id as the sink does. The
+		// address is not repeated in the message (logs carry ids, not emails).
+		id, err := c.ResolveMailbox(ctx, mailbox)
+		switch {
+		case errors.Is(err, apollo.ErrMailboxNotFound):
+			out = append(out, Problem{Key: "apollo-sequences:mailbox",
+				Message: "sinks.apollo.mailbox_id is an address no mailbox of this Apollo account has, so no enrollment can send",
+				Fix:     "check sinks.apollo.mailbox_id against Apollo's email accounts, or give the mailbox's id"})
+		case err != nil:
+			return unreachable(err)
+		case env.Doctor:
+			// Doctor says which mailbox the address resolved to; a run stays quiet.
+			out = append(out, Problem{Key: "apollo-sequences:mailbox_address", Warning: true,
+				Message: fmt.Sprintf("sinks.apollo.mailbox_id is an address; it resolves to the mailbox id %q", id),
+				Fix:     "nothing; or set mailbox_id to that id to skip the lookup"})
+		}
+	default:
 		ids, err := c.EmailAccountIDs(ctx)
 		if err != nil {
 			return unreachable(err)
