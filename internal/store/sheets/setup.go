@@ -65,7 +65,7 @@ var headerNotes = map[string]map[string]string{
 		"note": "Why, in your words. The leadscore commands write the request time here for retry and resubscribe rows.",
 	},
 	model.TableCompanies: {
-		"domain": "The company's website domain, like acme.com. Add any other columns as facts " +
+		"domain": "The company's website domain, like acme.example. Add any other columns as facts " +
 			"(name, employees, funding stage, region): values here win over enrichment.",
 	},
 }

@@ -83,7 +83,7 @@ func (c *Client) ReceiverService(ctx context.Context, project, region string) (*
 type Job struct {
 	TaskTimeout time.Duration
 	// MaxRetries is nil when the job does not say, which leaves Cloud Run's
-	// default (3). S0 confirms: an unset maxRetries means retries.
+	// default (3). Unconfirmed: that an unset maxRetries means retries.
 	MaxRetries *int
 	Account    string               // the service account it runs as
 	SecretEnv  map[string]SecretRef // variables filled from secrets
@@ -148,7 +148,7 @@ type SchedulerJob struct {
 }
 
 // Schedule reads the scheduler job (Cloud Scheduler API v1), in the Cloud Run
-// region (S0 confirms Cloud Scheduler is offered there).
+// region (unconfirmed that Cloud Scheduler is offered there).
 func (c *Client) Schedule(ctx context.Context, project, region string) (*SchedulerJob, error) {
 	var out struct {
 		Schedule   string `json:"schedule"`

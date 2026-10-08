@@ -48,7 +48,7 @@ func NewPoller(cfg api.Config) (api.Poller, error) {
 // this sends JSON, as the other searches do) and showed
 // that the replied filter is applied by Apollo (every record it returned had
 // replied true), that the label field is reply_class (null on most replies),
-// and that each message carries to_email. S0 confirms: the date filter by day
+// and that each message carries to_email. Unconfirmed: the date filter by day
 // on completed_at, and the reply time's field (replied_at, else the send's
 // completed_at).
 func (p *Poller) Poll(ctx context.Context, since time.Time) ([]api.Event, error) {

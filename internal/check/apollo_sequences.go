@@ -51,7 +51,7 @@ func (a apolloSequences) Run(ctx context.Context, env Env) []Problem {
 	}
 	unreachable := func(err error) []Problem {
 		if apollo.KeyRefused(err) {
-			// S0 confirms: sequences and mailboxes need a master key, and
+			// Unconfirmed: sequences and mailboxes need a master key, and
 			// Apollo answers 401 or 403 to any other.
 			return []Problem{{Key: "apollo-sequences:key",
 				Message: "Apollo refused the key for sequences and mailboxes, so nothing can be enrolled: " + err.Error(),

@@ -50,7 +50,7 @@ func TestApolloKey(t *testing.T) {
 		{"a good key", enrichOnly(), "good-key", map[string]bool{}},
 		{"a bad key", enrichOnly(), "wrong", map[string]bool{"apollo-key:auth": false}},
 		{"no key: the secrets check reports it", enrichOnly(), "", map[string]bool{}},
-		// S0 confirms whether Apollo has an opt-out flag; until then the
+		// Whether Apollo has an opt-out flag is unconfirmed; until then the
 		// safe default warns teams that send only through Apollo.
 		{"Apollo-only team", apolloSink(false), "good-key", map[string]bool{"apollo-key:no_optout_flag": true}},
 		{"Apollo with HubSpot", apolloSink(true), "good-key", map[string]bool{}},

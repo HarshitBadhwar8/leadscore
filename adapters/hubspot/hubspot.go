@@ -14,7 +14,7 @@
 // Request and answer shapes are provisional: they come from HubSpot's public
 // API documentation and earlier working code, not from recorded calls. Every
 // behaviour that rests on an answer still to be checked is marked
-// "S0 confirms".
+// "unconfirmed".
 package hubspot
 
 import (
@@ -211,8 +211,8 @@ func readPipelines(ctx context.Context, s settings) (*pipelines, error) {
 
 // classify3 reads a stage's metadata: not closed is open; closed with
 // probability 1 is won; any other closed stage is lost. Metadata it cannot
-// read counts as open, which holds the company: the safe direction. S0
-// confirms the metadata keys (isClosed, probability) and their text values.
+// read counts as open, which holds the company: the safe direction.
+// Unconfirmed: the metadata keys (isClosed, probability) and their text values.
 func classify3(isClosed, probability string) stageClass {
 	if !strings.EqualFold(strings.TrimSpace(isClosed), "true") {
 		return classOpen

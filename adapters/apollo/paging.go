@@ -2,7 +2,7 @@ package apollo
 
 import "fmt"
 
-// pagination is a search reply's paging record. S0 confirms the shape (page
+// pagination is a search reply's paging record. The shape is unconfirmed (page
 // and total_pages under "pagination").
 type pagination struct {
 	Page       int `json:"page"`

@@ -129,7 +129,7 @@ func TestUnsubscribeByHubSpotBlocksTheNextPush(t *testing.T) {
 }
 
 // An Apollo contact carrying the opt-out flag blocks the next push, through
-// the Apollo contact lookup (registered only when S0 confirms the flag; it is
+// the Apollo contact lookup (registered only once the flag is confirmed; it is
 // forced on here).
 func TestUnsubscribeByApolloLookupBlocksTheNextPush(t *testing.T) {
 	w := twoLeads(t)

@@ -14,8 +14,8 @@ import (
 )
 
 // goldenDir holds one stored body per file (testdata/events/README.md). They
-// are provisional: built from earlier working code's test bodies until S0's
-// real captures land.
+// are provisional: built from earlier working code's test bodies until real
+// captured calls replace them.
 const goldenDir = "../../testdata/events"
 
 var goldenReceived = time.Date(2026, 8, 23, 7, 0, 0, 0, time.UTC)
@@ -110,7 +110,7 @@ func TestGoldenBodies(t *testing.T) {
 			}
 			var probe map[string]any
 			if json.Unmarshal(body, &probe) != nil || probe["provisional"] != true {
-				t.Error(`a body not from S0's captures must carry "provisional": true`)
+				t.Error(`a body not from a real capture must carry "provisional": true`)
 			}
 			kind := apollo.KindReply
 			if strings.HasPrefix(name, "apollo_visit_") {

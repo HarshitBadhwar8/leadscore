@@ -40,7 +40,7 @@ type websiteVisit struct {
 		WebsiteURL string `json:"website_url"`
 		Name       string `json:"name"`
 	} `json:"account"`
-	VisitedAt string `json:"visited_at"` // RFC 3339 (S0 confirms the format)
+	VisitedAt string `json:"visited_at"` // RFC 3339 (format unconfirmed)
 }
 
 func parseVisit(body []byte) (websiteVisit, error) {
@@ -122,7 +122,7 @@ func (v websiteVisit) identifiable() bool {
 }
 
 // visitedAt is the vendor's visit time, and whether it was usable (that the
-// workflow can send a per-visit time: S0 confirms). With no usable time the
+// workflow can send a per-visit time: unconfirmed). With no usable time the
 // visit is recorded at its received time and keyed by person, page and
 // received day, like any event with no vendor time.
 func (v websiteVisit) visitedAt() (time.Time, bool) {

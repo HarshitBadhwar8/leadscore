@@ -4,17 +4,17 @@
 //
 // Its answers follow the provisional fixtures in testdata/vendors/hubspot
 // (taken from HubSpot's public API documentation and earlier working code,
-// not recorded calls; S0 replaces or confirms them). Error answers are the
-// fixtures' bodies, served as recorded; a test checks every fixture against
-// the fake.
+// not recorded calls; real captures will replace or confirm them). Error
+// answers are the fixtures' bodies, served as recorded; a test checks every
+// fixture against the fake.
 //
 // Search can lag, as HubSpot's search index does (SetLag): a record created
 // while lag is on is missing from search, but not from reads by id or from
 // association reads, until Index. (That reads by id and association reads
-// do not lag is itself an S0 question; the fake assumes it.) A contact can
+// do not lag is itself unconfirmed; the fake assumes it.) A contact can
 // be merged into another (Merge): reads of the old id answer with the
 // survivor. A read by email also matches `hs_additional_emails` (a
-// provisional assumption S0 confirms either way; the adapter copes with
+// provisional assumption, unconfirmed either way; the adapter copes with
 // both). Calls can be made to fail before the
 // portal acts (Fail, FailNext) or after it created a record (FailAfter).
 package hubspot
@@ -164,7 +164,7 @@ func fixtureDir() string {
 	return filepath.Join(filepath.Dir(file), "..", "..", "..", "testdata", "vendors", "hubspot")
 }
 
-// Fixture is one recorded (or, until S0, provisional) call.
+// Fixture is one recorded (or, until one is recorded, provisional) call.
 type Fixture struct {
 	Method         string          `json:"method"`
 	Path           string          `json:"path"`

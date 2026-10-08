@@ -15,7 +15,7 @@ import (
 func init() { api.RegisterEnricher("apollo", NewEnricher) }
 
 // organizationEnrichPath is Apollo's company lookup by domain: one domain per
-// call, one credit per call (S0 confirms the credit cost).
+// call, one credit per call (the credit cost is unconfirmed).
 const organizationEnrichPath = "/api/v1/organizations/enrich"
 
 // FactLatestFundingAt is the Extra fact the enricher writes: the date of the
@@ -46,7 +46,7 @@ type Organization struct {
 
 // EnrichOrganization looks one company up by domain, with the retrying call.
 // A 200 carrying no organization is ErrNotFound, which must not overwrite good
-// facts with blanks. S0 confirms: does Apollo also answer 404 for an unknown
+// facts with blanks. Unconfirmed: does Apollo also answer 404 for an unknown
 // domain? Until then a 404 is an ordinary failure (the path could be wrong),
 // so it never marks a company not-found for a whole max age.
 //

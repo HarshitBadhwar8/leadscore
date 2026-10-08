@@ -9,8 +9,9 @@ import (
 	"testing"
 )
 
-// The root godoc carries C1's field-level notes: the root aliases have no
-// fields of their own in godoc, so the alias comment is all a reader sees.
+// The root godoc carries the public API's field-level notes: the root
+// aliases have no fields of their own in godoc, so the alias comment is all a
+// reader sees.
 func TestRootGodocCarriesFieldNotes(t *testing.T) {
 	f, err := parser.ParseFile(token.NewFileSet(), "leadscore.go", nil, parser.ParseComments)
 	if err != nil {
@@ -70,7 +71,7 @@ func TestContractsSuiteBlockUsesAPINames(t *testing.T) {
 		"same types as `leadscore.X`",
 	} {
 		if !strings.Contains(s, want) {
-			t.Errorf("contracts C1 conformance block must contain %q", want)
+			t.Errorf("the contracts doc's conformance block must contain %q", want)
 		}
 	}
 }
