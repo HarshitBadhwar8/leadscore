@@ -12,11 +12,12 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 )
 
-// The built-in alias table names built-in fields only. A team's own fields
-// live in its private rubric, so none of them may be the target of a built-in
-// spelling: that would mean the table had picked up a private field. The
-// check reads the rubric in LEADSCORE_PARITY_DIR (see parity_test.go) and is
-// skipped when that is not set. It names no fields itself.
+// The built-in alias table names built-in fields only. A user's own fields
+// live in the rubric they bring to the parity harness, so none of them may be
+// the target of a built-in spelling: that would mean the table had picked up
+// a field from outside the repo. The check reads the rubric in
+// LEADSCORE_PARITY_DIR (see parity_test.go) and is skipped when that is not
+// set. It names no fields itself.
 func TestBuiltinAliasesNameNoPrivateField(t *testing.T) {
 	dir := os.Getenv("LEADSCORE_PARITY_DIR")
 	if dir == "" {
@@ -28,7 +29,7 @@ func TestBuiltinAliasesNameNoPrivateField(t *testing.T) {
 	}
 	r, err := Compile(src)
 	if err != nil {
-		// Only a count: the error text quotes the private rubric.
+		// Only a count: the error text quotes the rubric.
 		var errs LoadErrors
 		if errors.As(err, &errs) {
 			t.Fatalf("rubric.yml does not compile (%d errors)", len(errs))

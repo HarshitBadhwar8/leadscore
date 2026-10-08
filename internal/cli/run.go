@@ -47,18 +47,27 @@ func runRun(inv *invocation) int {
 	return exitOK
 }
 
-// openStore loads leadscore.yml and opens its store, for the read-only
-// commands. closeStore must be called.
+// errNoStore is openStore's error when the SQLite file does not exist yet.
+var errNoStore = errors.New("no run has finished yet; run `leadscore run` first")
+
+// openStore loads leadscore.yml and opens its store for the read-only
+// commands (status, ranked, explain, facts). Like doctor, it never creates or
+// changes the store: a missing SQLite file is errNoStore, and an existing one
+// is opened in SQLite's read-only mode. closeStore must be called.
 func openStore(inv *invocation) (c *config.Config, b api.Backend, closeStore func(), err error) {
 	c, err = config.Load(inv.configOptions())
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	addTestClients(c)
 	open, ok := api.BackendFactory(c.Store.Type)
 	if !ok {
 		return nil, nil, nil, fmt.Errorf("store type %q is not registered", c.Store.Type)
 	}
-	b, _, err = open(c.Store.Block)
+	if c.Store.Type == "sqlite" && !fileExists(c.Store.Path) {
+		return nil, nil, nil, fmt.Errorf("%w (there is no SQLite file at %s)", errNoStore, c.Store.Path)
+	}
+	b, _, err = openReadOnly(c, open)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("opening the store: %w", err)
 	}
@@ -75,6 +84,11 @@ var healthResults = []string{"last_result", "last_run_at", "last_success_at", "r
 // runStatus prints the Health table: the last result, then open problems.
 func runStatus(inv *invocation) int {
 	_, b, closeStore, err := openStore(inv)
+	if errors.Is(err, errNoStore) {
+		// Not an error for status: it is the state it reports.
+		fmt.Fprintln(inv.stdout, err.Error())
+		return exitOK
+	}
 	if err != nil {
 		return inv.fail(err)
 	}
@@ -95,7 +109,7 @@ func runStatus(inv *invocation) int {
 		}
 	}
 	if len(results) == 0 && len(probs) == 0 {
-		fmt.Fprintln(inv.stdout, "no run has finished yet")
+		fmt.Fprintln(inv.stdout, errNoStore.Error())
 		return exitOK
 	}
 	tw := tabwriter.NewWriter(inv.stdout, 0, 2, 2, ' ', 0)

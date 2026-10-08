@@ -338,7 +338,7 @@ func TestGCPScript(t *testing.T) {
 		e := newGCPEnv(t, cli, gcpYAML+"hosting: { project: p, region: asia-south1, run_account: leadscore-run, receiver_account: leadscore-receiver }\n")
 		e.touch("version-leadscore-config")
 		e.touch("version-leadscore-config-version")
-		const img = "asia-south1-docker.pkg.dev/leadscore-dev/leadscore/leadscore:abc123"
+		const img = "asia-south1-docker.pkg.dev/example-project/leadscore/leadscore:abc123"
 		calls, _ := e.mustRun("deploy", img)
 		noCall(t, calls, "artifacts repositories")
 		wantCall(t, calls, "run jobs deploy leadscore-run", "--image "+img)

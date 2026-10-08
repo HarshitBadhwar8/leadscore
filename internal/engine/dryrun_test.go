@@ -58,11 +58,14 @@ func TestDryRun(t *testing.T) {
 		"tier 2 -> 1",
 		"tier 1 -> 2",
 		"totals: 5 lead(s) scored: 3 new, 2 changed, 0 unchanged; planned lanes: list 4, none 1",
-		"3 input row(s) merged, 0 left",
+		"dry run (healthy): 5 lead(s) would be scored from 3 input row(s), 0 left for later runs; nothing was saved or pushed",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
+	}
+	if strings.Contains("\n"+out, "\nrun ") || strings.Contains(out, "merged") {
+		t.Errorf("a dry run's summary names no run id and nothing merged:\n%s", out)
 	}
 	if strings.Count(out, "lane=none") != 1 || strings.Count(out, "\nnew ") != 3 || strings.Contains(out, "@") {
 		t.Errorf("one line per new lead, by id only:\n%s", out)

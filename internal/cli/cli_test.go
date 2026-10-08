@@ -105,10 +105,10 @@ func TestParseErrors(t *testing.T) {
 		{[]string{"run", "--rubric", ""}, "non-empty"},
 		{[]string{"serve", "--every", "soon"}, "not a duration"},
 		{[]string{"serve", "--every=0s"}, "longer than zero"},
-		{[]string{"serve", "extra"}, "usage"},
-		{[]string{"explain"}, "usage"},
-		{[]string{"merge", "a", "b", "c"}, "usage"},
-		{[]string{"config", "set-hosting"}, "usage"},
+		{[]string{"serve", "extra"}, "argument"},
+		{[]string{"explain"}, "argument"},
+		{[]string{"merge", "a", "b", "c"}, "argument"},
+		{[]string{"config", "set-hosting"}, "argument"},
 	}
 	for _, tt := range tests {
 		_, err := parse(tt.args)
@@ -146,11 +146,94 @@ func TestUsageErrors(t *testing.T) {
 }
 
 func TestHelp(t *testing.T) {
-	for _, args := range [][]string{{"help"}, {"--help"}, {"-h"}, {"run", "--help"}} {
+	for _, args := range [][]string{{"help"}, {"--help"}, {"-h"}, {"--config", "a.yml", "-h"}} {
 		code, stdout, _ := run(args...)
 		if code != exitOK || !strings.Contains(stdout, "config set-hosting") {
 			t.Errorf("%v: exit %d, stdout %q", args, code, stdout)
 		}
+	}
+	code, stdout, _ := run("help")
+	for _, want := range []string{"\nSet up:\n", "\nRun:\n", "\nInspect:\n", "\nFix:\n", "Overrides: the table", "Health: the table"} {
+		if code != exitOK || !strings.Contains(stdout, want) {
+			t.Errorf("help lacks %q: %q", want, stdout)
+		}
+	}
+}
+
+// Every command is listed in exactly one help group.
+func TestEveryCommandInOneGroup(t *testing.T) {
+	seen := map[string]int{}
+	for _, g := range groups {
+		for _, n := range g.commands {
+			seen[n]++
+		}
+	}
+	for _, c := range commands {
+		if seen[c.name()] != 1 {
+			t.Errorf("command %q is in %d help groups, want 1", c.name(), seen[c.name()])
+		}
+		delete(seen, c.name())
+	}
+	for n := range seen {
+		t.Errorf("help group lists %q, which is not a command", n)
+	}
+}
+
+// `leadscore <cmd> --help`, `-h` and `leadscore help <cmd>` print that
+// command's usage line and one sentence, exit 0, even when its arguments are
+// missing; `help nope` is an unknown command.
+func TestCommandHelp(t *testing.T) {
+	for _, c := range commands {
+		want := "Usage: leadscore " + c.usageLine() + " [--config <file>] [--rubric <file>]\n"
+		for _, args := range [][]string{
+			append(append([]string{}, c.path...), "--help"),
+			append(append([]string{}, c.path...), "-h"),
+			append([]string{"help"}, c.path...),
+			append([]string{"--config", "a.yml", "help"}, c.path...),
+		} {
+			code, stdout, stderr := run(args...)
+			if code != exitOK || !strings.HasPrefix(stdout, want) || strings.Count(stdout, "\n") != 2 || stderr != "" {
+				t.Errorf("%v: exit %d, stdout %q, stderr %q", args, code, stdout, stderr)
+			}
+		}
+	}
+	if code, _, stderr := run("help", "nope"); code != exitUsage || !strings.Contains(stderr, `unknown command "nope"`) {
+		t.Errorf("help nope: %d %q", code, stderr)
+	}
+}
+
+// A known command with missing or extra arguments prints its own usage line
+// and exits 2, never "unknown command".
+func TestWrongArgumentsPrintCommandUsage(t *testing.T) {
+	for _, args := range [][]string{{"explain"}, {"explain", "a", "b"}, {"status", "now"}, {"merge", "a"},
+		{"config", "get"}, {"setup", "sheet", "x"}, {"run", "--csv"}, {"retry", "a", "b"}} {
+		code, _, stderr := run(args...)
+		c, _ := match(args[:len(args)-1])
+		if c == nil {
+			c, _ = match(args)
+		}
+		if c == nil {
+			c, _ = match(args[:1])
+		}
+		if code != exitUsage || strings.Contains(stderr, "unknown command") || c == nil ||
+			!strings.Contains(stderr, "Usage: leadscore "+c.usageLine()) || strings.Contains(stderr, "Inspect:") {
+			t.Errorf("%v: exit %d, stderr %q", args, code, stderr)
+		}
+	}
+}
+
+func TestVersion(t *testing.T) {
+	for _, args := range [][]string{{"version"}, {"--version"}} {
+		code, stdout, _ := run(args...)
+		if code != exitOK || !strings.HasPrefix(stdout, "leadscore dev") {
+			t.Errorf("%v: exit %d, stdout %q", args, code, stdout)
+		}
+	}
+	old := Version
+	Version = "v1.2.3"
+	t.Cleanup(func() { Version = old })
+	if code, stdout, _ := run("version"); code != exitOK || stdout != "leadscore v1.2.3\n" {
+		t.Errorf("a release build prints its version: %d %q", code, stdout)
 	}
 }
 

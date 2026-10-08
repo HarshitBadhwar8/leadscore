@@ -14,9 +14,6 @@ concurrency:
   group: ci-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || 'pr' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-env:
-  IMAGE: asia-south1-docker.pkg.dev/leadscore-dev/leadscore/leadscore
-
 jobs:
   test:
     name: build, vet, test (Go ${{ matrix.go }})
@@ -62,11 +59,6 @@ jobs:
       - uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
         with:
           dockerfile: Dockerfile
-          # DL3018: the base image is pinned by digest. Pinned apk versions
-          # break the build each time Alpine replaces a patch release.
-          # DL3066: the image creates the user `leadscore` itself, with the
-          # fixed id 10001; internal/receiver/docker_test.go pins the name.
-          ignore: DL3018,DL3066
 
   vulncheck:
     name: Vulnerability check
@@ -128,14 +120,15 @@ jobs:
         run: testdata/compose/smoke.sh leadscore:ci
 
   # Pushes the image, tagged by commit, through keyless sign-in (Workload
-  # Identity Federation). Skipped until the repo variables GCP_WIF_PROVIDER and
-  # GCP_CI_SERVICE_ACCOUNT are set, and for pull requests from forks, which get
-  # no OIDC token.
+  # Identity Federation). Skipped until the repo variables IMAGE (an Artifact
+  # Registry path, e.g. asia-south1-docker.pkg.dev/<project>/<repo>/leadscore),
+  # GCP_WIF_PROVIDER and GCP_CI_SERVICE_ACCOUNT are set, and for pull requests
+  # from forks, which get no OIDC token.
   image-push:
     name: push image to Artifact Registry
     needs: image
     if: >-
-      vars.GCP_WIF_PROVIDER != '' && vars.GCP_CI_SERVICE_ACCOUNT != '' &&
+      vars.IMAGE != '' && vars.GCP_WIF_PROVIDER != '' && vars.GCP_CI_SERVICE_ACCOUNT != '' &&
       (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     permissions:
@@ -153,9 +146,14 @@ jobs:
           token_format: access_token
           # No gha-creds-*.json in the workspace, so the image build cannot copy it.
           create_credentials_file: false
+      # The registry host is the image path's first part.
+      - name: registry host
+        env:
+          IMAGE: ${{ vars.IMAGE }}
+        run: echo "REGISTRY=${IMAGE%%/*}" >> "$GITHUB_ENV"
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
-          registry: asia-south1-docker.pkg.dev
+          registry: ${{ env.REGISTRY }}
           username: oauth2accesstoken
           password: ${{ steps.auth.outputs.access_token }}
       - name: push both architectures, tagged by commit
@@ -164,7 +162,7 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ env.IMAGE }}:${{ github.event.pull_request.head.sha || github.sha }}
+          tags: ${{ vars.IMAGE }}:${{ github.event.pull_request.head.sha || github.sha }}
           cache-from: type=gha
 
   # Runs every example under examples/ and compares its output with its README.
