@@ -1,0 +1,647 @@
+internal/check/sheets_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/score.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/cli/config.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+LICENSE
+  s_9dab9ff7f2c580::t_a19ba84312f495 1-18
+internal/csvsafe/csvsafe_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/merge/emailshape_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/cli/setup_sheet.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+adapters/apollo/golden_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/rules/review_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+testdata/gcloud/gcloud
+  s_9dab9ff7f2c580::t_88218a55cab6b0 2-3
+internal/engine/states_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/api/registry.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/receiver/handler.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+adapters/csv/csv.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/cli/facts.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/model/rows.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/google.golang.org/api/internal/third_party/uritemplates/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-27
+third_party/licenses/gopkg.in/yaml.v3/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-50
+internal/fakes/apollo/apollo.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+testdata/compose/smoke.sh
+  s_9dab9ff7f2c580::t_88218a55cab6b0 2-3
+adapters/hubspot/setup.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/check/apollo.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/hosting/cron.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/google.golang.org/genproto/googleapis/api/expr/v1alpha1/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-202
+internal/store/sheets/setup.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+docs/design/oss-outbound-engine.md
+  s_9dab9ff7f2c580::t_4595c69acb06ab 145,151,597,652
+.github/dependabot.yml
+  s_9dab9ff7f2c580::t_36c60764444a58 1-14
+internal/engine/lanes.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+.github/workflows/ci.yml
+  s_9dab9ff7f2c580::t_ea2c3939f38995 22,24-27,32,43-88
+.github/ISSUE_TEMPLATE/bug_report.md
+  s_9dab9ff7f2c580::t_839b44eeeb6ef9 1-19
+internal/engine/fold.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/receiver/docker_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/check/rubric.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/intake_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/receiver/serve.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/e2e/harness_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/merge/apply.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+adapters/apollo/paging.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/rules/eval.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/merge/normalize_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/logredact/redact.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+  s_9dab9ff7f2c580::t_4595c69acb06ab 9-10
+third_party/licenses/github.com/cespare/xxhash/v2/LICENSE.txt
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-22
+internal/check/apollo_sequences.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+cloudrun_live_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/export_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/github.com/googleapis/enterprise-certificate-proxy/client/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-202
+internal/cli/run_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/receiver/handler_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+imports_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/logredact/redact_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/golang.org/x/sys/unix/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-27
+adapters/hubspot/client_internal_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/events/events.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/google.golang.org/grpc/NOTICE.txt
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-13
+internal/check/pushes_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+setup/gcp.sh
+  s_9dab9ff7f2c580::t_88218a55cab6b0 2-3
+internal/cli/rules.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/rules/parity_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/api/aliases_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/rules/example_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/rules/fields.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/store/sqlite/sqlite.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+docs_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/api/aliases.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/merge/normalize.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+sinktest/sinktest.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/cli/setup_sheet_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+.github/ISSUE_TEMPLATE/config.yml
+  s_9dab9ff7f2c580::t_b8904847e964d0 1-5
+adapters/apollo/conformance_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/fakes/hubspot/fixtures_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/cli/rules_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/config/get.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/duration/duration.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/fakes/sink/sink.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+adapters/apollo/sink.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/check/receiver_silence.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/cli/cli_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/store/codec/codec.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/store/sqlite/events.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+adapters/apollo/poll.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/enrich.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+CONTRIBUTING.md
+  s_9dab9ff7f2c580::t_28190a1f6fbb29 63-64
+  s_9dab9ff7f2c580::t_cbc4644536f0d1 1-3,6-43,45-58,65-66,68,70-86
+  s_9dab9ff7f2c580::t_49b2c1490d895b 4-5
+  s_9dab9ff7f2c580::t_e21cde96aaf29b 59-62
+  s_9dab9ff7f2c580::t_5797a157e1aeed 44
+  s_9dab9ff7f2c580::t_0de5b9c031e9f0 67
+  s_9dab9ff7f2c580::t_729377090a9d88 69
+internal/detect/detect_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/cli/setup_hubspot_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/hosting_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/check/store.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/config/config_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/check/hosting.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/rules/compile_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/vendorhttp/vendorhttp.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/hosting/keys.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/cloud.google.com/go/auth/oauth2adapt/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-202
+internal/api/api.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+setup_gcp_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/github.com/remyoudompheng/bigfft/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-27
+internal/rules/render.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+adapters/apollo/sink_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/check/runcases_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/cel.dev/expr/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-202
+internal/merge/overrides_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/store/sqlite/conformance_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/github.com/google/s2a-go/LICENSE.md
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-202
+internal/engine/ingest.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/check/secrets.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/rules/errors.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/config/sethosting_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/store/sheets/live_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/golang.org/x/net/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-27
+internal/receiver/body.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/csvsafe/csvsafe.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/google.golang.org/genproto/googleapis/rpc/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-202
+internal/events/events_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/store/sheets/conformance_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+adapters/apollo/notification.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/github.com/google/cel-go/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-233
+internal/hosting/hosting_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+adapters/apollo/notification_reserved_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/store/sheets/setup_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+storetest/storetest.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/cli/overrides_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/race_on_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/golang.org/x/crypto/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-27
+third_party/licenses/golang.org/x/sys/windows/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-27
+internal/rules/limits_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/check/receiver_silence_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/golang.org/x/exp/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-27
+third_party/licenses/go.opentelemetry.io/auto/sdk/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-201
+third_party/licenses/github.com/antlr4-go/antlr/v4/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-28
+third_party/licenses/modernc.org/mathutil/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-27
+internal/cli/doctor_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+adapters/hubspot/client.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/config/config.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/holds_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/rules/cel.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/store/sqlite/sqlite_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/github.com/dustin/go-humanize/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-21
+internal/merge/emaildomain.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/receiver/outcome_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/github.com/mattn/go-isatty/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-9
+adapters/sheetsource/sheetsource_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+.github/workflows/release.yml
+  s_9dab9ff7f2c580::t_0a8358c5589634 69-71,117
+third_party/licenses/github.com/go-logr/stdr/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-201
+internal/rules/compile.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/config/hosting.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/fakes/sink/sink_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/model/tables.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+ci_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/rules/rollup_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/helpers_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/export.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/github.com/go-logr/logr/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-201
+internal/hosting/hosting.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+adapters/hubspot/sink_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/review_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/view_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/run.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/check/doctor_only.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/push_helpers_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/view.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/merge/person.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/go/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-27
+adapters/apollo/lookup.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/status_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/run_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/github.com/ncruces/go-strftime/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-21
+docs/design/carve-plan.md
+  s_9dab9ff7f2c580::t_4595c69acb06ab 84-86
+  s_9dab9ff7f2c580::t_15cc30cb79fdc2 35
+internal/check/sheets.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-231
+third_party/licenses/go.opentelemetry.io/otel/metric/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-231
+third_party/licenses/go.opentelemetry.io/otel/trace/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-231
+adapters/apollo/client_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+.github/ISSUE_TEMPLATE/feature_request.md
+  s_9dab9ff7f2c580::t_74dadab5fe3463 1-11
+cmd/leadscore/main.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+stub_adapters_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/rules/aliases_guard_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/receiver/body_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/store/sqlite/removed_lane_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/cli/facts_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/budget_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/pushing_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/hosting/resources.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/cli/setup_hubspot.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/review_ledger_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+adapters/apollo/review_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/intake.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/cli/config_push_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/reread.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/logredact/vendor_error_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/rules/cond.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/store/sheets/sheets.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/push.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/google.golang.org/protobuf/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-27
+.gitignore
+  s_9dab9ff7f2c580::t_9439ebf9f5b3cc 26-27
+internal/cli/serve_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/store/codec/codec_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/cloud.google.com/go/auth/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-202
+internal/check/check.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/check/apollo_sequences_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/store/sqlite/lease.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/fakes/sheets/sheets.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/fakes/apollo/outreach.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+adapters/hubspot/check.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/hubspot_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/lanes_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/config/bundle_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/go.yaml.in/yaml/v3/NOTICE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-13
+CODE_OF_CONDUCT.md
+  s_9dab9ff7f2c580::t_a19ba84312f495 1-51
+internal/receiver/serve_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+adapters/apollo/enrich.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+outcomes_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/check/hosting_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/gopkg.in/yaml.v3/NOTICE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-13
+adapters/hubspot/lookup.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/detect/detect.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/fakes/hubspot/hubspot.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/store/sheets/lease.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/check/rubric_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/store/sheets/health.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/go.opentelemetry.io/otel/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-231
+internal/engine/enrich_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/check/doctor_only_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/modernc.org/sqlite/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-26
+internal/store/sheets/events.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+adapters/apollo/client.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/hosting/secrets.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/lookup_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/google.golang.org/api/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-27
+sinktest/sinktest_internal_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+.claude/settings.json
+  s_9dab9ff7f2c580::t_efe776fdee5af2 1-16
+internal/merge/merge_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/config/duration.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/check/overrides.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/receiver/auth/auth.go
+  s_9dab9ff7f2c580::t_4595c69acb06ab 7-8
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/outcomes_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+adapters/hubspot/domains.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/check/apollo_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/check/store_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+leadscore.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/merge/emailshape.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/model/model.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/store/sheets/commit.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/check/check_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/rules/sections.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/github.com/googleapis/gax-go/v2/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-27
+third_party/licenses/google.golang.org/grpc/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-202
+adapters/hubspot/hubspot.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+readme_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/cli/run.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/race_off_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/merge/overrides.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+adapters/hubspot/lookup_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+adapters/apollo/parse_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/api/registry_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/merge/review_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/check/receiver_secret.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/engine.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/model/model_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/rules/rules.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/check/pushes.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/receiver/queue.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+adapters/csv/csv_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/github.com/felixge/httpsnoop/LICENSE.txt
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-19
+internal/check/overrides_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/cli/doctor.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/receiver/auth/auth_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/cli/doctor_rows_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/rules/eval_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/go.yaml.in/yaml/v3/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-50
+third_party/licenses/golang.org/x/text/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-27
+third_party/licenses/golang.org/x/oauth2/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-27
+.github/PULL_REQUEST_TEMPLATE.md
+  s_9dab9ff7f2c580::t_36c60764444a58 1-7
+internal/store/sheets/events_internal_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/check/receiver_secret_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/config/review_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/fakes/gcp/gcp.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+CLAUDE.md
+  s_9dab9ff7f2c580::t_e2654c77d5f4f6 1-15,17-75
+  s_9dab9ff7f2c580::t_e4e27318b12041 16
+release_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/e2e/expected_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/cli/cli.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+adapters/apollo/website_visit.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/cloud.google.com/go/compute/metadata/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-202
+third_party/licenses/github.com/google/uuid/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-27
+internal/engine/text.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+adapters/apollo/parse.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+adapters/hubspot/check_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+adapters/sheetsource/sheetsource.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/cli/overrides.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+scripts/third-party-licenses.sh
+  s_9dab9ff7f2c580::t_103152b2f60319 16,18-21
+  s_9dab9ff7f2c580::t_09707cc7342811 1-15,17,22-42
+internal/e2e/suite_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/modernc.org/libc/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-27
+adapters/hubspot/sink.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/prepush.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+NOTICE
+  s_9dab9ff7f2c580::t_78bfa4c3eb8f41 1-105
+Dockerfile
+  s_9dab9ff7f2c580::t_88218a55cab6b0 2-3
+  s_9dab9ff7f2c580::t_7c42b31cee97d5 31-35
+internal/engine/health.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+CONTRIBUTORS.md
+  s_9dab9ff7f2c580::t_a19ba84312f495 1-32
+internal/engine/ledger_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/vendorhttp/vendorhttp_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/dryrun.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+skill_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/fakes/gcs/gcs.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/engine/dryrun_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/cli/serve.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+adapters/apollo/live_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+internal/rules/bands.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+third_party/licenses/modernc.org/memory/LICENSE
+  s_9dab9ff7f2c580::t_90f12d8fa95dcf 1-27
+internal/store/sheets/sheets_test.go
+  s_9dab9ff7f2c580::t_88218a55cab6b0 1-3
+CHANGELOG.md
+  s_9dab9ff7f2c580::t_795b2b4340b63f 1-20
+AGENTS.md
+  s_9dab9ff7f2c580::t_80091f648f2387 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1055f72fd0f9e6d26bffa3e20353317851681574",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
