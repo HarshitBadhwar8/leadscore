@@ -1,0 +1,213 @@
+adapters/hubspot/check_test.go
+  s_9dab9ff7f2c580::t_e88ce0defb9e6b 52
+adapters/csv/csv.go
+  s_9dab9ff7f2c580::t_b38fea2b722492 66
+  s_9dab9ff7f2c580::t_7900a55c11d336 398,410
+adapters/sheetsource/sheetsource.go
+  s_9dab9ff7f2c580::t_b38fea2b722492 93
+internal/check/doctor_only.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 116
+internal/engine/status_test.go
+  s_9dab9ff7f2c580::t_1a39b304050cbe 89-90,105-106,193
+internal/vendorhttp/vendorhttp.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 89
+internal/cli/doctor_rows_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 100
+internal/fakes/sheets/sheets.go
+  s_9dab9ff7f2c580::t_bbcf3d0ea9a8b0 1180
+  s_9dab9ff7f2c580::t_db2ad4ffeb7ebb 1282
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 1289
+  s_9dab9ff7f2c580::t_9362e597ca808a 902,915,917
+internal/receiver/handler.go
+  s_9dab9ff7f2c580::t_db2ad4ffeb7ebb 258,318
+internal/cli/doctor.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 80
+internal/store/sheets/events_internal_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 193
+adapters/apollo/client_test.go
+  s_9dab9ff7f2c580::t_e88ce0defb9e6b 601,615
+internal/engine/export.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 466,501-502,546
+internal/store/sqlite/events.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 95
+adapters/sheetsource/sheetsource_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 29,36,74,98
+internal/store/sheets/lease.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 127
+internal/receiver/outcome_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 58
+internal/engine/lanes_test.go
+  s_9dab9ff7f2c580::t_1a39b304050cbe 292
+internal/store/sheets/setup_test.go
+  s_9dab9ff7f2c580::t_bbcf3d0ea9a8b0 49-50,52,54
+internal/cli/config_push_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 79,94
+internal/engine/intake_test.go
+  s_9dab9ff7f2c580::t_e88ce0defb9e6b 281
+  s_9dab9ff7f2c580::t_17724ec5ea3291 335,340,348
+internal/engine/export_test.go
+  s_9dab9ff7f2c580::t_17724ec5ea3291 659
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 95,407,745,822
+  s_9dab9ff7f2c580::t_0cc411c3f529ac 386
+  s_9dab9ff7f2c580::t_28cdf0807ebfa4 319,328
+internal/engine/push_helpers_test.go
+  s_9dab9ff7f2c580::t_d16cbc990af101 237
+  s_9dab9ff7f2c580::t_d4a7e16b3448f4 246-247,255
+  s_9dab9ff7f2c580::t_d2f4da73142406 238,243
+internal/config/bundle_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 27
+adapters/apollo/sink_test.go
+  s_9dab9ff7f2c580::t_e88ce0defb9e6b 656
+internal/cli/setup_sheet_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 118,123,125
+internal/config/get.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 217,219,223,227,242
+  s_9dab9ff7f2c580::t_becf9fe07217e3 206-207
+internal/cli/overrides.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 37
+internal/merge/review_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 251,256
+internal/fakes/gcp/gcp.go
+  s_9dab9ff7f2c580::t_db2ad4ffeb7ebb 149
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 228,235
+internal/hosting/hosting_test.go
+  s_9dab9ff7f2c580::t_28cdf0807ebfa4 125
+  s_9dab9ff7f2c580::t_e88ce0defb9e6b 124,307
+internal/receiver/serve_test.go
+  s_9dab9ff7f2c580::t_02aa348edc37be 119,159
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 92,102,180,246,306
+internal/events/events_test.go
+  s_9dab9ff7f2c580::t_3ff9e1d1afb4f7 111,122,360
+internal/detect/detect_test.go
+  s_9dab9ff7f2c580::t_8f45792a3d327e 51
+  s_9dab9ff7f2c580::t_02aa348edc37be 143
+  s_9dab9ff7f2c580::t_3886c04835fda5 50
+internal/store/sqlite/sqlite.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 73,100,131,159,207,305
+internal/cli/run.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 64,104,203,212,218
+internal/config/review_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 89
+  s_9dab9ff7f2c580::t_bbcf3d0ea9a8b0 106
+internal/cli/facts.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 41,65,108
+adapters/apollo/review_test.go
+  s_9dab9ff7f2c580::t_e88ce0defb9e6b 204,209,244
+internal/check/store.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 107
+  s_9dab9ff7f2c580::t_b33e95956a0595 112-115
+internal/store/sqlite/conformance_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 19
+internal/engine/run.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 127
+  s_9dab9ff7f2c580::t_bbcf3d0ea9a8b0 598
+setup_gcp_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 78,319
+internal/cli/facts_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 64,66,156
+internal/fakes/hubspot/fixtures_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 122
+internal/cli/serve_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 32-33,51
+  s_9dab9ff7f2c580::t_28cdf0807ebfa4 30
+adapters/apollo/live_test.go
+  s_9dab9ff7f2c580::t_8f45792a3d327e 168
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 306,376
+  s_9dab9ff7f2c580::t_a54a716342a9d2 166
+internal/engine/helpers_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 280
+internal/engine/ledger_test.go
+  s_9dab9ff7f2c580::t_e88ce0defb9e6b 290
+internal/store/sqlite/removed_lane_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 23
+leadscore.go
+  s_9dab9ff7f2c580::t_b38fea2b722492 180
+internal/e2e/harness_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 133,218
+internal/rules/example_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 26
+internal/fakes/gcs/gcs.go
+  s_9dab9ff7f2c580::t_db2ad4ffeb7ebb 166
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 277,283
+internal/check/doctor_only_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 168
+  s_9dab9ff7f2c580::t_02aa348edc37be 111
+internal/store/sqlite/sqlite_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 22,46,160,165,176,307,322,354,405,411
+outcomes_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 61
+internal/model/model.go
+  s_9dab9ff7f2c580::t_e88ce0defb9e6b 760
+internal/receiver/serve.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 105
+sinktest/sinktest.go
+  s_9dab9ff7f2c580::t_b38fea2b722492 22-24,27,47,53-54
+cloudrun_live_test.go
+  s_9dab9ff7f2c580::t_e88ce0defb9e6b 328
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 442,504
+  s_9dab9ff7f2c580::t_7a5192e65e3875 157
+internal/cli/overrides_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 31
+adapters/csv/csv_test.go
+  s_9dab9ff7f2c580::t_bbcf3d0ea9a8b0 300
+internal/cli/serve.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 63
+internal/store/sheets/sheets_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 441,459,560
+storetest/storetest.go
+  s_9dab9ff7f2c580::t_b38fea2b722492 25
+  s_9dab9ff7f2c580::t_db2ad4ffeb7ebb 497
+internal/receiver/handler_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 54,787,797
+  s_9dab9ff7f2c580::t_28cdf0807ebfa4 789
+internal/cli/doctor_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 77,94,175,326,353,359
+  s_9dab9ff7f2c580::t_02aa348edc37be 249
+adapters/hubspot/client_internal_test.go
+  s_9dab9ff7f2c580::t_e88ce0defb9e6b 18,41,58,99
+stub_adapters_test.go
+  s_9dab9ff7f2c580::t_e88ce0defb9e6b 26,51-52,65-66,76,84,91,118
+  s_9dab9ff7f2c580::t_71dac297c1536f 33,73
+  s_9dab9ff7f2c580::t_02aa348edc37be 39,45,59,70,90,94
+internal/cli/config.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 129
+internal/store/sheets/sheets.go
+  s_9dab9ff7f2c580::t_e88ce0defb9e6b 93
+internal/vendorhttp/vendorhttp_test.go
+  s_9dab9ff7f2c580::t_e88ce0defb9e6b 54,79,97,117,134
+internal/merge/merge_test.go
+  s_9dab9ff7f2c580::t_57b59d82c83a0a 624
+internal/engine/run_test.go
+  s_9dab9ff7f2c580::t_e88ce0defb9e6b 162
+  s_9dab9ff7f2c580::t_02aa348edc37be 84
+.golangci.yml
+  s_9dab9ff7f2c580::t_03dbfdfb20e150 24-32,39-43
+  s_9dab9ff7f2c580::t_be309104407f2a 1-19,44-51
+  s_9dab9ff7f2c580::t_fda5c7f033e74b 33-38
+  s_9dab9ff7f2c580::t_f5faee36ea91b3 20-23
+internal/engine/states_test.go
+  s_9dab9ff7f2c580::t_1a39b304050cbe 77
+  s_9dab9ff7f2c580::t_e88ce0defb9e6b 215
+adapters/apollo/website_visit.go
+  s_9dab9ff7f2c580::t_1bc8745e8e957f 65
+internal/hosting/resources.go
+  s_9dab9ff7f2c580::t_52be28fe01be5a 75-77,79
+internal/rules/cel.go
+  s_9dab9ff7f2c580::t_3b83a04e6359df 177
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4db0d7913783517e5f34c659ebd121fd00b5b31d",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
