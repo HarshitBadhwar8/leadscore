@@ -1,0 +1,33 @@
+docs/design/oss-outbound-engine.md
+  s_9dab9ff7f2c580::t_bef59e9bb868e0 10,42,84,238,370,410,442,466,471,529,549,584,635
+  s_9dab9ff7f2c580::t_d1798a8906d109 122,519,531
+  s_9dab9ff7f2c580::t_c6c9a29c3d0df3 664,666,688,699-700,708
+docs/adr/0003-a-ledger-with-intent-and-called-markers-for-at-most-once-vendor-calls.md
+  s_9dab9ff7f2c580::t_c9e7b1253538ac 1-79
+docs/adr/README.md
+  s_9dab9ff7f2c580::t_f7afb056328cff 1-14
+docs/design/carve-plan.md
+  s_9dab9ff7f2c580::t_d474474d7b5275 6-9
+  s_9dab9ff7f2c580::t_bd0e6009048b91 20-22
+  s_9dab9ff7f2c580::t_0cf7f82a4406f7 1-5,10-19,23-204
+docs/adr/0002-batch-job-on-a-store-without-transactions-saves-in-two-phases-under-a-cas-lease.md
+  s_9dab9ff7f2c580::t_52cf53e344f219 1-81
+docs/adr/0001-store-a-webhook-before-acknowledging-it.md
+  s_9dab9ff7f2c580::t_1f4596c19f7c4e 1-71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2d1c41f67fbc32ae384a3552aaf1f922cf108634",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
