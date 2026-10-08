@@ -2,7 +2,7 @@
 
 Most of these files are **provisional** (a few are recorded; see "Recorded
 shapes" below). The provisional ones are built from
-earlier working code's Apollo client tests and Apollo's public API docs, with
+another Apollo client's tests and Apollo's public API docs, with
 made-up companies and example domains, and carry `"provisional": true`; a
 shape taken from the docs because a real reply cannot be had safely (the 429)
 also carries `"documented": true`.
@@ -52,7 +52,7 @@ nothing it holds is a saved response:
   search, the replied filter, `reply_class` (mostly `null`), `to_email`,
   `contact_id`, `emailer_campaign_id`, `status` and `completed_at`. That test
   used the `/v1/...` prefix; these files keep `/api/v1/...`.
-- Code that runs in production: the enrichment field names (the funding date
+- A client used against the live API: the enrichment field names (the funding date
   is a plain date), and the contact create (`run_dedupe: true`, 200 or 201,
   `contact.id`).
 
@@ -65,7 +65,7 @@ with no organization is not-found; a 404 is treated as a failure until S0 says
 otherwise).
 
 The outreach calls (everything after `organizations_enrich`) come from
-Apollo's public API docs only: the earlier code never enrolled or polled. Assumed and
+Apollo's public API docs only: the client those tests came from never enrolled or polled. Assumed and
 unseen (beyond the confirmed parts above): the paths' bodies, `run_dedupe`
 returning the existing contact,
 `contact_campaign_statuses` on a contact, the `skipped_contact_ids` shape and

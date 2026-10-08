@@ -33,6 +33,6 @@
     "updatedAt": "2026-01-01T00:00:00.000Z",
     "archived": false
   },
-  "confirmed_from": "HubSpot code that runs in production: the request is {\"properties\": ...} and the reply's id is read. The other reply fields are not confirmed.",
+  "confirmed_from": "A HubSpot client used against the live API: the request is {\"properties\": ...} and the reply's id is read. The other reply fields are not confirmed.",
   "provisional": true
 }

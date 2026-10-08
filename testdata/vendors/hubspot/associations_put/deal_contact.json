@@ -22,6 +22,6 @@
       }
     ]
   },
-  "confirmed_from": "Deal-push code that runs in production calls PUT /crm/v4/objects/deals/{id}/associations/default/contacts/{id}, and repeating it is a no-op. The response body is not recorded.",
+  "confirmed_from": "A deal-push client used against the live API calls PUT /crm/v4/objects/deals/{id}/associations/default/contacts/{id}, and repeating it is a no-op. The response body is not recorded.",
   "provisional": true
 }

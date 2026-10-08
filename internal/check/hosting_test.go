@@ -204,7 +204,7 @@ func TestHostingCheckPreReleaseImageNeedsNoProxy(t *testing.T) {
 	f := gcp.New()
 	healthyProject(f)
 	f.SetResource(proxyPath, "")
-	yml := strings.Replace(hostedSheets, "ghcr.io/tetriz-ai/leadscore:v0.1.0", "asia-south1-docker.pkg.dev/leadscore-dev/leadscore/leadscore:abc", 1)
+	yml := strings.Replace(hostedSheets, "ghcr.io/tetriz-ai/leadscore:v0.1.0", "asia-south1-docker.pkg.dev/example-project/leadscore/leadscore:abc", 1)
 	if got := runHosting(t, f, yml, modelWithConfigVersion("1")); len(got) != 0 {
 		t.Errorf("problems: %v", got)
 	}

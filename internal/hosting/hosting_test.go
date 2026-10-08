@@ -290,9 +290,9 @@ func TestResourceReads(t *testing.T) {
 
 func TestUsesProxy(t *testing.T) {
 	for image, want := range map[string]bool{
-		"ghcr.io/tetriz-ai/leadscore:v0.1.0":                              true,
-		"asia-south1-docker.pkg.dev/p/ghcr-proxy/tetriz-ai/leadscore:v1":  true,
-		"asia-south1-docker.pkg.dev/leadscore-dev/leadscore/leadscore:ab": false,
+		"ghcr.io/tetriz-ai/leadscore:v0.1.0":                                true,
+		"asia-south1-docker.pkg.dev/p/ghcr-proxy/tetriz-ai/leadscore:v1":    true,
+		"asia-south1-docker.pkg.dev/example-project/leadscore/leadscore:ab": false,
 	} {
 		if got := hosting.UsesProxy(image); got != want {
 			t.Errorf("UsesProxy(%s) = %v", image, got)

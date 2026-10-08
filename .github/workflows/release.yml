@@ -50,8 +50,12 @@ jobs:
         with:
           go-version: "1.25.x"
           cache: false # a release builds from the tagged source alone
-      # Pure Go, so every platform cross-compiles here with cgo off.
-      - name: build darwin, linux and windows for amd64 and arm64
+      # Pure Go, so every platform cross-compiles here with cgo off. Each
+      # platform ships as one archive (zip on Windows, tar.gz elsewhere) holding
+      # the binary with LICENSE, NOTICE and third_party/licenses: the binary
+      # compiles in third-party code whose licenses require their notices to
+      # travel with it.
+      - name: build and archive darwin, linux and windows for amd64 and arm64
         env:
           CGO_ENABLED: "0"
           TAG: ${{ github.ref_name }}
@@ -60,15 +64,23 @@ jobs:
           mkdir dist
           for os in darwin linux windows; do
             for arch in amd64 arm64; do
+              name="leadscore_${TAG}_${os}_${arch}"
               ext=""
               if [ "$os" = windows ]; then ext=".exe"; fi
-              GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags="-s -w" \
-                -o "dist/leadscore_${TAG}_${os}_${arch}${ext}" ./cmd/leadscore
+              mkdir -p "build/$name"
+              GOOS="$os" GOARCH="$arch" go build -trimpath \
+                -ldflags="-s -w -X github.com/HarshitBadhwar8/leadscore/internal/cli.Version=${TAG}" \
+                -o "build/$name/leadscore${ext}" ./cmd/leadscore
+              cp LICENSE NOTICE "build/$name/"
+              mkdir -p "build/$name/third_party"
+              cp -R third_party/licenses "build/$name/third_party/"
+              if [ "$os" = windows ]; then
+                (cd build && zip -qr "../dist/$name.zip" "$name")
+              else
+                tar -C build -czf "dist/$name.tar.gz" "$name"
+              fi
             done
           done
-          # The binaries compile in third-party code whose licenses require
-          # their notices to travel with it.
-          tar czf "dist/leadscore_${TAG}_licenses.tar.gz" LICENSE NOTICE third_party/licenses
           cd dist && sha256sum leadscore_* > checksums.txt
       - name: create the release
         env:
@@ -114,4 +126,5 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ env.TAGS }}
+          build-args: VERSION=${{ github.ref_name }}
           labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}

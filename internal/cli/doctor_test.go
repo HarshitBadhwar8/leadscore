@@ -196,6 +196,21 @@ func TestDoctorExitCodes(t *testing.T) {
 	if code != exitFail || !strings.Contains(out, "FAIL  config: ") || !strings.Contains(out, "no_such_key") {
 		t.Errorf("broken config: %d\n%s", code, out)
 	}
+	if strings.Contains(out, "create leadscore.yml") {
+		t.Errorf("a broken config is corrected, not created:\n%s", out)
+	}
+	// No config file: doctor says to create one, not to correct it.
+	missing := filepath.Join(t.TempDir(), "leadscore.yml")
+	code, out, _ = cli("doctor", "--config", missing)
+	if code != exitFail || !strings.Contains(out, "fix: create leadscore.yml (start from examples/leadscore.csv-only.yml) or pass --config") ||
+		strings.Contains(out, "correct leadscore.yml") {
+		t.Errorf("missing config: %d\n%s", code, out)
+	}
+	t.Chdir(t.TempDir())
+	code, out, _ = cli("doctor")
+	if code != exitFail || !strings.Contains(out, "fix: create leadscore.yml (start from examples/leadscore.csv-only.yml) or pass --config") {
+		t.Errorf("no config anywhere: %d\n%s", code, out)
+	}
 }
 
 // On a hosted install doctor reads the keys its adapters need from Secret

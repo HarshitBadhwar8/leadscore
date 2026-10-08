@@ -2,7 +2,7 @@
 
 These fixtures are **not** S0 captures. They were written before S0 from
 HubSpot's public API documentation and from the request and answer shapes of
-earlier working code and its tests. Every file carries `"provisional": true`.
+another client and its tests. Every file carries `"provisional": true`.
 
 When S0 lands, replace each file with the recorded call, or confirm it, and
 drop the flag. The fake in `internal/fakes/hubspot` serves the error bodies
@@ -14,7 +14,7 @@ Layout: `<call>/<case>.json`, each `{method, path, query, request_headers
 provisional}`. Names, emails and domains are made up (`example.com`); there
 are no keys or tokens.
 
-Some parts are backed by HubSpot code that runs in production (no response
+Some parts are backed by a HubSpot client used against the live API (no response
 was saved, so every file stays provisional). Those files carry a
 `confirmed_from` field: the v4 `PUT` association path and method, and that
 repeating it is a no-op (`associations_put/deal_contact`); the contact create
