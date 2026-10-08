@@ -28,8 +28,8 @@ FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c
 # bind-mounted ./out can be given to it on a Linux host. /data and /out belong
 # to it, so a fresh named volume does too, and are owner-only: they hold
 # personal data.
-COPY --from=build --chown=10001:10001 /rootfs/data /data
-COPY --from=build --chown=10001:10001 /rootfs/out /out
+COPY --from=build --chown=10001:10001 --chmod=700 /rootfs/data /data
+COPY --from=build --chown=10001:10001 --chmod=700 /rootfs/out /out
 COPY --from=build --chown=10001:10001 /rootfs/home/leadscore /home/leadscore
 COPY --from=build /bin/leadscore /usr/local/bin/leadscore
 # The binary's license and its dependencies' license texts travel with it.

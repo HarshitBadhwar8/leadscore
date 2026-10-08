@@ -479,7 +479,7 @@ func usage(w io.Writer) {
 			if c.run == nil {
 				note += " (not built yet: " + c.slice + ")"
 			}
-			fmt.Fprintf(w, "  %-40s %s\n", c.usageLine(), note)
+			fmt.Fprintf(w, "  %-47s %s\n", c.usageLine(), note)
 		}
 	}
 	fmt.Fprintln(w)

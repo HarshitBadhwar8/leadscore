@@ -38,7 +38,7 @@ func readRepo(t *testing.T, name string) []byte {
 func TestDockerfileRunsAsLeadscore(t *testing.T) {
 	df := string(readRepo(t, "Dockerfile"))
 	for _, want := range []string{"USER 10001:10001", "ENV HOME=/home/leadscore", `ENTRYPOINT ["leadscore"]`,
-		"--chown=10001:10001 /rootfs/home/leadscore /home/leadscore", "chmod 700 /rootfs/data /rootfs/out",
+		"--chown=10001:10001 /rootfs/home/leadscore /home/leadscore", "--chown=10001:10001 --chmod=700 /rootfs/data /data", "--chown=10001:10001 --chmod=700 /rootfs/out /out",
 		"FROM gcr.io/distroless/static-debian12:nonroot@sha256:", "COPY LICENSE NOTICE /usr/share/doc/leadscore/",
 		"COPY third_party/licenses /usr/share/doc/leadscore/licenses", "cli.Version=${VERSION}"} {
 		if !strings.Contains(df, want) {
