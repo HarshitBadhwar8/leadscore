@@ -164,3 +164,21 @@ jobs:
           push: true
           tags: ${{ vars.IMAGE }}:${{ github.event.pull_request.head.sha || github.sha }}
           cache-from: type=gha
+
+  # Runs every example under examples/ and compares its output with its README.
+  examples:
+    name: Examples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.x"
+      - name: Install shellcheck 0.11.0
+        run: |
+          curl -fsSLO https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz
+          echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  shellcheck-v0.11.0.linux.x86_64.tar.xz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar xJf shellcheck-v0.11.0.linux.x86_64.tar.xz -C "$RUNNER_TEMP/bin" --strip-components=1 shellcheck-v0.11.0/shellcheck
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - run: scripts/run-examples.sh
