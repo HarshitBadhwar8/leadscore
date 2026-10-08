@@ -16,7 +16,8 @@ import (
 // opt-out flag. It catches a person who clicked an unsubscribe link without
 // replying, which neither polling nor HubSpot may show.
 //
-// It is registered only when ContactOptOutFlag is true (the flag is confirmed):
+// It is registered only when ContactOptOutFlag is true, which it becomes only
+// once the flag is confirmed:
 // without the flag it could only ever say "not opted out", which is no check
 // at all, and the apollo-key check warns Apollo-only teams instead.
 

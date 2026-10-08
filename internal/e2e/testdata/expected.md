@@ -106,10 +106,10 @@ present = 10; sources_seen band {2: 10}.
 
 `sources_seen` counts channels that reported the lead through input rows or
 identities. In V, an identified receiver request adds a `receiver` input row
-(see docs/reference.md, "Receiver rows"), so Anna and Lea (identified
-visits) and Tom (his reply) count 2. Company-only visits make no row, so Marie stays 1. In C,
-visits come from an events source, which yields events, not input rows, so
-every lead counts 1.
+(see docs/reference.md, "Receiver"), so Anna and Lea (identified visits) and
+Tom (his reply) count 2. Company-only visits make no row, so Marie stays 1.
+In C, visits come from an events source, which yields events, not input
+rows, so every lead counts 1.
 
 | Lead | Title | V contact | C contact |
 |---|---|---|---|
