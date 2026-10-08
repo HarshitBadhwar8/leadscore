@@ -12,6 +12,8 @@
 *.db-shm
 .env
 .env.*
+*.env
+sa-key*.json
 *.pem
 gha-creds-*.json
 
