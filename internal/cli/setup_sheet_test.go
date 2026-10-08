@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package cli
 
 import (
@@ -115,14 +118,14 @@ func TestSetupSheetView(t *testing.T) {
 	fs, url := fakeGoogle(t)
 	dir := t.TempDir()
 	key := filepath.Join(dir, "key.json")
-	os.WriteFile(key, []byte(`{"client_email":"one@p.iam.gserviceaccount.com"}`), 0o600)
+	_ = os.WriteFile(key, []byte(`{"client_email":"one@p.iam.gserviceaccount.com"}`), 0o600)
 	rubric, err := os.ReadFile("../../examples/rubric.yml") // its export lane: nurture
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(dir, "rubric.yml"), rubric, 0o600)
+	_ = os.WriteFile(filepath.Join(dir, "rubric.yml"), rubric, 0o600)
 	path := filepath.Join(dir, "leadscore.yml")
-	os.WriteFile(path, []byte("version: 1\nstore: { type: sqlite, path: "+filepath.Join(dir, "x.db")+
+	_ = os.WriteFile(path, []byte("version: 1\nstore: { type: sqlite, path: "+filepath.Join(dir, "x.db")+
 		", credentials: "+key+", base_url: "+url+" }\n"), 0o600)
 	code, _, stderr := run("setup", "sheet", "--view", "--config", path)
 	if code != exitOK {

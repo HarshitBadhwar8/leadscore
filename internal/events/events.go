@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package events holds the event rules: the de-duplication key of every event,
 // parsing stored receiver requests, and applying an event's effect to a lead's
 // Outcomes and People.

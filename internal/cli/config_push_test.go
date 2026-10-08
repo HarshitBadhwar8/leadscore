@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package cli
 
 import (
@@ -76,7 +79,7 @@ func TestConfigPush(t *testing.T) {
 		t.Fatalf("%d versions", len(versions))
 	}
 	bundle := filepath.Join(t.TempDir(), "bundle.yaml")
-	os.WriteFile(bundle, versions[0], 0o600)
+	_ = os.WriteFile(bundle, versions[0], 0o600)
 	c, err := config.Load(config.Options{ConfigPath: bundle})
 	if err != nil {
 		t.Fatal(err)
@@ -91,7 +94,7 @@ func TestConfigPush(t *testing.T) {
 
 	// --rubric picks the rubric pushed; a second push is version 2.
 	other := filepath.Join(t.TempDir(), "other.yml")
-	os.WriteFile(other, []byte(pushRubric+"# v2\n"), 0o600)
+	_ = os.WriteFile(other, []byte(pushRubric+"# v2\n"), 0o600)
 	if code, stdout, stderr := run("config", "push", "--config", path, "--rubric", other); code != exitOK || !strings.Contains(stdout, "version 2") {
 		t.Fatalf("second push: exit %d %q %q", code, stdout, stderr)
 	}

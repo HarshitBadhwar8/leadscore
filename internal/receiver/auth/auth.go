@@ -1,7 +1,11 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package auth verifies that an inbound webhook came from the holder of the
 // receiver's secret.
 //
-// Adapted, with its tests, from a webhook verifier by its authors.
+// It began, with its tests, as a copy of a webhook verifier by the same
+// authors. The package is maintained here, as part of leadscore.
 //
 // Two modes, and which one a sender gets is a property of the sender rather
 // than a preference:

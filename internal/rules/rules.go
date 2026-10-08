@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package rules is the rubric compiler and evaluator. A rubric is one YAML
 // file; Compile checks it and turns every condition into one CEL program, and
 // Evaluate runs it over a run's leads: company rollups and company derive

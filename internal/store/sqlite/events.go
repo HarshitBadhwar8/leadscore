@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package sqlite
 
 import (
@@ -92,7 +95,7 @@ func (s *Store) ReadEvents(ctx context.Context, cursor api.Cursor) ([]api.RawEve
 	if err != nil {
 		return nil, cursor, fmt.Errorf("reading events: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []api.RawEvent
 	next := cursor
 	for rows.Next() {

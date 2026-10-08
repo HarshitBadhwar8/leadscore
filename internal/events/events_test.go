@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package events
 
 import (
@@ -108,7 +111,7 @@ func TestSourceAndPolledKeys(t *testing.T) {
 	src := func(origin, email string, at time.Time) api.EventID {
 		return Key(api.Event{Kind: "visit_csv", Origin: origin, Email: email, At: at})
 	}
-	if src("site", "a@example.com", t0) != src("site", "a@example.com", t0) {
+	if first, again := src("site", "a@example.com", t0), src("site", "a@example.com", t0); first != again {
 		t.Error("the same source row must key the same every run")
 	}
 	if src("site", "a@example.com", t0) == src("other", "a@example.com", t0) ||
@@ -119,7 +122,7 @@ func TestSourceAndPolledKeys(t *testing.T) {
 	p := func(id, label string) api.EventID {
 		return Key(api.Event{Kind: "reply", Origin: "polling", Attrs: map[string]string{"message_id": id, "label": label}})
 	}
-	if p("m1", "willing_to_meet") != p("m1", "willing_to_meet") || p("m1", "willing_to_meet") == p("m1", "not_interested") {
+	if first, again := p("m1", "willing_to_meet"), p("m1", "willing_to_meet"); first != again || first == p("m1", "not_interested") {
 		t.Error("a polled reply keys on message id plus label")
 	}
 }
@@ -357,7 +360,7 @@ func TestPolledReplyWithoutMessageIDKeysThePerson(t *testing.T) {
 	if Key(ev("a@example.com")) == Key(ev("b@example.com")) {
 		t.Fatal("two people's opt-outs share a key")
 	}
-	if Key(ev("a@example.com")) != Key(ev("a@example.com")) {
+	if first, again := Key(ev("a@example.com")), Key(ev("a@example.com")); first != again {
 		t.Error("the same reply polled twice must key the same")
 	}
 	withLabel := func(l string) api.EventID {

@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package model holds the in-memory model of the store's tables:
 // one Go struct per store table, keyed tables in maps by
 // primary key, keyless tables (Overrides, Log) as ordered slices.
@@ -757,7 +760,7 @@ func (m *Model) delTyped(tr *tracked, k Key) {
 	}
 }
 
-func (m *Model) appendTyped(tr *tracked, row Row) {
+func (m *Model) appendTyped(_ *tracked, row Row) {
 	switch r := row.(type) {
 	case Override:
 		m.Overrides = append(m.Overrides, r)

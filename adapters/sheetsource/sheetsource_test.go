@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package sheetsource_test
 
 import (
@@ -26,14 +29,14 @@ func setup(t *testing.T) (*fakesheets.Server, func(cfg api.Config) api.Config) {
 func TestFetchRows(t *testing.T) {
 	fs, with := setup(t)
 	id := fs.NewSpreadsheet("team")
-	fs.Put(id, "Leads", [][]any{
+	_ = fs.Put(id, "Leads", [][]any{
 		{"Work Email", "Full Name", "Employees", "Email"},
 		{"a@x.example", "Ann", 120, "second@x.example"},
 		{},
 		{"  ", nil},
 		{"b@y.example", nil, true, nil, "past the header"},
 	})
-	fs.Put(id, "Conference", [][]any{{"email", "title"}, {"c@z.example", "CTO"}})
+	_ = fs.Put(id, "Conference", [][]any{{"email", "title"}, {"c@z.example", "CTO"}})
 	src, err := sheetsource.New(with(api.Config{"id": "leads", "spreadsheet": id, "tabs": []any{"Leads", "Conference"}}))
 	if err != nil {
 		t.Fatal(err)
@@ -71,7 +74,7 @@ func TestFetchRows(t *testing.T) {
 func TestFetchEvents(t *testing.T) {
 	fs, with := setup(t)
 	id := fs.NewSpreadsheet("team")
-	fs.Put(id, "Events import", [][]any{
+	_ = fs.Put(id, "Events import", [][]any{
 		{"Event", "At", "Email", "Page"},
 		{"visit_pricing", "2026-10-01", "a@x.example", "/pricing"},
 		{"sent", "2026-10-01", "b@x.example"},
@@ -95,7 +98,7 @@ func TestFetchEvents(t *testing.T) {
 func TestFetchFailures(t *testing.T) {
 	fs, with := setup(t)
 	id := fs.NewSpreadsheet("team")
-	fs.Put(id, "Blank", [][]any{{"", " "}, {"a@x.example"}})
+	_ = fs.Put(id, "Blank", [][]any{{"", " "}, {"a@x.example"}})
 	for tab, want := range map[string]string{"Missing": "missing", "Blank": "header row"} {
 		src, err := sheetsource.New(with(api.Config{"id": "s", "spreadsheet": id, "tabs": []any{tab}}))
 		if err != nil {

@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package engine is the run: one execution of the loop, from reading
 // leadscore.yml to writing Ranked. The engine owns the loop, the lease, the
 // two-phase writes, chunked intake, the deadline and the Health writer; the

@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package cli
 
 import (
@@ -60,7 +63,7 @@ func runHealthz(inv *invocation) int {
 	if err != nil {
 		return inv.fail(fmt.Errorf("calling /healthz on port %d: %w", port, err))
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	msg := printable(strings.TrimSpace(string(body)))
 	if resp.StatusCode != http.StatusOK {

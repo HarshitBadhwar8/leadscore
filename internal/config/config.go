@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package config loads leadscore.yml: every engine key
 // with its default, the adapter blocks passed through as api.Config, the default
 // file locations, the hosted bundle, and the rubric path. It also backs the

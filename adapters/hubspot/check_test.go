@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package hubspot_test
 
 import (
@@ -49,7 +52,7 @@ func TestHubSpotCheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run := func(f *fakehub.Server, cfg api.Config) []check.Problem {
+	run := func(_ *fakehub.Server, cfg api.Config) []check.Problem {
 		return c.Run(context.Background(), check.Env{Config: &config.Config{Sinks: map[string]api.Config{"hubspot": cfg}}, Rubric: rb})
 	}
 

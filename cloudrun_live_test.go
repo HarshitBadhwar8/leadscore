@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package leadscore_test
 
 import (
@@ -154,7 +157,7 @@ deadline: 12m
 	// Registered before anything that can start runs, so a failure below
 	// still stops the schedule.
 	t.Cleanup(func() {
-		exec.Command("gcloud", "scheduler", "jobs", "pause", hosting.SchedulerJobName,
+		_ = exec.Command("gcloud", "scheduler", "jobs", "pause", hosting.SchedulerJobName,
 			"--location", region, "--project", project).Run()
 	})
 	sh("deploy", image)
@@ -325,7 +328,7 @@ func syntheticLead(i int) []any {
 	}
 }
 
-func openSheets(ctx context.Context, t *testing.T, c *config.Config) (api.Backend, api.EventLog) {
+func openSheets(_ context.Context, t *testing.T, c *config.Config) (api.Backend, api.EventLog) {
 	t.Helper()
 	open, ok := api.BackendFactory("sheets")
 	if !ok {
@@ -439,7 +442,7 @@ func postBurst(ctx context.Context, url, secret string, bodies [][]byte, perMinu
 				req.Header.Set("X-Leadscore-Secret", secret)
 				resp, err := client.Do(req)
 				if err == nil {
-					resp.Body.Close()
+					_ = resp.Body.Close()
 				}
 				if err == nil && resp.StatusCode/100 == 2 {
 					mu.Lock()
@@ -501,7 +504,7 @@ func TestLiveCloudRunHelpersOnFakes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	const secret = "live-check-secret-123"
 	h := receiver.NewHandler(receiver.Options{Store: store, Events: store, Getenv: func(k string) string {
 		if k == receiver.SecretVar {

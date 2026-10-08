@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package sqlite_test
 
 import (
@@ -16,7 +19,7 @@ func TestStoretest(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { s.Close() })
+		t.Cleanup(func() { _ = s.Close() })
 		return s, s
 	})
 }

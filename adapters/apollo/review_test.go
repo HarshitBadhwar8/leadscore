@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package apollo
 
 import (
@@ -201,12 +204,12 @@ func TestRefusedKeyStopsTheSink(t *testing.T) {
 // contact in no sequence.
 func TestContactWithoutStatusesIsAnError(t *testing.T) {
 	for _, body := range []string{`{}`, `{"contact":null}`, `{"contact":{"id":"c1","email":"a@acme-robotics.example"}}`} {
-		c := handlerClient(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) })
+		c := handlerClient(t, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(body)) })
 		if _, err := c.readContact(context.Background(), "c1"); err == nil {
 			t.Errorf("%s: no error", body)
 		}
 	}
-	c := handlerClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := handlerClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"contacts":[{"id":"c1","email":"a@acme-robotics.example"}],"pagination":{"page":1,"total_pages":1}}`))
 	})
 	if _, err := c.contactsByEmail(context.Background(), "a@acme-robotics.example"); err == nil {
@@ -241,7 +244,7 @@ func TestEachPage(t *testing.T) {
 func fullPage(t *testing.T, key, record string) api.Config {
 	t.Helper()
 	t.Setenv(KeyVariable, testKey)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		recs := strings.TrimSuffix(strings.Repeat(record+",", perPage), ",")
 		_, _ = fmt.Fprintf(w, `{%q:[%s]}`, key, recs)
 	}))

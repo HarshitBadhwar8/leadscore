@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package e2e
 
 // The suite's expectations, derived by hand from examples/rubric.yml,

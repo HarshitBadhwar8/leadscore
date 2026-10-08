@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package apollo
 
 import (
@@ -598,7 +601,7 @@ func ptr(n int) *int { return &n }
 // A context that ended stops the enricher with its own wording, not as
 // failures in a row.
 func TestEnricherStopsWhenCtxEnds(t *testing.T) {
-	c := handlerClient(t, func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() })
+	c := handlerClient(t, func(_ http.ResponseWriter, r *http.Request) { <-r.Context().Done() })
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	_, err := (&Enricher{c: c, now: time.Now}).Enrich(ctx, []string{"a.example", "b.example"}, 10)
@@ -612,7 +615,7 @@ func TestEnricherStopsWhenCtxEnds(t *testing.T) {
 // passing network failure.
 func TestCutShortReplyKeepsItsStatus(t *testing.T) {
 	cutShort := func(status int) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
+		return func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Length", "1000")
 			w.WriteHeader(status)
 			_, _ = w.Write([]byte(`{"error":`)) // then the connection closes early

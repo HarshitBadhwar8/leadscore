@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package engine
 
 import (
@@ -278,7 +281,7 @@ func pollCalls() []time.Time {
 func TestPolling(t *testing.T) {
 	in := newInstall(t, "replies: polling\npolling: { sequence_length: 30d, window_margin: 7d }\nsinks: { testpoll: {} }\n", eventsRubric)
 	clock := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	at := func(o *api.RunOptions, s *settings) { s.now = func() time.Time { return clock } }
+	at := func(_ *api.RunOptions, s *settings) { s.now = func() time.Time { return clock } }
 
 	// A failing poll does not move last_poll_at and makes the run unhealthy.
 	setPoll(t, nil, errors.New("vendor down for x@secret.example"))
@@ -332,12 +335,12 @@ func TestPolling(t *testing.T) {
 	setPoll(t, nil, nil)
 	last := clock
 	clock = clock.Add(5 * time.Hour)
-	in.run(DefaultHooks(), at)
+	_, _, _ = in.run(DefaultHooks(), at)
 	if len(pollCalls()) != 0 {
 		t.Error("polled again within six hours")
 	}
 	clock = last.Add(40 * 24 * time.Hour)
-	in.run(DefaultHooks(), at)
+	_, _, _ = in.run(DefaultHooks(), at)
 	if c := pollCalls(); len(c) != 1 || !c[0].Equal(last.Add(-7*24*time.Hour)) {
 		t.Errorf("poll after an outage since %v, want last_poll_at - 7d", c)
 	}
@@ -345,7 +348,7 @@ func TestPolling(t *testing.T) {
 	// A dry run never polls.
 	clock = clock.Add(7 * time.Hour)
 	setPoll(t, nil, nil)
-	in.run(DefaultHooks(), at, dry)
+	_, _, _ = in.run(DefaultHooks(), at, dry)
 	if len(pollCalls()) != 0 {
 		t.Error("a dry run polled")
 	}

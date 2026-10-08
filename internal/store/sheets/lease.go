@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package sheets
 
 import (
@@ -124,7 +127,7 @@ func (s *Store) readLease(ctx context.Context) (leaseFile, int64, error) {
 	if err != nil {
 		return leaseFile{}, 0, fmt.Errorf("reading the lease gs://%s/%s: %w", s.bucket, LeaseObject, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return leaseFile{}, 0, fmt.Errorf("reading the lease: %w", err)

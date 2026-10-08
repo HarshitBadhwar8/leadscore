@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package leadscore is the public surface of the leadscore outbound engine: the
 // plug-in interfaces, shared types, errors, the adapter registry, Run and Main.
 //
@@ -177,6 +180,7 @@ type WriteOp = api.WriteOp
 // both); Column and Before are for OpTrim only.
 type TableWrite = api.TableWrite
 
+// The WriteOp values.
 const (
 	OpReplace = api.OpReplace // rewrite the whole table
 	OpAppend  = api.OpAppend  // add rows; on a keyed store table, a key the table already holds fails the commit

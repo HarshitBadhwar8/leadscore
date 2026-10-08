@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package csv
 
 import (
@@ -297,7 +300,7 @@ func TestKindsAreLowercasedAndPlain(t *testing.T) {
 	body := "event,at,email\n" +
 		"Visit_Pricing,2026-08-20,a@x.example\n" +
 		"ſent,2026-08-20,a@x.example\n" + // long s: uppercases to S
-		"se​nt,2026-08-20,a@x.example\n" + // zero-width space
+		"se\u200bnt,2026-08-20,a@x.example\n" + // zero-width space
 		"demo-request,2026-08-20,a@x.example\n"
 	_, events := fetch(t, newSource(t, api.Config{"id": "x", "path": writeFile(t, body), "events": true}))
 	if events[0].Kind != "visit_pricing" {

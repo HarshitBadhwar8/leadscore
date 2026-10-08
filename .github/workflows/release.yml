@@ -66,6 +66,9 @@ jobs:
                 -o "dist/leadscore_${TAG}_${os}_${arch}${ext}" ./cmd/leadscore
             done
           done
+          # The binaries compile in third-party code whose licenses require
+          # their notices to travel with it.
+          tar czf "dist/leadscore_${TAG}_licenses.tar.gz" LICENSE NOTICE third_party/licenses
           cd dist && sha256sum leadscore_* > checksums.txt
       - name: create the release
         env:
@@ -111,3 +114,4 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ env.TAGS }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}

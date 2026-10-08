@@ -1,10 +1,13 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package logredact masks emails, secrets and home-directory paths in log text,
 // and summarises vendor error bodies without echoing the personal data a vendor
 // sends back. Every stdout and Cloud Logging line passes through it, so logs
 // carry ids, never emails.
 //
-// Adapted from the logredact module by its authors (Redact and
-// VendorErrorDetail).
+// Redact and VendorErrorDetail began as a copy of code by the same authors.
+// The package is maintained here, as part of leadscore.
 package logredact
 
 import (

@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package cli
 
 import (
@@ -38,7 +41,7 @@ func runFacts(inv *invocation) int {
 		return inv.fail(fmt.Errorf("opening the store: %w", err))
 	}
 	if cl, ok := b.(io.Closer); ok {
-		defer cl.Close()
+		defer func() { _ = cl.Close() }()
 	}
 	rows, err := b.ReadTable(context.Background(), model.TableCompanyFacts)
 	if err != nil {
@@ -62,7 +65,7 @@ func runFacts(inv *invocation) int {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", printable(r["domain"]), printable(r["enriched_at"]),
 			printable(r["not_found_at"]), printable(r["enrich_failed_at"]), printable(factsSummary(r)))
 	}
-	tw.Flush()
+	_ = tw.Flush()
 	fmt.Fprintf(inv.stdout, "%d domain(s); `leadscore facts --csv` writes every column\n", len(rows))
 	return exitOK
 }
@@ -105,7 +108,7 @@ func factsSummary(r api.Row) string {
 		}
 	}
 	if s := strings.TrimSpace(r["previous"]); s != "" {
-		json.Unmarshal([]byte(s), &prev) // a bad previous only loses the "was" notes
+		_ = json.Unmarshal([]byte(s), &prev) // a bad previous only loses the "was" notes
 	}
 	// A fact only in previous was removed (its Companies cell emptied).
 	var names []string

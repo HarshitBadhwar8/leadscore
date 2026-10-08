@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package e2e is the end-to-end suite: the
 // assembled loop through engine.RunWith with DefaultHooks, a fake clock and
 // an HTTP client pointed at internal/fakes, plus the receiver's in-process
@@ -130,7 +133,7 @@ func newInstall(t *testing.T, kind string, v variant) *install {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { s.Close() })
+		t.Cleanup(func() { _ = s.Close() })
 		in.store, in.events = s, s
 	case "sheets":
 		in.fs = fakesheets.New()
@@ -215,7 +218,7 @@ func readCSV(t *testing.T, path string) [][]string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	rows, err := csv.NewReader(f).ReadAll()
 	if err != nil {
 		t.Fatal(err)

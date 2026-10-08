@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package engine
 
 import (
@@ -463,7 +466,7 @@ func removeStaleTemps(dir string, lanes []string) {
 		}
 		for _, p := range pats {
 			if p.MatchString(e.Name()) {
-				os.Remove(filepath.Join(dir, e.Name()))
+				_ = os.Remove(filepath.Join(dir, e.Name()))
 				break
 			}
 		}
@@ -498,8 +501,8 @@ func writeCSV(dir, lane string, rows []api.Row, ready func() error) (err error) 
 	tmp := f.Name()
 	defer func() {
 		if err != nil {
-			f.Close()
-			os.Remove(tmp)
+			_ = f.Close()
+			_ = os.Remove(tmp)
 		}
 	}()
 	if err := f.Chmod(exportFileMode); err != nil {
@@ -543,6 +546,6 @@ func syncDir(dir string) error {
 	if err != nil {
 		return err
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 	return d.Sync()
 }

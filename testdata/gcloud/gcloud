@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright 2026 Workloom Solutions Private Limited
+# SPDX-License-Identifier: MIT
 # A fake gcloud for setup/gcp.sh's tests (setup_gcp_test.go). It records every
 # call in $FAKE_GCLOUD_DIR/log, one line per call, and keeps a little state in
 # $FAKE_GCLOUD_DIR/state so describe and list answer as a project would:

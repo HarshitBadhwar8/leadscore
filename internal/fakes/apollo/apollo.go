@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package apollo is a fake of the Apollo API calls leadscore makes, served
 // from the fixtures in testdata/vendors/apollo (provisional until real captured
 // calls replace them). This file covers what enrichment and the

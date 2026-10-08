@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package api
 
 // builtinAliases maps a squashed header spelling to the field it names:

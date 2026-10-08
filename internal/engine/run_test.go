@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package engine
 
 import (
@@ -81,7 +84,7 @@ func TestRunWritesBothPhases(t *testing.T) {
 	hooks := DefaultHooks()
 	hooks.Intake, hooks.Enrich, hooks.Push, hooks.Export, hooks.AfterSave =
 		hook("intake"), hook("enrich"), hook("push"), hook("export"), hook("aftersave")
-	hooks.PrePush = func(r *Run, ids []api.LeadID) error { calls = append(calls, "prepush"); return nil }
+	hooks.PrePush = func(_ *Run, _ []api.LeadID) error { calls = append(calls, "prepush"); return nil }
 	res, out, err := in.run(hooks)
 	if err != nil || !res.Healthy {
 		t.Fatalf("run: %v %+v %s", err, res, out)
@@ -159,7 +162,7 @@ func TestExpiredLeaseIsTakenOverAndLogged(t *testing.T) {
 func TestStalledRunWritesNothing(t *testing.T) {
 	in := basicInstall(t)
 	hooks := DefaultHooks()
-	hooks.Intake = func(r *Run) error {
+	hooks.Intake = func(_ *Run) error {
 		in.setLease("successor", time.Now().Add(time.Hour)) // the lease expired and was taken over
 		return nil
 	}

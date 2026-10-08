@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package hubspot
 
 import (
@@ -119,7 +122,7 @@ func TestFakeMatchesFixtures(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			got, _ := io.ReadAll(resp.Body)
 			if resp.StatusCode != fx.Status {
 				t.Fatalf("status %d, fixture %d: %s", resp.StatusCode, fx.Status, got)

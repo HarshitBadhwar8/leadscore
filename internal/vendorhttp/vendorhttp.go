@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package vendorhttp holds the HTTP rules the vendor clients share, so Apollo's
 // and HubSpot's cannot drift apart: the test keys, no redirects, a per-call
 // timeout, a size cap on the reply, transport errors without the URL, and the
@@ -86,7 +89,7 @@ func Do(hc *http.Client, req *http.Request, timeout time.Duration, maxBytes int6
 		}
 		return Reply{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	reply := Reply{Status: resp.StatusCode, Header: resp.Header, Body: raw[:min(int64(len(raw)), maxBytes)]}
 	switch {

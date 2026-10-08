@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package cli
 
 import (
@@ -126,7 +129,7 @@ func runConfigPush(inv *invocation) int {
 	if err != nil {
 		return inv.fail(err)
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 	tmp := filepath.Join(dir, "bundle.yaml")
 	if err := os.WriteFile(tmp, bundle, 0o600); err != nil {
 		return inv.fail(err)
