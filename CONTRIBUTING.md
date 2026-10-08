@@ -44,8 +44,11 @@ Use a throwaway account or project, never one a real install uses.
 | Docker | `docker build -t leadscore:ci .`, then `testdata/compose/smoke.sh leadscore:ci`: `docker compose up`, a webhook, and timer runs |
 
 Install the linter with
-`go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0`. Do not silence a
-finding inline. Fix it, or change `.golangci.yml` with a comment saying why.
+`go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0`, on Go 1.26 or
+later. Install shellcheck and hadolint with `brew install shellcheck hadolint` on macOS, or your
+package manager and hadolint's GitHub releases page on Linux.
+
+Do not silence a finding inline. Fix it, or change `.golangci.yml` with a comment saying why.
 
 After a dependency change, run `scripts/third-party-licenses.sh` to refresh
 `third_party/licenses/`, then update the module list in `NOTICE`.

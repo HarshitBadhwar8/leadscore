@@ -8,8 +8,10 @@ description: Run and maintain a leadscore install, the open-source outbound engi
 leadscore is one binary. `leadscore serve` receives Apollo webhooks (and, on
 Docker, runs the loop on a timer); `leadscore run` is one run of the loop. The
 team's rules live in two files: `leadscore.yml` (settings) and the rubric
-(`rubric.yml`); `docs/reference.md` has the full format of both. Setting it up is the
-README, step by step; this file is for running it afterwards.
+(`rubric.yml`); `docs/reference.md` has the full format of both. Setting it up is
+`docs/setup.md`, step by step, where each step is marked **[agent]** (you run
+it) or **[person]** (stop and ask a person); this file is for running it
+afterwards.
 
 Where commands run:
 
@@ -23,7 +25,9 @@ Read before you act: `leadscore doctor` (one line per check, each problem
 with its fix), `leadscore status` (the last run and every open problem),
 `leadscore ranked`, `leadscore explain <person>` and `leadscore facts` (each
 company's stored facts and where they came from). None of them writes
-anything.
+anything: not the store, not the lease, not the export lists.
+`leadscore <command> --help` shows a command's flags, and `leadscore version`
+the installed version.
 
 ## Rules you must keep
 
@@ -44,7 +48,10 @@ anything.
 1. Edit the rubric (or `leadscore.yml`).
 2. `leadscore rules check rubric.yml` until it prints no errors.
 3. `leadscore run --dry-run`: one line per lead whose verdict, status or
-   planned lane would change, then totals. It writes and spends nothing.
+   planned lane would change, then totals, and a last `dry run:` summary
+   line. It writes and spends nothing. On a first install its lead ids are
+   temporary; after a run, look leads up by email
+   (`leadscore explain <email>`) or take ids from `leadscore ranked`.
 4. Show a person the changes and get a yes. If a change looks wrong,
    `leadscore explain <person>` shows why a lead scored as it did; go back to
    step 1.
@@ -79,9 +86,11 @@ if it says the run account cannot read the secret, run
 `serve` start and doctor. `secret_missing:LEADSCORE_RECEIVER_SECRET`: the
 install expects webhooks (`replies: receiver`, the default, or
 `receiver.visit_events`) and has no receiver secret, so every webhook is
-refused. A person generates one (`openssl rand -hex 32`), puts it in `.env`
-(Docker), Secret Manager (Google Cloud) or the shell profile (plain binary),
-and in each Apollo workflow. A CSV-only install still needs
+refused. A **[person]** generates one (`openssl rand -hex 32`) and puts it in
+`.env` (Docker) or Secret Manager (Google Cloud, `setup/gcp.sh secrets`), and
+in each Apollo workflow. Never put it in a shell profile. A plain-binary
+CSV-only install, which receives no webhooks, exports it in the current
+terminal only: `export LEADSCORE_RECEIVER_SECRET=$(openssl rand -hex 32)`. A CSV-only install still needs
 one set while `replies` is `receiver`. `secret_previous:...` (a warning): a
 rotation is not finished; once every workflow sends the new secret, remove
 `LEADSCORE_RECEIVER_SECRET_PREVIOUS`.

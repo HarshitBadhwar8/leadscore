@@ -13,7 +13,9 @@ HubSpot or an export list. It writes no emails, and it never contacts a person w
 - `internal/store/{sqlite,sheets}` are the built-in stores. `adapters/` holds sources and sinks.
 - `internal/receiver` is the webhook receiver. `internal/fakes` fakes every vendor for tests.
 - `storetest/` and `sinktest/` are the conformance suites for plug-in stores and sinks.
-- `examples/` holds made-up rubrics, configs and leads. `readme_test.go` loads them.
+- `examples/` holds made-up rubrics, configs and leads. `readme_test.go` loads them, and
+  `scripts/run-examples.sh` runs every example. A new example must run under that script.
+- `docs/setup.md` is the setup runbook; the README sums up each path and links to it.
 - Tests sit beside the code. Root `*_test.go` files hold repo-wide rules (CI, docs, imports).
 - `SKILL.md` is for agents running an install, not for changing this repo.
 
@@ -37,6 +39,10 @@ The other checks CI runs, each as CONTRIBUTING.md lists it:
 | Vulnerabilities | `go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...` on Go 1.27.x |
 | Licenses | `go install github.com/google/go-licenses/v2@v2.0.1`, then `scripts/third-party-licenses.sh --check` |
 | Docker | `docker build -t leadscore:ci .`, then `testdata/compose/smoke.sh leadscore:ci` |
+
+Install the shell and Dockerfile linters with `brew install shellcheck hadolint` on macOS. On
+Linux, use your package manager for shellcheck (check `shellcheck --version` says 0.11.0) and
+download hadolint from its GitHub releases page. golangci-lint needs Go 1.26 or later.
 
 Live checks against real services skip unless their `LEADSCORE_LIVE_*` variable is set
 (CONTRIBUTING.md, "Live checks"). CI never sets them.

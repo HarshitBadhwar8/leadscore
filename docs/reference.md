@@ -2,7 +2,8 @@
 
 The exact formats: the rubric, `leadscore.yml`, the store tables, the
 receiver, the `doctor` checks, hosting, and the plug-in interfaces. The
-README walks through setup; this page is what you look things up in.
+README and `docs/setup.md` walk through setup; this page is what you look
+things up in.
 
 **Formats used everywhere.** Times are UTC in the fixed form
 `2006-01-02T15:04:05.000Z` (never trimmed, so text order is time order).
@@ -266,7 +267,7 @@ command with an empty key variable reads the key from Secret Manager.
 **Keep keys and data private.** `chmod 600 .env`; never commit `.env` or a
 service-account key file (`store.credentials`); share a spreadsheet only
 with named people, never by link; `chmod 700 out` (the export lists hold
-personal data). The README's Docker path has the details.
+personal data). `docs/setup.md`, "Path 3", has the details.
 
 ## Store tables
 
@@ -591,8 +592,10 @@ write raises `view_write_failed` and the run stays healthy.
 | Secrets | `leadscore-config`, `leadscore-config-version`, `apollo-api-key`, `hubspot-token`, `receiver-secret`, `receiver-secret-previous` |
 | Lease bucket | `<project>-leadscore-lease` (`store.lease_bucket`) |
 
-- **Image.** Releases publish `ghcr.io/tetriz-ai/leadscore`. Cloud Run cannot
-  pull from GHCR, so `deploy` goes through `ghcr-proxy`.
+- **Image.** Releases publish `ghcr.io/harshitbadhwar8/leadscore`. Cloud Run
+  cannot pull from ghcr.io, so `deploy` pulls any `ghcr.io/` image through
+  `ghcr-proxy`, which it creates. Any other image (for example one you built
+  and pushed to Artifact Registry in the same project) is deployed as it is.
 - **Schedule.** `schedule` must be a whole number of minutes dividing 60
   (`*/N * * * *`) or of hours dividing 24 (`0 */N * * *`; `24h` is
   `0 0 * * *`).
@@ -605,7 +608,7 @@ write raises `view_write_failed` and the run stays healthy.
   starts, so a push needs no redeploy.
 - **Rotating keys.** For an API key, set its variable and run
   `setup/gcp.sh secrets`; runs read the newest version. For the receiver
-  secret, follow the README's "Rotating a secret", in its order:
+  secret, follow "Rotating a secret" in `docs/setup.md`, in its order:
   `setup/gcp.sh redeploy --finish-rotation` detaches `receiver-secret-previous`
   before its versions are disabled.
 
