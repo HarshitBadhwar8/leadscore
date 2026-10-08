@@ -10,6 +10,7 @@
       "Bash(golangci-lint run:*)",
       "Bash(shellcheck:*)",
       "Bash(hadolint:*)",
+      "Bash(go install github.com/google/go-licenses/v2@v2.0.1)",
       "Bash(scripts/third-party-licenses.sh:*)"
     ]
   }

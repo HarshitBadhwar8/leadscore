@@ -185,7 +185,12 @@ None recorded.
 
 ## Push-day replacements
 
-Not started.
+Added with the open-source repo files (PR #33). Each is one text replacement on publish day.
+
+| Placeholder | Becomes | Where |
+|---|---|---|
+| `HarshitBadhwar8/leadscore` | the public repo path (org per T2) | `go.mod` (module path) and every Go import; `.github/ISSUE_TEMPLATE/config.yml:4`; `CHANGELOG.md:19-20`; `.golangci.yml:23,51`; `scripts/third-party-licenses.sh:18,52` |
+| `RELEASE_DATE_PLACEHOLDER` | the day the v0.1.0 tag is cut | `CHANGELOG.md:9` |
 
 ## Staging
 

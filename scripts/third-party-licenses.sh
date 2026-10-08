@@ -42,7 +42,21 @@ if [ "$check" = 1 ]; then
     diff -r "$out/merged" third_party/licenses | head -20 >&2
     exit 1
   fi
-  echo "third_party/licenses is up to date"
+  # A version bump can leave the license text unchanged, so NOTICE's
+  # versions are checked too: every module compiled in, at its version.
+  stale=0
+  for m in $(for os in linux darwin windows; do
+    GOOS=$os go list -deps -f '{{with .Module}}{{.Path}}@{{.Version}}{{end}}' ./cmd/leadscore
+  done | sort -u); do
+    mod=${m%@*} ver=${m#*@}
+    [ "$mod" = github.com/HarshitBadhwar8/leadscore ] && continue
+    if ! awk -v m="$mod" -v v="$ver," '$1 == "-" && ($2 == m || index($2, m "/") == 1) && $3 == v { found = 1 } END { exit !found }' NOTICE; then
+      echo "NOTICE lacks $mod $ver" >&2
+      stale=1
+    fi
+  done
+  [ "$stale" = 0 ] || exit 1
+  echo "third_party/licenses and NOTICE are up to date"
   exit 0
 fi
 rm -rf third_party/licenses
