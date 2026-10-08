@@ -37,6 +37,10 @@ type Fixture struct {
 	Documented      bool              `json:"documented"`
 	Note            string            `json:"note"`           // what is still unconfirmed about this file
 	ConfirmedFrom   string            `json:"confirmed_from"` // which record confirms which parts, when one does
+	// RecordedFrom names the real call this file's shape was recorded from
+	// (scrubbed: real field names, types, status and headers; made-up
+	// values). A recorded file is not provisional.
+	RecordedFrom string `json:"recorded_from"`
 }
 
 // Call is one request the fake answered.
@@ -233,7 +237,7 @@ func (s *Server) answer(r *http.Request) (Call, Fixture, []byte) {
 		call.Query = r.URL.Query()
 		call.Body, _ = io.ReadAll(r.Body)
 		if r.Header.Get("X-Api-Key") != s.key {
-			f := s.fixtures["auth_health/bad_key"]
+			f := s.fixtures["email_accounts/bad_key"]
 			return call, f, f.ResponseBody
 		}
 		f, body := s.answerOutreach(callName, r, call.Body)

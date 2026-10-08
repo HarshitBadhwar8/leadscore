@@ -33,7 +33,7 @@ page; the "For the plan" notes below are for the plan's owners to copy if they w
 | Container image | `ghcr.io/tetriz-ai/leadscore` | decided (S19 brief); made public at publish |
 | License | MIT | decided (O2) |
 | Copyright holder | "The leadscore authors" | working assumption; differs from the plan's O1 working value; open, the owners decide (O1) |
-| Maintainer | Rohan Chougule (@rchougule), in this log only; no repo file names him | decided (T3); his sign-off is pending |
+| Maintainer | Rohan Chougule (@rchougule) | decided (T3); sign-off pending |
 | Staging org | open: Harshit's GitHub account is not a member of `tetriz-ai` (membership API: 404) and is a member of `workloom-dev` (204), where the plan stages private rehearsal copies and Actions is blocked | open; Rohan decides (T2) |
 | First version | v0.1.0 | default; S19 brief |
 | Commit author | Harshit's GitHub noreply address until the release account exists | working assumption (T2: release account open) |

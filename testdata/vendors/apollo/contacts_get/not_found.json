@@ -1,6 +1,5 @@
 {
-  "provisional": true,
-  "documented": true,
+  "recorded_from": "The read-only live check (TestLiveApolloReadOnly, 2026-10-08): GET /api/v1/contacts/<an id that does not exist> answered 422 (not 404) with this body, Apollo's own text.",
   "method": "GET",
   "path": "/api/v1/contacts/contact-0404",
   "query": {},
@@ -10,11 +9,11 @@
     "X-Api-Key"
   ],
   "request_body": null,
-  "status": 404,
+  "status": 422,
   "response_headers": {
     "Content-Type": "application/json; charset=utf-8"
   },
   "response_body": {
-    "error": "Contact not found"
+    "error": "Oops! This contact does not exist in Apollo."
   }
 }

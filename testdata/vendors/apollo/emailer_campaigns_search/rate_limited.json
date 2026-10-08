@@ -18,9 +18,19 @@
   "status": 429,
   "response_headers": {
     "Content-Type": "application/json; charset=utf-8",
-    "Retry-After": "1"
+    "Retry-After": "1",
+    "X-Rate-Limit-Minute": "200",
+    "X-Rate-Limit-Hourly": "400",
+    "X-Rate-Limit-24-Hour": "2000",
+    "X-Minute-Requests-Left": "150",
+    "X-Hourly-Requests-Left": "0",
+    "X-24-Hour-Requests-Left": "1600",
+    "X-Minute-Usage": "50",
+    "X-Hourly-Usage": "400",
+    "X-24-Hour-Usage": "400"
   },
   "response_body": {
-    "message": "The maximum number of api calls allowed for api/v1/emailer_campaigns/search is 600 times per hour. Please upgrade your plan if you need more."
-  }
+    "message": "The maximum number of api calls allowed for api/v1/emailer_campaigns/search is 400 times per hour. Please upgrade your plan if you need more."
+  },
+  "note": "429 body still unseen (none was provoked). The rate-limit header names and the limits (200 a minute, 400 an hour, 2,000 a day, counted per endpoint) were recorded live on 200 replies (TestLiveApolloReadOnly, 2026-10-08); a 429 is assumed to carry them with Requests-Left at 0. Retry-After was never seen live; it is from Apollo's docs."
 }

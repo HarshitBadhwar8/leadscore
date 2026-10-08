@@ -348,7 +348,8 @@ Steps:
    "The rubric"); **[agent]** check it with `leadscore rules check rubric.yml`
    (or, once the container is up,
    `docker compose exec leadscore leadscore rules check /config/rubric.yml`).
-   In `leadscore.yml`, set `sinks.apollo.mailbox_id`, uncomment
+   In `leadscore.yml`, set `sinks.apollo.mailbox_id` (the sending mailbox's
+   id or its email address; either works), uncomment
    `sinks.hubspot` if you use HubSpot, and remove the blocks and the rubric
    lanes for tools you do not use.
 4. Give the receiver an address (skip this for CSV only):

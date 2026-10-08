@@ -2,8 +2,31 @@ package apollo
 
 import "fmt"
 
-// pagination is a search reply's paging record. The shape is unconfirmed (page
-// and total_pages under "pagination").
+// eachUntilEmpty is eachPage for a search whose reply has no pagination
+// record (the emailer message search, live check 2026-10-08): it reads page
+// 1, 2, ... until a page comes back empty. A short page is not the end:
+// Apollo may cap per_page below what was asked without saying so, and
+// stopping early would lose records while the caller counts the read as
+// complete. Up to maxPages pages may hold records; one more is read to see
+// it empty, and if it is not, the search is an error, never read as complete.
+func eachUntilEmpty(maxPages int, fetch func(page int) (int, error)) error {
+	for page := 1; ; page++ {
+		n, err := fetch(page)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return nil
+		}
+		if page > maxPages {
+			return fmt.Errorf("apollo: the search has more than %d pages; it was not read in full", maxPages)
+		}
+	}
+}
+
+// pagination is a search reply's paging record: page and total_pages under
+// "pagination" (live check 2026-10-08, on the contact and sequence searches;
+// the emailer message search has none).
 type pagination struct {
 	Page       int `json:"page"`
 	TotalPages int `json:"total_pages"`

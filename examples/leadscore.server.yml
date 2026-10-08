@@ -24,8 +24,8 @@ enrich: { type: apollo, max_age: 30d, max_lookups_per_run: 100, max_lookups_per_
 # block you do not use, and the rubric's lanes that push to it.
 sinks:
   # Apollo sequences, with APOLLO_API_KEY (a master key). mailbox_id is the
-  # mailbox enrollments send from (quote it); doctor's apollo-sequences check
-  # says when it is wrong.
+  # mailbox enrollments send from, by id or email address (quote it); doctor's
+  # apollo-sequences check says when it is wrong.
   apollo: { mailbox_id: "your-mailbox-id" }
   # HubSpot contacts and deals, with HUBSPOT_TOKEN. After adding it, run
   # `docker compose exec leadscore leadscore setup hubspot` once.

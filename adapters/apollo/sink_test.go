@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -323,16 +324,17 @@ func TestEnrollNeedsTheContactID(t *testing.T) {
 	}
 }
 
-// Proof (poller): since is used as given (its UTC day), every page is read,
-// and each reply carries its label and message id.
+// Proof (poller): since is used as given (its UTC day; a reply sent before
+// it is not returned), and each reply carries its label and message id, and
+// its contact id when Apollo gives one. A reply is timed at its send
+// (completed_at): Apollo gives no reply time.
 func TestPollUsesSinceAndCarriesLabelAndMessageID(t *testing.T) {
 	fake, cfg := outreachFake(t)
 	sent := time.Date(2026, 9, 2, 9, 0, 0, 0, time.UTC)
 	fake.AddReply(fakeapollo.Reply{MessageID: "msg-1", ContactID: "contact-1", Email: "Dana@Acme-Robotics.example",
-		Label: "willing_to_meet", SentAt: sent, RepliedAt: sent.Add(26 * time.Hour)})
+		Label: "willing_to_meet", SentAt: sent})
 	fake.AddReply(fakeapollo.Reply{MessageID: "msg-2", Email: "eli@acme-robotics.example", SentAt: sent.Add(time.Hour)})
 	fake.AddReply(fakeapollo.Reply{MessageID: "msg-old", Email: "old@acme-robotics.example", SentAt: sent.Add(-72 * time.Hour)})
-	fake.SetPageSize(1)
 	p, err := NewPoller(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -355,18 +357,191 @@ func TestPollUsesSinceAndCarriesLabelAndMessageID(t *testing.T) {
 		}
 	}
 	if pages != 2 {
-		t.Errorf("%d search pages read, want 2 (one reply per page)", pages)
+		t.Errorf("%d search pages read, want 2 (the second empty: only an empty page ends the read)", pages)
 	}
 	if len(evs) != 2 {
 		t.Fatalf("events = %+v, want the two replies sent since", evs)
 	}
 	a, b := evs[0], evs[1]
 	if a.Kind != "reply" || a.Email != "dana@acme-robotics.example" || a.Attrs[AttrLabel] != "willing_to_meet" ||
-		a.Attrs[AttrMessageID] != "msg-1" || a.Attrs[AttrContactID] != "contact-1" || !a.At.Equal(sent.Add(26*time.Hour)) {
+		a.Attrs[AttrMessageID] != "msg-1" || a.Attrs[AttrContactID] != "contact-1" || !a.At.Equal(sent) || a.Attrs[AttrNoReplyTime] != "" {
 		t.Errorf("first event = %+v", a)
 	}
-	if b.Attrs[AttrMessageID] != "msg-2" || b.Attrs[AttrLabel] != "" || !b.At.Equal(sent.Add(time.Hour)) {
-		t.Errorf("an unlabelled reply = %+v (timed at its send when it has no reply time)", b)
+	if b.Email != "eli@acme-robotics.example" || b.Attrs[AttrMessageID] != "msg-2" || b.Attrs[AttrLabel] != "" ||
+		b.Attrs[AttrContactID] != "" || !b.At.Equal(sent.Add(time.Hour)) {
+		t.Errorf("an unlabelled reply with a null contact_id = %+v (matched by to_email, timed at its send)", b)
+	}
+}
+
+// The reply search has no pagination record (live check 2026-10-08), so the
+// poller reads pages until an empty one, never stopping on a short page:
+// Apollo may cap per_page below the 100 asked without saying so, and a poll
+// that stopped short would lose replies yet count as complete. 250 replies
+// are four calls at 100 a page, and every reply is read when the page is
+// silently capped at 30 (nine pages, then an empty one).
+func TestPollReadsPagesUntilAnEmptyOne(t *testing.T) {
+	for _, tc := range []struct{ n, capped, calls int }{{250, 0, 4}, {200, 0, 3}, {250, 30, 10}} {
+		fake, cfg := outreachFake(t)
+		if tc.capped > 0 {
+			fake.SetPageSize(tc.capped)
+		}
+		sent := time.Date(2026, 9, 2, 9, 0, 0, 0, time.UTC)
+		for i := range tc.n {
+			fake.AddReply(fakeapollo.Reply{MessageID: fmt.Sprintf("msg-%03d", i), Email: fmt.Sprintf("p%d@acme-robotics.example", i), SentAt: sent})
+		}
+		p, err := NewPoller(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		evs, err := p.Poll(context.Background(), sent.Add(-time.Hour))
+		if err != nil {
+			t.Fatalf("%+v: %v", tc, err)
+		}
+		ids := map[string]bool{}
+		for _, e := range evs {
+			ids[e.Attrs[AttrMessageID]] = true
+		}
+		if len(evs) != tc.n || len(ids) != tc.n || callsOf(fake, messagesSearchPath) != tc.calls {
+			t.Errorf("%+v: %d events (%d distinct) in %d calls", tc, len(evs), len(ids), callsOf(fake, messagesSearchPath))
+		}
+	}
+}
+
+// Up to maxPages pages may hold records; one more is read, and the search is
+// complete only if that one is empty. More is an error, never read as
+// complete.
+func TestPollPageLimit(t *testing.T) {
+	pages := func(full int) func(int) (int, error) {
+		return func(page int) (int, error) {
+			if page <= full {
+				return perPage, nil
+			}
+			return 0, nil
+		}
+	}
+	if err := eachUntilEmpty(3, pages(3)); err != nil {
+		t.Errorf("exactly 3 full pages, then an empty one: %v", err)
+	}
+	if err := eachUntilEmpty(3, pages(4)); err == nil {
+		t.Errorf("4 full pages under a limit of 3: no error")
+	}
+	calls := 0
+	err := eachUntilEmpty(3, func(int) (int, error) { calls++; return 1, nil })
+	if err == nil || calls != 4 {
+		t.Errorf("never empty: err %v after %d calls, want an error after 4", err, calls)
+	}
+}
+
+// An unknown contact id is a 422 (live check 2026-10-08), not a 404: the
+// enroll step's read of it fails and counts one attempt, neither a refusal
+// nor a wait.
+func TestReadingAnUnknownContactIs422(t *testing.T) {
+	_, cfg := outreachFake(t)
+	s := newTestSink(t, cfg)
+	_, err := s.c.readContact(context.Background(), "contact-9999")
+	if !IsStatus(err, http.StatusUnprocessableEntity) {
+		t.Fatalf("err = %v, want a 422", err)
+	}
+	if c := classify(err); errors.Is(c, api.ErrRefused) || errors.Is(c, api.ErrTransient) || errors.Is(c, api.ErrRateLimited) {
+		t.Errorf("classify = %v, want an error that counts an attempt", c)
+	}
+}
+
+// mailbox_id may be the mailbox's address: the sink resolves it to the id
+// once per run (one mailbox list call) and sends from the id. An id is used
+// as given. An address no mailbox has makes the enroll step wait
+// (ErrTransient), and enrolls nothing.
+func TestMailboxByAddress(t *testing.T) {
+	fake, cfg := outreachFake(t)
+	fake.AddMailboxAddress("mailbox-0002", "Sales@Leadscore-Demo.example")
+	cfg["mailbox_id"] = "sales@leadscore-demo.example"
+	s := newTestSink(t, cfg)
+	for _, l := range []api.LeadRef{lead("lead-1", "a@acme-robotics.example"), lead("lead-2", "b@acme-robotics.example")} {
+		if _, err := push(t, s, l); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := callsOf(fake, emailAccountsPath); n != 1 {
+		t.Errorf("%d mailbox list calls, want 1 (resolved once per run)", n)
+	}
+	adds := 0
+	for _, c := range fake.Calls() {
+		if strings.HasSuffix(c.Path, "/add_contact_ids") {
+			adds++
+			var body map[string]any
+			_ = json.Unmarshal(c.Body, &body)
+			if body["send_email_from_email_account_id"] != "mailbox-0002" {
+				t.Errorf("sent from %v, want the resolved id", body["send_email_from_email_account_id"])
+			}
+		}
+	}
+	if adds != 2 {
+		t.Errorf("%d add calls, want 2", adds)
+	}
+
+	fake2, cfg2 := outreachFake(t)
+	if _, err := push(t, newTestSink(t, cfg2), lead("lead-1", "a@acme-robotics.example")); err != nil {
+		t.Fatal(err)
+	}
+	if n := callsOf(fake2, emailAccountsPath); n != 0 {
+		t.Errorf("an id: %d mailbox list calls, want 0", n)
+	}
+
+	// An unknown address: both steps wait, before any contact is created or
+	// read.
+	fake3, cfg3 := outreachFake(t)
+	cfg3["mailbox_id"] = "nobody@leadscore-demo.example"
+	s3 := newTestSink(t, cfg3)
+	l := lead("lead-1", "a@acme-robotics.example")
+	_, err := s3.Do(context.Background(), step(l, StepContact, nil))
+	if !errors.Is(err, api.ErrTransient) || !errors.Is(err, ErrMailboxNotFound) || fake3.Count("contact") != 0 {
+		t.Errorf("an unknown address, contact step: err = %v, %d created", err, fake3.Count("contact"))
+	}
+	_, err = s3.Do(context.Background(), step(l, StepEnroll, map[string]string{StepContact: "contact-0001"}))
+	if !errors.Is(err, api.ErrTransient) || callsOf(fake3, "/api/v1/contacts/contact-0001") != 0 {
+		t.Errorf("an unknown address, enroll step: err = %v (or the contact was read)", err)
+	}
+}
+
+// An alias of a mailbox resolves to that mailbox; the mailbox's own address
+// wins over an alias another mailbox shares.
+func TestMailboxByAlias(t *testing.T) {
+	fake, cfg := outreachFake(t)
+	fake.AddMailboxAddress("mailbox-0002", "old@leadscore-demo.example", "old@leadscore-demo.example", "team@leadscore-demo.example")
+	fake.AddMailboxAddress("mailbox-0003", "team@leadscore-demo.example")
+	c := newTestSink(t, cfg).c
+	for addr, want := range map[string]string{"OLD@leadscore-demo.example": "mailbox-0002", "team@leadscore-demo.example": "mailbox-0003"} {
+		if id, err := c.ResolveMailbox(context.Background(), addr); err != nil || id != want {
+			t.Errorf("%s: %q, %v; want %s", addr, id, err, want)
+		}
+	}
+	fake.AddMailboxAddress("mailbox-0004", "main@leadscore-demo.example", "main@leadscore-demo.example", "sales@leadscore-demo.example")
+	if id, err := c.ResolveMailbox(context.Background(), "sales@leadscore-demo.example"); err != nil || id != "mailbox-0004" {
+		t.Errorf("an alias: %q, %v", id, err)
+	}
+}
+
+// A mailbox lookup that fails other than by the key or a rate limit (a 404,
+// a 422, a 5xx) is a setup problem, no lead's: the step waits (ErrTransient)
+// rather than spending the lead's attempts. A refused key still stops the
+// sink for the run (ErrRateLimited).
+func TestMailboxLookupFailuresWait(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		want   error
+	}{{404, api.ErrTransient}, {422, api.ErrTransient}, {500, api.ErrTransient}, {401, api.ErrRateLimited}, {429, api.ErrRateLimited}} {
+		c := handlerClient(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(tc.status)
+			_, _ = w.Write([]byte(`{"error":"nope"}`))
+		})
+		s := &Sink{c: c, mailbox: "sales@leadscore-demo.example", sequences: map[string]string{}}
+		_, err := s.sendingMailbox(context.Background())
+		if !errors.Is(err, tc.want) {
+			t.Errorf("%d: err = %v, want %v", tc.status, err, tc.want)
+		}
+		if tc.want == api.ErrTransient && (errors.Is(err, api.ErrRateLimited) || errors.Is(err, api.ErrRefused)) {
+			t.Errorf("%d: err = %v is also another class", tc.status, err)
+		}
 	}
 }
 
@@ -406,7 +581,10 @@ func TestPollSendsTheSearchAsAJSONBody(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("body\n got %v\nwant %v (the fixture's request)", got, want)
 	}
-	if got["per_page"] != float64(perPage) || got["emailerMessageDateRange"].(map[string]any)["min"] != "2026-08-01" {
+	// The date filter's key is emailer_message_date_range: the live check saw
+	// Apollo ignore emailerMessageDateRange and return every reply.
+	rng, _ := got["emailer_message_date_range"].(map[string]any)
+	if got["per_page"] != float64(perPage) || rng["min"] != "2026-08-01" || got["emailerMessageDateRange"] != nil {
 		t.Errorf("body = %v", got)
 	}
 }

@@ -106,7 +106,7 @@ func TestUnsubscribeByPollingBlocksTheNextPush(t *testing.T) {
 	w.config("pushes_enabled: true", "pushes_enabled: true\nreplies: polling")
 	w.pushesOff() // polls once and finds nothing
 	now := time.Now().UTC()
-	f.AddReply(fakeapollo.Reply{MessageID: "msg-1", Email: "ana@acme.example", Label: "unsubscribe", SentAt: now.Add(-time.Hour), RepliedAt: now})
+	f.AddReply(fakeapollo.Reply{MessageID: "msg-1", Email: "ana@acme.example", Label: "unsubscribe", SentAt: now.Add(-time.Hour)})
 	w.clock = func() time.Time { return time.Now().Add(7 * time.Hour) } // the next poll is due
 	res, out := w.mustRun(client)
 	if hasKey(res.Problems, "poll_failed:apollo") {

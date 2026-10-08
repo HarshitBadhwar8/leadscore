@@ -1,6 +1,5 @@
 {
-  "provisional": true,
-  "confirmed_from": "A live API test (record: Apollo transport spike, 2026-08-10): GET /v1/auth/health with the key in the X-Api-Key header answered 200 with exactly this body. The response headers were not recorded.",
+  "recorded_from": "The read-only live check (TestLiveApolloReadOnly, 2026-10-08): GET /v1/auth/health with a good key in X-Api-Key answered 200 with exactly this body (also on /api/v1/auth/health). No rate-limit headers on this path.",
   "method": "GET",
   "path": "/v1/auth/health",
   "query": {},

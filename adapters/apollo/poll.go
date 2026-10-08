@@ -36,44 +36,46 @@ func NewPoller(cfg api.Config) (api.Poller, error) {
 // Poll returns one `reply` event per replied email sent on or after since, with
 // the reply's label and the email's message id in Attrs, and the contact id
 // when Apollo gives one. It uses since as given: the window is the engine's to
-// choose, and Apollo's date filter is by day, so the poll starts at since's UTC
-// day and may return a little more, which the engine's keys de-duplicate. A
-// label Apollo adds later is a new event, since the key is the message id plus
-// the label (events.Key).
+// choose. A label Apollo adds later is a new event, since the key is the
+// message id plus the label (events.Key).
+//
+// Apollo's date filter is on the send date (completed_at), not the reply's:
+// a reply is found only if its email was sent on or after since's UTC day,
+// so the window must reach back by the longest sequence. The engine's window does
+// (polling.sequence_length + window_margin); a reply that comes later than
+// that after its email was sent is not seen.
 //
 // Every page is read; any failure (a 429 included) fails the whole poll, so
 // the engine keeps last_poll_at and reads the same window next time.
 //
-// A live API test called this search as a POST (body encoding not recorded;
-// this sends JSON, as the other searches do) and showed
-// that the replied filter is applied by Apollo (every record it returned had
-// replied true), that the label field is reply_class (null on most replies),
-// and that each message carries to_email. Unconfirmed: the date filter by day
-// on completed_at, and the reply time's field (replied_at, else the send's
-// completed_at).
+// The read-only live check (2026-10-08) showed: the search is a POST with a
+// JSON body; Apollo applies the replied filter; the date filter's key is
+// emailer_message_date_range (the camelCase emailerMessageDateRange is
+// silently ignored, returning every reply ever); the reply has no pagination
+// record, so pages are read until an empty one; the label field is reply_class
+// (null on most); to_email is always set, contact_id is sometimes null.
 func (p *Poller) Poll(ctx context.Context, since time.Time) ([]api.Event, error) {
 	var out []api.Event
-	err := eachPage(maxPollPages, func(page int) (int, pagination, error) {
+	err := eachUntilEmpty(maxPollPages, func(page int) (int, error) {
 		body := map[string]any{
 			"emailer_message_stats":           []string{"replied"},
 			"emailer_message_date_range_mode": "completed_at",
-			"emailerMessageDateRange":         map[string]string{"min": since.UTC().Format(time.DateOnly)},
+			"emailer_message_date_range":      map[string]string{"min": since.UTC().Format(time.DateOnly)},
 			"page":                            page,
 			"per_page":                        perPage,
 		}
 		var reply struct {
-			Messages   []polledMessage `json:"emailer_messages"`
-			Pagination pagination      `json:"pagination"`
+			Messages []polledMessage `json:"emailer_messages"`
 		}
 		if err := p.c.Do(ctx, Request{Method: http.MethodPost, Path: messagesSearchPath, Body: body}, &reply); err != nil {
-			return 0, pagination{}, err
+			return 0, err
 		}
 		for _, m := range reply.Messages {
 			if e, ok := m.event(p.now().UTC()); ok {
 				out = append(out, e)
 			}
 		}
-		return len(reply.Messages), reply.Pagination, nil
+		return len(reply.Messages), nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("apollo: reading replies: %w", err)
@@ -82,7 +84,8 @@ func (p *Poller) Poll(ctx context.Context, since time.Time) ([]api.Event, error)
 }
 
 // maxPollPages bounds one poll (Apollo's search stops at 50,000 records:
-// 500 pages of 100).
+// 500 pages of 100). A poll with more pages is an error, never read as
+// complete.
 const maxPollPages = 500
 
 // polledMessage is the part of an emailer message a reply event reads.
@@ -91,7 +94,6 @@ type polledMessage struct {
 	ContactID   string `json:"contact_id"`
 	ToEmail     string `json:"to_email"`
 	ReplyClass  string `json:"reply_class"`
-	RepliedAt   string `json:"replied_at"`
 	CompletedAt string `json:"completed_at"`
 }
 
@@ -111,11 +113,13 @@ func (m polledMessage) event(now time.Time) (api.Event, bool) {
 		Attrs: attrs(AttrMessageID, strings.TrimSpace(m.ID), AttrLabel, strings.ToLower(strings.TrimSpace(m.ReplyClass)),
 			AttrContactID, contactID),
 	}
-	for _, s := range []string{m.RepliedAt, m.CompletedAt} {
-		if t, err := time.Parse(time.RFC3339, strings.TrimSpace(s)); err == nil {
-			e.At, e.ReceivedAt = t.UTC(), t.UTC()
-			return e, true
-		}
+	// Apollo's emailer message carries no reply time: the live check found
+	// only completed_at, created_at, due_at and failed_at, no replied_at.
+	// completed_at is when the email was sent, the closest known time before
+	// the reply, so the reply is timed at its send.
+	if t, err := time.Parse(time.RFC3339, strings.TrimSpace(m.CompletedAt)); err == nil {
+		e.At, e.ReceivedAt = t.UTC(), t.UTC()
+		return e, true
 	}
 	// No time Apollo gave: timed at the poll for its effects, and marked so
 	// that a reply with no message id is keyed without the poll's time
