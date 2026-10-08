@@ -44,7 +44,7 @@ const (
 	lookupMargin = 10 // percent: extra new pushes looked up to replace leads a lookup removes
 	// dealSearchLag is how long after a deal step's latest call (with no
 	// deal id back) a lookup's "no deal" answer for its company is not
-	// trusted: HubSpot's search can lag a fresh create. S0 confirms the lag
+	// trusted: HubSpot's search can lag a fresh create. Unconfirmed: the lag
 	// is seconds. The company stays held until a lookup at least 15 minutes
 	// after the step's last call; a step retried every run keeps it held
 	// until it settles.

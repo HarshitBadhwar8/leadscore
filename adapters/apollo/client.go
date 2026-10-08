@@ -40,7 +40,7 @@ const DefaultBaseURL = "https://api.apollo.io"
 // CallTimeout bounds one attempt of one call.
 const CallTimeout = 30 * time.Second
 
-// Paths of the calls this file makes. S0 confirms: the auth-health path and
+// Paths of the calls this file makes. Unconfirmed: the auth-health path and
 // that it costs no credits.
 const authHealthPath = "/v1/auth/health"
 
@@ -254,17 +254,17 @@ func retryWait(retryAfter string, attempt int) time.Duration {
 var ErrKeyRefused = errors.New("apollo: the key does not sign in (is_logged_in is false)")
 
 // KeyRefused reports whether err says the key itself is bad: a 401 or 403,
-// or ErrKeyRefused. S0 confirms which of 401 and 403 Apollo uses for a bad
-// key; both count.
+// or ErrKeyRefused. Which of 401 and 403 Apollo uses for a bad key is
+// unconfirmed; both count.
 func KeyRefused(err error) bool {
 	var se *StatusError
 	return errors.Is(err, ErrKeyRefused) || errors.As(err, &se) && vendorhttp.KeyRefused(se.Status)
 }
 
 // AuthHealth calls Apollo's free auth-health endpoint and reports whether the
-// key signs in. It never spends a credit (S0 confirms), which is why the
-// apollo-key check uses it rather than an enrichment call. S0 confirms the
-// reply shape: a bad key may come back as 401, or as 200 with is_logged_in
+// key signs in. It never spends a credit (unconfirmed), which is why the
+// apollo-key check uses it rather than an enrichment call. The reply shape
+// is unconfirmed: a bad key may come back as 401, or as 200 with is_logged_in
 // false (ErrKeyRefused); both read as not signed in.
 func (c *Client) AuthHealth(ctx context.Context) error {
 	var reply struct {
@@ -282,7 +282,7 @@ func (c *Client) AuthHealth(ctx context.Context) error {
 
 // ContactOptOutFlag says whether Apollo's contact record carries an opt-out
 // flag that a lookup by email can read without spending credits.
-// S0 confirms: until it does, this is false, the safe default:
+// Unconfirmed: until it is, this is false, the safe default:
 // the apollo-key check warns teams that send only through Apollo that a
 // person who clicked an unsubscribe link without replying is not seen.
 const ContactOptOutFlag = false

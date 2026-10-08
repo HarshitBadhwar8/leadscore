@@ -12,8 +12,8 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/check"
 )
 
-// requiredScopes are the private-app scopes the sink and lookup use (S0
-// confirms the list); dealsWriteScope is needed only when a lane pushes to
+// requiredScopes are the private-app scopes the sink and lookup use (the
+// list is unconfirmed); dealsWriteScope is needed only when a lane pushes to
 // hubspot:deals. Setup also needs crm.schemas.contacts.write and
 // crm.schemas.deals.write, which a run does not.
 var requiredScopes = []string{
@@ -72,7 +72,7 @@ func (hubspotCheck) Run(ctx context.Context, env check.Env) []check.Problem {
 			}
 		}
 	}
-	// S0 confirms this call and its answer for private-app tokens.
+	// Unconfirmed: this call and its answer for private-app tokens.
 	var info struct {
 		Scopes []string `json:"scopes"`
 	}

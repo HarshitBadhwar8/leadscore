@@ -1,4 +1,4 @@
-# S17 expected results, derived by hand
+# End-to-end expected results, derived by hand
 
 Everything below was worked out by hand from `examples/rubric.yml`,
 `examples/leads.csv` and the fixture events listed here, **before the suite
@@ -40,8 +40,8 @@ to the file before run 2.
   `routeclair.example` (employees 220, country France). Every other domain
   answers not found, so its CSV facts stand.
 - **C (CSV-only):** `testdata/rubric_csv_only.yml`, the example rubric with
-  only the `nurture` export lane. S2 made the example's cold lanes require
-  `receiver_only: false`, and S13 made a cold lane claim its leads for the
+  only the `nurture` export lane. The example's cold lanes require
+  `receiver_only: false`, and a cold lane claims its leads for the
   export (`do_not_contact: yes`) even with no sink set up, so a CSV-only team
   running the example unchanged would see every fit lead marked do-not-contact.
   The variant drops the three push lanes; everything above `lanes:` is the
@@ -106,10 +106,10 @@ present = 10; sources_seen band {2: 10}.
 
 `sources_seen` counts channels that reported the lead through input rows or
 identities. In V, an identified receiver request adds a `receiver` input row
-(contracts 5.1, "Receiver rows"), so Anna and Lea (identified visits) and Tom
-(his reply) count 2. Company-only visits make no row, so Marie stays 1. In C,
-visits come from an events source, which yields events, not input rows, so
-every lead counts 1.
+(see docs/reference.md, "Receiver"), so Anna and Lea (identified visits) and
+Tom (his reply) count 2. Company-only visits make no row, so Marie stays 1.
+In C, visits come from an events source, which yields events, not input
+rows, so every lead counts 1.
 
 | Lead | Title | V contact | C contact |
 |---|---|---|---|
@@ -178,8 +178,8 @@ lane; in run 2, where nobody is pushed, a lead with a nurture match shows
 Columns compared: email, linkedin_url, full_name, company_domain, the four
 derived names, the three scores, status, lane. `rubric_version` must equal the
 compiled rubric's version. `reasons` is the renderer's text and is not
-compared word for word. `linkedin_url` is the canonical identity form
-(contracts 12.5): `linkedin.com/in/fake-example-0001`.
+compared word for word. `linkedin_url` is the canonical identity form:
+`linkedin.com/in/fake-example-0001`.
 
 Run 1:
 
@@ -291,7 +291,7 @@ would otherwise put Sam on demo-followup).
 
 - **Change log lines.** The run logs a tier or priority change as
   `<name> <old> -> <new>` (the format is `internal/engine/score.go`,
-  `buildRanked`; the contracts fix only the kinds `tier_change` and
+  `buildRanked`; the docs fix only the kinds `tier_change` and
   `priority_change`). So Marie's run-2 lines end `-> 2` and `-> B`.
 - **Blocked leads' reasons.** A lead blocked by an opt-out keeps its
   matching lanes in the evaluator's result, and each lane it is skipped on

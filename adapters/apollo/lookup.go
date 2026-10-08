@@ -16,14 +16,15 @@ import (
 // opt-out flag. It catches a person who clicked an unsubscribe link without
 // replying, which neither polling nor HubSpot may show.
 //
-// It is registered only when ContactOptOutFlag is true (S0 found the flag):
+// It is registered only when ContactOptOutFlag is true, which it becomes only
+// once the flag is confirmed:
 // without the flag it could only ever say "not opted out", which is no check
 // at all, and the apollo-key check warns Apollo-only teams instead.
 
 // KindOptOut is the kind of a lookup's opt-out event.
 const KindOptOut = "optout"
 
-// optOutField is the contact's opt-out flag. S0 confirms its name, that it is
+// optOutField is the contact's opt-out flag. Unconfirmed: its name, that it is
 // always present (true or false), that the search spends no credits, and
 // that q_keywords matches by email.
 const optOutField = "email_unsubscribed"

@@ -19,7 +19,7 @@ var (
 	// long after the oldest request in its batch arrived, and every request in
 	// the batch then gets 5xx so Apollo can retry it.
 	//
-	// S0 confirms: Apollo's request timeout and whether it retries a 5xx or a
+	// Unconfirmed: Apollo's request timeout and whether it retries a 5xx or a
 	// timeout. Until then the safe default holds: nothing is answered 2xx
 	// before it is stored, and every request is answered within this cap,
 	// which is well inside common webhook timeouts. A request Apollo gave up on

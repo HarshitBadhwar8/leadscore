@@ -37,7 +37,8 @@ func section(t *testing.T, doc, heading string) string {
 
 // The README carries every duty the design gives it (sinks, receivers, the
 // CLI, security and cost, export lists, the receiver, the setup runbooks and
-// S0's answers), so a later edit cannot drop one unnoticed.
+// the vendor answers still unconfirmed), so a later edit cannot drop one
+// unnoticed.
 func TestReadmeDuties(t *testing.T) {
 	readme := readFile(t, "README.md")
 	flat := strings.Join(strings.Fields(readme), " ")
@@ -54,7 +55,7 @@ func TestReadmeDuties(t *testing.T) {
 		"event-rate advice":                                           "Above about 1,500 events a day, use SQLite",
 		"Workspace exception when sharing the Sheet":                  "ask your Workspace admin to allow sharing this file with the service accounts",
 		"receiver secret warning":                                     "works like a password: anyone who has it can send fake events",
-		"Apollo-only opt-out warning (S0)":                            "apollo-key:no_optout_flag",
+		"Apollo-only opt-out warning":                                 "apollo-key:no_optout_flag",
 		"owner edits protected tabs without warning":                  "edit the tabs leadscore protects (`Ranked`, `Health`, `Pushes`, ...) **with no warning**",
 		"CSV formula injection (csvsafe)":                             "never runs a formula a lead's data carried",
 		"pre-release CLI install with the gcloud mount":               "-v ~/.config/gcloud:/home/leadscore/.config/gcloud:ro",

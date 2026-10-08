@@ -12,8 +12,8 @@ import (
 // Every fixture's request, replayed against a fake seeded to match it,
 // gets the fixture's status and an answer with the fixture's shape: every
 // key the fixture has, with a value of the same JSON type. So the fake
-// cannot drift from the fixtures, and when S0 replaces a fixture the fake's
-// differences show up here.
+// cannot drift from the fixtures, and when a real capture replaces a
+// fixture the fake's differences show up here.
 func TestFakeMatchesFixtures(t *testing.T) {
 	fixtures, err := Fixtures()
 	if err != nil {
@@ -87,7 +87,7 @@ func TestFakeMatchesFixtures(t *testing.T) {
 				t.Skip(why)
 			}
 			if !fx.Provisional {
-				t.Errorf("%s: not marked provisional, but S0 has not recorded it", key)
+				t.Errorf("%s: not marked provisional, but no real call was recorded for it", key)
 			}
 			s := New()
 			if bare[key] {

@@ -11,8 +11,8 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 )
 
-// optOutProperty is the contact's "unsubscribed from all email" flag (S0
-// confirms the name and that "true" is its set value).
+// optOutProperty is the contact's "unsubscribed from all email" flag
+// (unconfirmed: the name and that "true" is its set value).
 const optOutProperty = "hs_email_optout"
 
 // Lookup is the HubSpot Lookup, run just before a push. For the leads it is
@@ -141,7 +141,7 @@ func optedOut(o object) bool {
 }
 
 // byEmailRead reads every email's contact (batch read by email; an email no
-// contact has is simply absent). S0 confirms whether a read by email also
+// contact has is simply absent). Unconfirmed: whether a read by email also
 // matches a contact's secondary addresses: if an answer comes back under an
 // address we did not send, the emails left unmatched in that batch are read
 // one at a time, so each answer belongs to the email asked for.
@@ -217,7 +217,7 @@ func (r *lookupRun) leadOptOut(i int) {
 
 // byStoredID reads the contacts the ledger already holds for each lead (the
 // contact step's vendor ids, in LeadRef.Done). A contact merged into another
-// in HubSpot answers with the surviving contact (S0 confirms), so an
+// in HubSpot answers with the surviving contact (unconfirmed), so an
 // opt-out on the survivor counts for the lead. An id the batch read does
 // not answer under its own id is read on its own; one that no longer
 // exists is skipped.

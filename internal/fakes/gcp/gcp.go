@@ -8,7 +8,7 @@
 // resources are JSON documents a test sets, answered as written.
 //
 // The request and answer shapes follow Google's public REST references, not
-// S0 captures (S0 has not recorded the Cloud Run checks yet).
+// recorded calls (none are recorded for the Cloud Run checks yet).
 package gcp
 
 import (

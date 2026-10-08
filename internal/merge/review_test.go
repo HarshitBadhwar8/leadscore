@@ -149,7 +149,7 @@ func TestCanonicalLinkedIn(t *testing.T) {
 		t.Errorf("pub URL = %q", got)
 	}
 	for _, v := range []string{"N/A", "-", "none", "n/a", "linkedin", "https://linkedin.com/", "https://linkedin.com/in/",
-		"https://www.linkedin.com/company/acme", "https://notlinkedin.com/in/ada", "https://linkedin.com.evil.example/in/ada", "ada"} {
+		"https://www.linkedin.com/company/acme", "https://notlinkedin.example/in/ada", "https://linkedin.com.evil.example/in/ada", "ada"} {
 		if got := CanonicalLinkedIn(v); got != "" {
 			t.Errorf("CanonicalLinkedIn(%q) = %q, want no key", v, got)
 		}

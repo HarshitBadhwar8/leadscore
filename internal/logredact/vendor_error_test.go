@@ -19,18 +19,18 @@ func TestVendorErrorDetailAdmitsOnlyMachineIdentifiers(t *testing.T) {
 	}{
 		{
 			name: "a hubspot validation failure keeps the ids and drops the echoed properties",
-			body: `{"status":"error","message":"Property values were not valid: dealname 'Leadscore — priya@acme.com' is invalid",
+			body: `{"status":"error","message":"Property values were not valid: dealname 'Leadscore — priya@acme.example' is invalid",
 			        "correlationId":"9c1f-4d2a","category":"VALIDATION_ERROR"}`,
 			wantHas:   []string{"correlationId=9c1f-4d2a", "category=VALIDATION_ERROR"},
-			wantLacks: []string{"priya@acme.com", "dealname", "Property values"},
+			wantLacks: []string{"priya@acme.example", "dealname", "Property values"},
 		},
 		{
 			name: "an apollo rejection drops every echoed contact field",
 			body: `{"error":"duplicate contact","code":"DUPLICATE","first_name":"Priya","last_name":"Sharma",
-			        "title":"VP Engineering","organization_name":"Acme Corp","website_url":"https://acme.com",
-			        "email":"priya@acme.com"}`,
+			        "title":"VP Engineering","organization_name":"Acme Corp","website_url":"https://acme.example",
+			        "email":"priya@acme.example"}`,
 			wantHas:   []string{"code=DUPLICATE"},
-			wantLacks: []string{"Priya", "Sharma", "VP Engineering", "Acme", "acme.com", "priya@acme.com"},
+			wantLacks: []string{"Priya", "Sharma", "VP Engineering", "Acme", "acme.example", "priya@acme.example"},
 		},
 		{
 			name:      "prose wearing an allowlisted key is dropped, because a machine id has no spaces",
@@ -39,7 +39,7 @@ func TestVendorErrorDetailAdmitsOnlyMachineIdentifiers(t *testing.T) {
 		},
 		{
 			name:      "a non-JSON body yields nothing rather than passing itself through",
-			body:      `<html><body>priya@acme.com is not a valid contact</body></html>`,
+			body:      `<html><body>priya@acme.example is not a valid contact</body></html>`,
 			wantLacks: []string{"priya", "acme", "html"},
 		},
 		{
@@ -78,7 +78,7 @@ func TestVendorErrorDetailResistsAKeyInjectedIntoProse(t *testing.T) {
 			// allowlisted key embedded in a JSON string (where the quotes must be
 			// escaped) cannot match. This is why the class is narrow.
 			name: "an allowlisted key escaped inside a message value does not match",
-			body: `{"message":"invalid \"code\":\"priya@acme.com\" supplied"}`,
+			body: `{"message":"invalid \"code\":\"priya@acme.example\" supplied"}`,
 			want: "",
 		},
 		{
@@ -97,8 +97,8 @@ func TestVendorErrorDetailResistsAKeyInjectedIntoProse(t *testing.T) {
 			// Second layer: even if an email reached an allowlisted key, Redact masks
 			// it. Neither layer is relied on alone.
 			name: "an email-shaped value in an allowlisted key is still masked",
-			body: `{"code":"priya@acme.com"}`,
-			want: "code=p***@a***.com",
+			body: `{"code":"priya@acme.example"}`,
+			want: "code=p***@a***.example",
 		},
 	}
 	for _, tt := range tests {

@@ -23,7 +23,7 @@ func TestRedact(t *testing.T) {
 		{"email", "user@example.com", "u***@e***.com"},
 		{"path with username", "/Users/alice/Documents/file.txt", "~/Documents/file.txt"},
 		{"linux home", "/home/bob/code/main.go", "~/code/main.go"},
-		{"multiple patterns", "Bearer xyz and email a@b.co", "[REDACTED] and email a***@b***.co"},
+		{"multiple patterns", "Bearer xyz and email a@b.example", "[REDACTED] and email a***@b***.example"},
 		{"hubspot private app", "token pat-na1-1a2b3c4d-1234-5678-9abc-def012345678 used", "token [REDACTED] used"},
 		{"hubspot eu region", "pat-eu1-1A2B3C4D-1234-5678-9ABC-DEF012345678", "[REDACTED]"},
 		{"google api key", "key=AIzaSyA1234567890abcdefghijklmnopqrstuv", "key=[REDACTED]"},

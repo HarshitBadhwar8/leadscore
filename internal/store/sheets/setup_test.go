@@ -98,7 +98,7 @@ func TestCreateTemplate(t *testing.T) {
 		t.Errorf("Overrides header starts %q", got)
 	}
 	for _, c := range []struct{ tab, cell, want string }{
-		{"Overrides", "B1", "same_as"}, {"Overrides", "C1", "resubscribe"}, {"Companies", "A1", "acme.com"}, {"Health", "H1", "STALE"},
+		{"Overrides", "B1", "same_as"}, {"Overrides", "C1", "resubscribe"}, {"Companies", "A1", "acme.example"}, {"Health", "H1", "STALE"},
 	} {
 		if note := f.Sheets.Note(id, c.tab, c.cell); !strings.Contains(note, c.want) {
 			t.Errorf("%s!%s note = %q, want it to mention %q", c.tab, c.cell, note, c.want)
