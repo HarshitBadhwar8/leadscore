@@ -1,0 +1,21 @@
+adapters/apollo/lookup.go
+  s_9dab9ff7f2c580::t_d01ffa6b7b5f0d 19-20
+internal/e2e/testdata/expected.md
+  s_9dab9ff7f2c580::t_b7542b4c3b4c5b 109-112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b2aa08fa3a5b6ec29ea66658b1f0f73383947d35",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
