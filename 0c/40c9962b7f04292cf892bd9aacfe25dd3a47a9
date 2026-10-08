@@ -1,0 +1,24 @@
+adapters/apollo/live_test.go
+  s_9dab9ff7f2c580::t_d4dfb690fc59b6 1-93,102-109,115,123-151,157,163,197-198,200-206,208,211-472,478-480,482-485
+  s_9dab9ff7f2c580::t_9a1cd76b16ede4 181,183-196,199
+  s_9dab9ff7f2c580::t_13e1276c971ddf 94-101,110-114,116-122
+  s_9dab9ff7f2c580::t_ff370cbddd02db 152-156,158-162,164-180,182
+  s_9dab9ff7f2c580::t_343046e7388358 207,209-210
+  s_9dab9ff7f2c580::t_e85e0b30138525 473-477,481,486
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0c40c9962b7f04292cf892bd9aacfe25dd3a47a9",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
