@@ -45,7 +45,10 @@ inside the container. You need it for **CSV only as a plain binary**, for
 - **[agent]** From a release: download the archive for your OS from the
   [Releases page](https://github.com/HarshitBadhwar8/leadscore/releases).
   Each archive holds the `leadscore` binary, `LICENSE`, `NOTICE` and the
-  third-party licenses. Put the binary on your `PATH` as `leadscore`.
+  third-party licenses. Put the binary on your `PATH` as `leadscore`, and
+  check it with `leadscore version`. On macOS, a binary downloaded with a
+  browser is not signed, so macOS refuses to open it; clear the download
+  flag once with `xattr -d com.apple.quarantine leadscore`.
 - **[agent]** From source, with Go 1.25 or newer:
 
   ```sh
