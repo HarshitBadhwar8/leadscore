@@ -1,0 +1,59 @@
+.github/assets/banner-light.svg
+  s_9dab9ff7f2c580::t_f959b4ce3b5c0d 1-4,6-11
+  s_9dab9ff7f2c580::t_2eafc0df4fd78c 5
+examples/dry-run-first/README.md
+  s_9dab9ff7f2c580::t_f34ee61af92576 1-33
+examples_test.go
+  s_9dab9ff7f2c580::t_bc71988d64c6a4 1-56,58-132
+  s_9dab9ff7f2c580::t_dc5ecf0ef61fce 57
+.github/assets/banner-dark.svg
+  s_9dab9ff7f2c580::t_2eafc0df4fd78c 5
+  s_9dab9ff7f2c580::t_7d081843de972f 1-4,6-11
+.github/workflows/ci.yml
+  s_9dab9ff7f2c580::t_740594e4c7b736 169-186
+examples/change-the-rubric/README.md
+  s_9dab9ff7f2c580::t_42a37bf601d1c8 1-22
+.github/workflows/demo.yml
+  s_9dab9ff7f2c580::t_60cc03a646eae8 1-33
+examples/change-the-rubric/run.sh
+  s_9dab9ff7f2c580::t_19091538cd66ed 1-24
+examples/dry-run-first/run.sh
+  s_9dab9ff7f2c580::t_2aa463a4b65235 1-25
+examples/explain-a-lead/README.md
+  s_9dab9ff7f2c580::t_1c3f8d192f4829 1-41
+scripts/run-examples.sh
+  s_9dab9ff7f2c580::t_9ba2f44c21be3b 1-71
+.github/assets/demo.tape
+  s_9dab9ff7f2c580::t_6c263719e29c1e 14
+  s_9dab9ff7f2c580::t_f6dc9ad8167795 11-13
+  s_9dab9ff7f2c580::t_a496a8f918419d 1-10,15-18,20-39
+  s_9dab9ff7f2c580::t_7e9ec220858df9 19
+examples/score-a-csv/README.md
+  s_9dab9ff7f2c580::t_c6b17075de43e8 1-23
+scripts/example-setup.sh
+  s_9dab9ff7f2c580::t_597396a939c875 1-49
+examples/explain-a-lead/run.sh
+  s_9dab9ff7f2c580::t_b611f11c29ae0d 1-22
+examples/score-a-csv/run.sh
+  s_9dab9ff7f2c580::t_7d5a85c29ca6df 1-22
+.claude/settings.json
+  s_9dab9ff7f2c580::t_42babee2822f7f 14-15
+examples/README.md
+  s_9dab9ff7f2c580::t_cef3e1bc2cdc69 1-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0f821b061af454c79d179bc4059325eb82e23241",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
