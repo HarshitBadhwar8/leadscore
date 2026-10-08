@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package leadscore is the public surface of the leadscore outbound engine: the
 // plug-in interfaces, shared types, errors, the adapter registry, Run and Main.
 //

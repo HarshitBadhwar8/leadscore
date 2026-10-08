@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package gcp is an in-memory fake of the Google Cloud calls internal/hosting
 // makes, served under one base URL with each API under its own prefix
 // (/secretmanager, /run, /cloudscheduler, /artifactregistry), as

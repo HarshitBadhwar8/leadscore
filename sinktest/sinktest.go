@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package sinktest is the conformance suite a plug-in sink runs against
 // itself: every sink is find-or-create by its step
 // key, so a step replayed after a crash, or called twice, leaves one

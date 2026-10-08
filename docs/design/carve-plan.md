@@ -32,7 +32,7 @@ page; the "For the plan" notes below are for the plan's owners to copy if they w
 | Module path | `github.com/tetriz-ai/leadscore` | org decided (T2, `tetriz-ai`); name as above |
 | Container image | `ghcr.io/tetriz-ai/leadscore` | decided (S19 brief); made public at publish |
 | License | MIT | decided (O2) |
-| Copyright holder | "The leadscore authors" | working assumption; differs from the plan's O1 working value; open, the owners decide (O1) |
+| Copyright holder | "Workloom Solutions Private Limited", as on every sibling repo (outbox-comms, ghattach, logredact) | in the repo since 2026-10-08 (LICENSE, NOTICE, source headers); O1 confirms |
 | Maintainer | Rohan Chougule (@rchougule) | decided (T3); sign-off pending |
 | Staging org | open: Harshit's GitHub account is not a member of `tetriz-ai` (membership API: 404) and is a member of `workloom-dev` (204), where the plan stages private rehearsal copies and Actions is blocked | open; Rohan decides (T2) |
 | First version | v0.1.0 | default; S19 brief |
@@ -81,8 +81,9 @@ at `29c083292`. The list is for O1's author list, not for credit: credit is the 
 | whole repo | the private repo's own history | Harshit Badhwar |
 
 Surya Gangaraj's git name in core is stylised; the team list's form is used. `internal/logredact`
-stays a copy, with its notice, unless the logredact module is public by then; a follow-up issue
-tracks the switch.
+and `internal/receiver/auth` are copies maintained here: leadscore is standalone and depends on no
+other company repo. Their package comments say so; the copyright holder is the same, so NOTICE
+needs no entry for them.
 
 ### Before the carve
 
@@ -100,7 +101,6 @@ Open, each with who decides:
 
 | Question | Who decides |
 |---|---|
-| Copyright holder on LICENSE, NOTICE and headers | the owners (O1) |
 | Where leadscore stages, and the release account | Rohan (T2) |
 | Repo name `leadscore` | Rohan (T2) |
 | Ship before the live vendor checks land, with a README note on what is unconfirmed, or wait | Harshit |
@@ -194,8 +194,6 @@ Not started.
 ## For the plan
 
 - Add a leadscore card to the team page, section 1.1, from the card above.
-- The copyright holder here ("The leadscore authors") differs from the O1 working value; O1
-  settles it for this repo too.
 - The skill assumes the source is in core; a carve from a separate private repo has no stated
   mode. This carve uses mode A with `git archive` on that repo.
 

@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package codec maps the in-memory model to store tables: Encode turns recorded
 // changes into table writes, Load reads a store into a model and checks its
 // schema version. Backends only move rows; which op each change becomes is

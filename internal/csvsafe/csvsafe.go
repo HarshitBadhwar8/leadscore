@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package csvsafe makes text safe to write into a CSV a person opens in a
 // spreadsheet: a cell a spreadsheet would read as a
 // formula is prefixed with a quote, so stored text from a lead sheet can never

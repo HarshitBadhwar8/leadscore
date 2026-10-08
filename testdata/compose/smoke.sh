@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright 2026 Workloom Solutions Private Limited
+# SPDX-License-Identifier: MIT
 # The Docker check CI runs before release: `docker compose up` with the repo's
 # compose.yaml and a built image, then a timer run end to end: the first run
 # scores the sample CSV, a webhook posted to the receiver is stored, the next

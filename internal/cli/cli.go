@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package cli is the leadscore command line. Every command takes
 // --config and --rubric, before or after the command name. A command whose slice
 // has not landed prints "not built yet" and exits 2.

@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package detect evaluates the rubric's detectors: the built-in kinds
 // count_in_window, first_seen and change, and kinds a build registers, over
 // each lead's and each company's Window events. Windows are (now - window, now]

@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package receiver is `leadscore serve`: the HTTP
 // receiver for Apollo workflow requests, /healthz, and on Docker the run
 // timer. The receiver only appends events to the store; every run reads them.

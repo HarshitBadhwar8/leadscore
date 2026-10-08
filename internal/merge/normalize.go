@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package merge turns input rows from many sources into one person per human
 // (merge owns persons, aliases and row ids). It owns header aliasing, the
 // per-row id and hash, the identity rules (which rows become one lead), the

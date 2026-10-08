@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package sheetsource is the Google Sheet tab source (leadscore.yml's
 // `sources[]`): it reads people-owned tabs of the team's spreadsheet as they
 // appear on screen (FORMATTED_VALUE), headers in order as written, one

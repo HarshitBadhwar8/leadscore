@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package csv is the CSV file source. It only parses:
 // UTF-8 with an optional byte-order mark, comma-delimited, ragged rows allowed,
 // headers returned as written. Merge, not this package, applies aliases to

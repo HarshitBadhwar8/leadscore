@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package e2e is the end-to-end suite: the
 // assembled loop through engine.RunWith with DefaultHooks, a fake clock and
 // an HTTP client pointed at internal/fakes, plus the receiver's in-process

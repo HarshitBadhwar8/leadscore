@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package sheets is an in-memory fake of the parts of the Google Sheets v4 and
 // Drive v3 APIs that leadscore uses: spreadsheet
 // create and get, batchUpdate with the requests the Sheets store sends,

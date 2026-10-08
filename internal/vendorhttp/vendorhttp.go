@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package vendorhttp holds the HTTP rules the vendor clients share, so Apollo's
 // and HubSpot's cannot drift apart: the test keys, no redirects, a per-call
 // timeout, a size cap on the reply, transport errors without the URL, and the

@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Command leadscore is the release binary: the built-in adapters plus the CLI.
 // A custom build copies this file and adds an import for its own adapter package.
 package main

@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package hubspot is the HubSpot adapter: the `hubspot` sink, which finds or
 // creates contacts and one deal per company; the HubSpot Lookup, which reads
 // opt-outs and each company's deals before pushing; `leadscore setup hubspot`;

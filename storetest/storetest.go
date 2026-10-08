@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package storetest is the conformance suite a plug-in store runs against
 // itself. The built-in SQLite and Sheets stores run it
 // too.

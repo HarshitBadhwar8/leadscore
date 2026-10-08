@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go build:*)",
+      "Bash(go test:*)",
+      "Bash(go vet:*)",
+      "Bash(GOOS=windows go build:*)",
+      "Bash(GOOS=windows go vet:*)",
+      "Bash(gofmt -l:*)",
+      "Bash(golangci-lint run:*)",
+      "Bash(shellcheck:*)",
+      "Bash(hadolint:*)",
+      "Bash(scripts/third-party-licenses.sh:*)"
+    ]
+  }
+}

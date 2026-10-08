@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright 2026 Workloom Solutions Private Limited
+# SPDX-License-Identifier: MIT
 # setup/gcp.sh sets leadscore up on Google Cloud (docs/reference.md, "Google Cloud"): one
 # subcommand per runbook step. Run it from the folder holding leadscore.yml,
 # on macOS, Linux or Google Cloud Shell, with gcloud installed and logged in

@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package sink is an in-memory fake vendor for tests: a find-or-create Sink
 // and a Lookup over one shared state, so the push loop, the pre-push lookups
 // and the sinktest suite run with no vendor account.

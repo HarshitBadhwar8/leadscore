@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package sheets is the built-in Google Sheets store: a Backend and EventLog
 // over one spreadsheet, one tab per table, and a run lease held as a file in a
 // Cloud Storage bucket.

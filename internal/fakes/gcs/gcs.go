@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package gcs is an in-memory fake of the Cloud Storage JSON API calls the
 // Sheets store makes for its lease file: bucket get,
 // object get (metadata or media), multipart and media upload, delete, and

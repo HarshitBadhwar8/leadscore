@@ -19,13 +19,17 @@ env:
 
 jobs:
   test:
-    name: build, vet, test
+    name: build, vet, test (Go ${{ matrix.go }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # The go.mod floor plus the two newest minors.
+        go: ["1.25.x", "1.26.x", "1.27.x"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.25.x"
+          go-version: ${{ matrix.go }}
       - name: gofmt
         run: test -z "$(gofmt -l . | tee /dev/stderr)"
       - name: build
@@ -36,9 +40,52 @@ jobs:
         run: go test -race ./...
       - name: build and vet for Windows
         run: GOOS=windows go build ./... && GOOS=windows go vet ./...
-      # setup/gcp.sh runs on people's machines; the runner has shellcheck.
-      - name: shellcheck the Google Cloud setup script
-        run: shellcheck setup/gcp.sh testdata/gcloud/gcloud
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.x"
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.14.0
+      # setup/gcp.sh runs on people's machines.
+      - name: Install shellcheck 0.11.0
+        run: |
+          curl -fsSLO https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz
+          echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  shellcheck-v0.11.0.linux.x86_64.tar.xz" | sha256sum -c -
+          tar xJf shellcheck-v0.11.0.linux.x86_64.tar.xz --strip-components=1 shellcheck-v0.11.0/shellcheck
+      - run: ./shellcheck setup/gcp.sh scripts/*.sh testdata/gcloud/gcloud testdata/compose/smoke.sh
+      - uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
+        with:
+          dockerfile: Dockerfile
+          # The base image is pinned by digest. Pinned apk versions break the
+          # build each time Alpine replaces a patch release.
+          ignore: DL3018
+
+  vulncheck:
+    name: Vulnerability check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.x"
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+
+  licenses:
+    name: Third-party licenses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.x"
+      - run: go install github.com/google/go-licenses/v2@v2.0.1
+      - run: scripts/third-party-licenses.sh --check
 
   image:
     name: image (linux/amd64, linux/arm64)

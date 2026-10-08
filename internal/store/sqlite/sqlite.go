@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package sqlite is the built-in SQLite store:
 // a Backend and EventLog over one database file in WAL mode with a busy
 // timeout, so `leadscore serve` can append events during a run. Every table

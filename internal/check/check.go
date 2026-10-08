@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package check is the framework for doctor checks.
 // Each check registers itself under its doctor check name; `doctor` runs them
 // all, and every run also runs the ones marked InRun.
