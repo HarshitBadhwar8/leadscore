@@ -1,0 +1,69 @@
+adapters/apollo/poll.go
+  s_9dab9ff7f2c580::t_187e9478ad2e6a 55,59
+testdata/vendors/apollo/README.md
+  s_9dab9ff7f2c580::t_f9427f9fd6c796 4-8
+  s_9dab9ff7f2c580::t_3dd4f98ca7d229 32
+docs/design/carve-plan.md
+  s_9dab9ff7f2c580::t_db7648c511052b 36
+internal/fakes/apollo/outreach.go
+  s_9dab9ff7f2c580::t_226ec2b2ef3242 90-92,95,295-300
+  s_9dab9ff7f2c580::t_3a6df7c7fef359 413-414,441-442
+  s_9dab9ff7f2c580::t_57845dd1006b24 66
+  s_9dab9ff7f2c580::t_96f6254690f35e 443
+docs/design/oss-outbound-engine-s0-answers.md
+  s_9dab9ff7f2c580::t_187e9478ad2e6a 69
+  s_9dab9ff7f2c580::t_cacc17c2b76735 83-85
+testdata/vendors/apollo/auth_health/ok.json
+  s_9dab9ff7f2c580::t_3dd4f98ca7d229 2
+adapters/apollo/conformance_test.go
+  s_9dab9ff7f2c580::t_cd5f4c51014c03 5
+  s_9dab9ff7f2c580::t_f9427f9fd6c796 88-90
+  s_9dab9ff7f2c580::t_bd8d3c6d11be97 91-96
+adapters/apollo/sink.go
+  s_9dab9ff7f2c580::t_207d4c40108609 102-106,116-117,119-120
+  s_9dab9ff7f2c580::t_2dd0819f8efefa 10
+  s_9dab9ff7f2c580::t_97177484e38a43 77,533-535,708
+  s_9dab9ff7f2c580::t_28ce4aa85d5a65 182-186,283-288
+  s_9dab9ff7f2c580::t_cf8dcaf0f6db82 569-572,581-586,588
+  s_9dab9ff7f2c580::t_cca9ae856f536b 709-711
+adapters/apollo/live_test.go
+  s_9dab9ff7f2c580::t_2167f09d70695c 311,320-322,326
+docs/reference.md
+  s_9dab9ff7f2c580::t_1565bcbfb3218a 219,662
+testdata/vendors/apollo/emailer_messages_search/replies.json
+  s_9dab9ff7f2c580::t_187e9478ad2e6a 2
+adapters/apollo/sink_test.go
+  s_9dab9ff7f2c580::t_d5ee34721946d9 490-491,496-498,500-544
+  s_9dab9ff7f2c580::t_13d53138cc64fa 381
+  s_9dab9ff7f2c580::t_dd05645fe3bcf1 377-380,382-383,385-387,389,398,404-405,410-427,429-431
+  s_9dab9ff7f2c580::t_3e7bbb47be4e0f 359-360
+adapters/apollo/paging.go
+  s_9dab9ff7f2c580::t_485c23e469eb56 5-12,18,21-22
+  s_9dab9ff7f2c580::t_5516bb7e9fdd2f 23
+internal/check/apollo_sequences.go
+  s_9dab9ff7f2c580::t_1565bcbfb3218a 19-20
+  s_9dab9ff7f2c580::t_a76ef2e99b2f7b 75
+docs/design/oss-outbound-engine-contracts.md
+  s_9dab9ff7f2c580::t_3a328432393e4d 597
+  s_9dab9ff7f2c580::t_187e9478ad2e6a 608
+  s_9dab9ff7f2c580::t_1565bcbfb3218a 605,753
+internal/check/apollo_sequences_test.go
+  s_9dab9ff7f2c580::t_cd06c22af7c37d 118-120
+  s_9dab9ff7f2c580::t_58e59e530d0eec 147,153-156
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ead183af4fd340ca30463ebcae8384d7d634dad2",
+  "prompts": {},
+  "sessions": {
+    "s_9dab9ff7f2c580": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5094ca2c-1b72-4cf3-a2b1-9cf910b50098",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Harshit Badhwar <harshit.badhwar@epifi.com>"
+    }
+  }
+}
