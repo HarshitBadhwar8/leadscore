@@ -653,7 +653,7 @@ func TestLookupReportsOptOutsAndPerLeadFailures(t *testing.T) {
 // read as "not opted out".
 func TestLookupMissingFlagFailsTheLead(t *testing.T) {
 	t.Setenv(KeyVariable, testKey)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"contacts":[{"id":"c1","email":"a@acme-robotics.example"}],"pagination":{"page":1,"total_pages":1}}`))
 	}))
 	t.Cleanup(srv.Close)

@@ -47,8 +47,8 @@ func TestCountInWindowBoundaries(t *testing.T) {
 		win("7", "B", "example.com", "visit_site", now.Add(-time.Hour)), // B's own
 	}
 	m, leads := setup(t, ws...)
-	spec := func(min int) rules.DetectorSpec {
-		return rules.DetectorSpec{Name: "hot", Kind: "count_in_window", Subject: "lead", Event: "Visit_*", Window: 7 * day, Min: min}
+	spec := func(least int) rules.DetectorSpec {
+		return rules.DetectorSpec{Name: "hot", Kind: "count_in_window", Subject: "lead", Event: "Visit_*", Window: 7 * day, Min: least}
 	}
 	for min, want := range map[int]bool{3: true, 4: false} {
 		res, errs := Evaluate([]rules.DetectorSpec{spec(min)}, m, leads, now)
@@ -140,7 +140,7 @@ func TestChange(t *testing.T) {
 type evenDetector struct{}
 
 func (evenDetector) Name() string { return "even" }
-func (evenDetector) Evaluate(s api.Subject, evs []api.Event, now time.Time) (bool, []api.EventID) {
+func (evenDetector) Evaluate(_ api.Subject, evs []api.Event, _ time.Time) (bool, []api.EventID) {
 	return len(evs) > 0 && len(evs)%2 == 0, nil
 }
 

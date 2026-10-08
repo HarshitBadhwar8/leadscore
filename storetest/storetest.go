@@ -22,6 +22,7 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/store/codec"
 )
 
+// Table describes one store table: its name and fixed columns.
 type Table struct {
 	Name         string   // the table's name; for a pattern, the prefix ("Events ", "Export ")
 	Columns      []string // fixed columns in order
@@ -493,7 +494,7 @@ func slowAppendInterleavedWithRead(t *testing.T, open func(t *testing.T) (api.Ba
 		}
 		seen[string(e.Body)] = true
 		var w, n int
-		fmt.Sscanf(string(e.Body), `{"w":%d,"n":%d`, &w, &n)
+		_, _ = fmt.Sscanf(string(e.Body), `{"w":%d,"n":%d`, &w, &n)
 		if prev, ok := last[w]; ok && n <= prev {
 			t.Fatalf("writer %d: event %d returned after %d", w, n, prev)
 		}

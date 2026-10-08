@@ -58,7 +58,7 @@ lanes:
 	}
 	t.Cleanup(func() {
 		if c, ok := store.(interface{ Close() error }); ok {
-			c.Close()
+			_ = c.Close()
 		}
 	})
 

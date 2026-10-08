@@ -20,7 +20,7 @@ func TestExportTableOfRemovedLaneStillLoads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	at := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
 	commit := func(m *model.Model) {
 		t.Helper()

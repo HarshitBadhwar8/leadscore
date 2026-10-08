@@ -130,7 +130,7 @@ func newInstall(t *testing.T, kind string, v variant) *install {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { s.Close() })
+		t.Cleanup(func() { _ = s.Close() })
 		in.store, in.events = s, s
 	case "sheets":
 		in.fs = fakesheets.New()
@@ -215,7 +215,7 @@ func readCSV(t *testing.T, path string) [][]string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	rows, err := csv.NewReader(f).ReadAll()
 	if err != nil {
 		t.Fatal(err)

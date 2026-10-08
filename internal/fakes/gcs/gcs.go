@@ -163,7 +163,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if q.Get("alt") == "media" {
 			w.Header().Set("Content-Type", o.contentType)
 			w.Header().Set("X-Goog-Generation", strconv.FormatInt(o.gen, 10))
-			w.Write(o.data)
+			_, _ = w.Write(o.data)
 			return
 		}
 		writeJSON(w, meta(bucket, name, o))
@@ -274,13 +274,13 @@ func meta(bucket, name string, o *object) map[string]any {
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func apiError(w http.ResponseWriter, code int, msg string) {
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{
 		"code": code, "message": msg, "errors": []map[string]any{{"message": msg}},
 	}})
 }

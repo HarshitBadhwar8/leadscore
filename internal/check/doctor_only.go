@@ -113,7 +113,7 @@ func (c receivers) Run(ctx context.Context, env Env) []Problem {
 		return []Problem{{Key: "receivers:unreachable",
 			Message: fmt.Sprintf("%s did not answer: %v", u.Redacted(), err), Fix: fix}}
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	switch resp.StatusCode {
 	case http.StatusOK:
 		return nil

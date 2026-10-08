@@ -70,7 +70,7 @@ func Open(path string) (*Store, error) {
 	// Create the file owner-only before SQLite opens it; SQLite gives the -wal
 	// and -shm files it creates the same mode.
 	if f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600); err == nil {
-		f.Close()
+		_ = f.Close()
 	} else if !errors.Is(err, os.ErrExist) {
 		return nil, fmt.Errorf("sqlite store %s: %w", path, err)
 	}
@@ -97,7 +97,7 @@ func Open(path string) (*Store, error) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	if err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("sqlite store %s: %w", path, err)
 	}
 	return &Store{db: db, now: time.Now}, nil
@@ -128,7 +128,7 @@ func OpenReadOnly(path string) (*Store, error) {
 		return nil, fmt.Errorf("sqlite store %s: %w", path, err)
 	}
 	if err := db.Ping(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("sqlite store %s: %w", path, err)
 	}
 	return &Store{db: db, now: time.Now}, nil
@@ -156,7 +156,7 @@ func (s *Store) ReadTable(ctx context.Context, name string) ([]api.Row, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", name, err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	names, err := rows.Columns()
 	if err != nil {
 		return nil, err
@@ -204,7 +204,7 @@ func columns(ctx context.Context, q querier, table string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("columns of %s: %w", table, err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []string
 	for rows.Next() {
 		var n string
@@ -302,7 +302,7 @@ func (s *Store) inTx(ctx context.Context, f func(*sql.Tx) error) error {
 		return err
 	}
 	if err := f(tx); err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		return err
 	}
 	return tx.Commit()

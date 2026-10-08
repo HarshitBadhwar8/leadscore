@@ -108,7 +108,7 @@ func TestRubricVersionCheck(t *testing.T) {
 
 func TestReceiversCheck(t *testing.T) {
 	ck := doctorOnly(t, "receivers")
-	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 	defer elsewhere.Close()
 	status := http.StatusOK
 	var path string
@@ -165,7 +165,7 @@ func TestLeaseCheckSQLite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	env := Env{Store: s}
 	if got := keysOf(ck.Run(context.Background(), env)); got != "" {
 		t.Errorf("no lease: %q", got)

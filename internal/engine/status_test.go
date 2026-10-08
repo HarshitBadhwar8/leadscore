@@ -86,8 +86,8 @@ func TestResubscribeUndoesOnlyManualOptOuts(t *testing.T) {
 		"bo@beta.example,Bo B,Head of Ops,beta.example")
 	w.pushesOff()
 	w.edit(func(m *model.Model) {
-		merge.SetStatus(m, "ana@acme.example", "unsubscribed", time.Now())
-		merge.SetStatus(m, "bo@beta.example", "unsubscribed", time.Now())
+		_, _ = merge.SetStatus(m, "ana@acme.example", "unsubscribed", time.Now())
+		_, _ = merge.SetStatus(m, "bo@beta.example", "unsubscribed", time.Now())
 	})
 	w.config("pushes_enabled: true", "pushes_enabled: false")
 	w.mustRun()
@@ -102,8 +102,8 @@ func TestResubscribeUndoesOnlyManualOptOuts(t *testing.T) {
 		t.Fatalf("the automated opt-out takes the origin: %v", o)
 	}
 	w.edit(func(m *model.Model) {
-		merge.SetStatus(m, "ana@acme.example", "resubscribe", time.Now())
-		merge.SetStatus(m, "bo@beta.example", "resubscribe", time.Now())
+		_, _ = merge.SetStatus(m, "ana@acme.example", "resubscribe", time.Now())
+		_, _ = merge.SetStatus(m, "bo@beta.example", "resubscribe", time.Now())
 	})
 	w.config("pushes_enabled: false", "pushes_enabled: true")
 	w.mustRun()
@@ -190,7 +190,7 @@ func TestRemovingManualStatusReleases(t *testing.T) {
 	if s := w.outcome("ana@acme.example")["status"]; s != "replied_negative" || len(w.apollo.Calls()) != 0 {
 		t.Fatalf("status %q", s)
 	}
-	w.edit(func(m *model.Model) { merge.SetStatus(m, "ana@acme.example", "none", time.Now()) })
+	w.edit(func(m *model.Model) { _, _ = merge.SetStatus(m, "ana@acme.example", "none", time.Now()) })
 	w.mustRun()
 	if got := pushedTo(w, w.apollo, "enroll"); !slices.Equal(got, []string{"ana@acme.example"}) {
 		t.Errorf("released lead pushed: %v", got)

@@ -121,8 +121,8 @@ func TestSecretVersions(t *testing.T) {
 
 // A value that does not match its checksum is refused rather than used.
 func TestAccessSecretChecksMismatch(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"name":"projects/1/secrets/s/versions/3","payload":{"data":"aGVsbG8=","dataCrc32c":"1"}}`))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"name":"projects/1/secrets/s/versions/3","payload":{"data":"aGVsbG8=","dataCrc32c":"1"}}`))
 	}))
 	defer srv.Close()
 	c, _ := hosting.Connect(context.Background(), api.Config{"base_url": srv.URL, "_http_client": srv.Client()})
@@ -304,7 +304,7 @@ func TestUsesProxy(t *testing.T) {
 // every request, so a redirect would carry it to another host. The caller's
 // client is left alone.
 func TestCallDoesNotFollowRedirects(t *testing.T) {
-	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	other := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		t.Errorf("followed a redirect to %s", r.URL.Path)
 	}))
 	defer other.Close()

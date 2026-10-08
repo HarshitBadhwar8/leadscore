@@ -757,7 +757,7 @@ func (m *Model) delTyped(tr *tracked, k Key) {
 	}
 }
 
-func (m *Model) appendTyped(tr *tracked, row Row) {
+func (m *Model) appendTyped(_ *tracked, row Row) {
 	switch r := row.(type) {
 	case Override:
 		m.Overrides = append(m.Overrides, r)

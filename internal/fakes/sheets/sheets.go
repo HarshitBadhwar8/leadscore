@@ -899,7 +899,7 @@ func (b *book) deleteDimension(r *sheetsapi.DimensionRange) error {
 // cellFields reads an updateCells or appendCells field mask: whether it
 // writes values and notes. Formats are accepted and not kept.
 func cellFields(fields string) (values, notes bool, err error) {
-	any := false
+	seen := false
 	for _, f := range fieldList(fields) {
 		switch {
 		case f == "*":
@@ -912,9 +912,9 @@ func cellFields(fields string) (values, notes bool, err error) {
 		default:
 			return false, false, fmt.Errorf("unsupported field %q", f)
 		}
-		any = true
+		seen = true
 	}
-	if !any {
+	if !seen {
 		return false, false, fmt.Errorf("fields is required")
 	}
 	return values, notes, nil
@@ -1177,7 +1177,7 @@ type a1 struct {
 // with any apostrophe doubled, as in "'Seen events'!A1:D".
 func parseRange(s string) (a1, error) {
 	r := a1{r1: -1, c1: -1}
-	rest := s
+	var rest string
 	if strings.HasPrefix(s, "'") {
 		var b strings.Builder
 		i := 1
@@ -1279,14 +1279,14 @@ func writeJSON(w http.ResponseWriter, v any) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-	w.Write(buf.Bytes())
+	_, _ = w.Write(buf.Bytes())
 }
 
 // apiError writes Google's JSON error shape, which googleapi.CheckResponse reads.
 func apiError(w http.ResponseWriter, code int, status, msg string) {
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{
 		"code": code, "message": msg, "status": status,
 		"errors": []map[string]any{{"message": msg, "reason": status}},
 	}})

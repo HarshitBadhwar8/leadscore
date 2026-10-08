@@ -248,12 +248,12 @@ func TestEventOnlyLeadIsReceiverOnly(t *testing.T) {
 // (into `previous`) so a lower origin can fill it.
 func TestCompaniesTabRemovals(t *testing.T) {
 	w := newWorld(t)
-	w.m.Load(model.TableCompanies, []api.Row{
+	_ = w.m.Load(model.TableCompanies, []api.Row{
 		{"domain": "acme.example", "employees": "70", "region": "India"},
 		{"domain": "beta.example", "employees": "9"},
 	})
 	w.apply()
-	w.m.Load(model.TableCompanies, []api.Row{{"domain": "acme.example", "employees": "", "region": "India"}})
+	_ = w.m.Load(model.TableCompanies, []api.Row{{"domain": "acme.example", "employees": "", "region": "India"}})
 	w.apply()
 	acme, beta := w.m.CompanyFacts[model.Key("acme.example")], w.m.CompanyFacts[model.Key("beta.example")]
 	if _, ok := acme.Facts["employees"]; ok || acme.Previous["employees"].Value != "70" {

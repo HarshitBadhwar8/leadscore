@@ -234,17 +234,17 @@ func pushedTo(w *world, v *fakesink.Vendor, step string) []string {
 	return out
 }
 
-// rubric rewrites rubric.yml with old replaced by new.
-func (w *world) rubric(old, new string) {
+// rubric rewrites rubric.yml with old replaced by repl.
+func (w *world) rubric(old, repl string) {
 	w.t.Helper()
 	if !strings.Contains(laneRubric, old) {
 		w.t.Fatalf("the lane rubric has no %q", old)
 	}
-	w.write("rubric.yml", strings.Replace(laneRubric, old, new, 1))
+	w.write("rubric.yml", strings.Replace(laneRubric, old, repl, 1))
 }
 
-// config rewrites leadscore.yml with old replaced by new.
-func (w *world) config(old, new string) {
+// config rewrites leadscore.yml with old replaced by repl.
+func (w *world) config(old, repl string) {
 	w.t.Helper()
 	if w.cfg == "" {
 		w.cfg = laneConfig
@@ -252,7 +252,7 @@ func (w *world) config(old, new string) {
 	if !strings.Contains(w.cfg, old) {
 		w.t.Fatalf("the config has no %q:\n%s", old, w.cfg)
 	}
-	w.cfg = strings.Replace(w.cfg, old, new, 1)
+	w.cfg = strings.Replace(w.cfg, old, repl, 1)
 	w.install.config(w.cfg)
 }
 

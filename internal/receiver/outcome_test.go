@@ -55,7 +55,7 @@ func TestWebhookUnsubscribeBlocksTheNextPush(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	h := newTestHandler(t, testStore{name: "sqlite", store: s, events: s}, nil)
 	body := []byte(`{"event":"email_unsubscribed","contact_email":"Ana@ACME.example","contact_stage":""}`)
 	if rec := post(h, "/apollo/reply", body, testSecret); rec.Code != 200 {

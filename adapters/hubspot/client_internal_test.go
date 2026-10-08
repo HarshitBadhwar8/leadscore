@@ -15,7 +15,7 @@ import (
 // A redirect is not followed, so the token never reaches another host; the
 // test client the caller passed is not changed.
 func TestCallDoesNotFollowRedirects(t *testing.T) {
-	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	other := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		t.Errorf("followed a redirect, with Authorization %q", r.Header.Get("Authorization"))
 	}))
 	defer other.Close()
@@ -38,7 +38,7 @@ func TestCallCapsTheAnswer(t *testing.T) {
 	old := maxBody
 	maxBody = 64
 	defer func() { maxBody = old }()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"results":"` + strings.Repeat("x", 100) + `"}`))
 	}))
 	defer srv.Close()
@@ -55,7 +55,7 @@ func TestCallTimesOut(t *testing.T) {
 	callTimeout = 50 * time.Millisecond
 	defer func() { callTimeout = old }()
 	release := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		select {
 		case <-release:
 		case <-r.Context().Done():
@@ -96,7 +96,7 @@ func TestPacer(t *testing.T) {
 // sink stops for the run instead of calling again.
 func TestCallCutShortKeepsItsStatus(t *testing.T) {
 	for _, status := range []int{http.StatusUnauthorized, http.StatusTooManyRequests} {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Length", "1000")
 			w.WriteHeader(status)
 			_, _ = w.Write([]byte(`{"status":`)) // then the connection closes early

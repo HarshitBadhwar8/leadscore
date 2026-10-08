@@ -174,7 +174,7 @@ func (e sizeEstimator) EstimateSize(n checker.AstNode) *checker.SizeEstimate {
 	if len(path) == 0 {
 		return nil
 	}
-	size := func(max uint64) *checker.SizeEstimate { return &checker.SizeEstimate{Min: 0, Max: max} }
+	size := func(most uint64) *checker.SizeEstimate { return &checker.SizeEstimate{Min: 0, Max: most} }
 	switch path[0] {
 	case "lead", "company", "detector":
 		if len(path) == 1 {

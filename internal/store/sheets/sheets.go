@@ -90,7 +90,7 @@ func Connect(ctx context.Context, cfg api.Config, scopes ...string) (*Services, 
 		return nil, err
 	}
 	var common []option.ClientOption
-	endpoint := func(path string) []option.ClientOption { return nil }
+	endpoint := func(_ string) []option.ClientOption { return nil }
 	switch {
 	case base != "":
 		common = append(common, option.WithHTTPClient(client))

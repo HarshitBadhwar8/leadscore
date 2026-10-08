@@ -74,7 +74,7 @@ func seed(t *testing.T, cfg string, f func(m *model.Model)) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	m, err := codec.Load(context.Background(), s)
 	if err != nil {
 		t.Fatal(err)
@@ -91,7 +91,7 @@ func tables(t *testing.T, cfg string) map[string][]api.Row {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	out := map[string][]api.Row{}
 	for _, d := range model.Tables {
 		if d.Pattern {
@@ -172,7 +172,7 @@ func TestDoctorIsReadOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	if owner, _, err := s.LeaseInfo(context.Background()); err != nil || owner != "" {
 		t.Errorf("doctor left the lease held by %q (%v)", owner, err)
 	}
@@ -246,7 +246,7 @@ func TestDoctorOrderMatchesRegistry(t *testing.T) {
 // healthyReceiver is a /healthz that answers 200.
 func healthyReceiver(t *testing.T) string {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 	t.Cleanup(srv.Close)
 	return srv.URL
 }
@@ -323,7 +323,7 @@ func TestDoctorLeavesSQLiteFilesAlone(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 		if _, err := db.Exec(`CREATE TABLE crash_left_this (x text); INSERT INTO crash_left_this VALUES ('in the wal')`); err != nil {
 			t.Fatal(err)
 		}
@@ -350,13 +350,13 @@ func TestDoctorLeavesSQLiteFilesAlone(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 		db.SetMaxOpenConns(1)
 		tx, err := db.Begin()
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer tx.Rollback()
+		defer func() { _ = tx.Rollback() }()
 		if _, err := tx.Exec(`CREATE TABLE half_done (x text)`); err != nil {
 			t.Fatal(err)
 		}

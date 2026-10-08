@@ -621,7 +621,7 @@ func TestCompanyFactOrigins(t *testing.T) {
 
 	// The Companies tab wins: a changed value moves the old one to previous; the
 	// same value is taken over without counting as a change.
-	w.m.Load(model.TableCompanies, []api.Row{
+	_ = w.m.Load(model.TableCompanies, []api.Row{
 		{"Website": "https://www.acme.example", "Headcount": "70", "Name": "Acme Corp", "Region": "India", "Tier note": "key"},
 		{"domain": "acme.example", "Headcount": "1"}, // a second row for the domain is ignored
 	})

@@ -19,8 +19,12 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
 )
 
+// FailKind is how Vendor.Fail makes a step's next call fail. RateLimited,
+// Transient and Refused map to the sink errors of those names; Other is any
+// other error.
 type FailKind int
 
+// The FailKind values.
 const (
 	RateLimited FailKind = iota
 	Transient
@@ -40,11 +44,14 @@ func (k FailKind) String() string {
 	return "Other"
 }
 
+// Vendor is the fake vendor a sink under test talks to.
 type Vendor interface {
 	Count(step string) int           // vendor-side objects created for a step
 	Fail(step string, kind FailKind) // make the next call to that step fail this way
 }
 
+// Harness is what Run needs: a way to build the sink, its fake vendor, and the
+// destinations to test.
 type Harness struct {
 	New    func(cfg api.Config) (api.Sink, error)
 	Vendor Vendor // a fake the sink is pointed at

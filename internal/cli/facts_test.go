@@ -61,9 +61,9 @@ func sqliteFactsInstall(t *testing.T, rows []api.Row, leftoverWAL bool) (cfg, db
 				t.Fatal(err)
 			}
 		}
-		s.Close()
+		_ = s.Close()
 	} else {
-		s.Close()
+		_ = s.Close()
 		data, err := os.ReadFile(src)
 		if err != nil {
 			t.Fatal(err)
@@ -153,7 +153,7 @@ func TestFactsEmpty(t *testing.T) {
 	}
 	// No SQLite file yet: facts says so and does not create one.
 	db := filepath.Join(filepath.Dir(cfg), "store.db")
-	os.Remove(db)
+	_ = os.Remove(db)
 	if code, _, errOut := cli("facts", "--config", cfg); code != 1 || !strings.Contains(errOut, "no SQLite file") {
 		t.Errorf("facts with no file: %d %q", code, errOut)
 	}

@@ -287,7 +287,7 @@ func TestTwoLeadsAtOneCompanyOpenOneDeal(t *testing.T) {
 		"ben@acme.example,Ben B,Head of IT,acme.example")
 	w.hubspot.ReuseRelated("deal")
 	now := time.Now().UTC()
-	w.mustRun(func(o *api.RunOptions, _ *settings) {}) // run 1 makes the leads (and pushes them cold)
+	w.mustRun(func(_ *api.RunOptions, _ *settings) {}) // run 1 makes the leads (and pushes them cold)
 	w.edit(func(m *model.Model) {
 		for _, e := range []string{"ana@acme.example", "ben@acme.example"} {
 			id := w.id(e)

@@ -86,7 +86,7 @@ func TestLocateReturnsStatErrorsOtherThanMissing(t *testing.T) {
 	if err := os.Chmod(configDir, 0o000); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Chmod(configDir, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(configDir, 0o755) })
 	if _, err := Locate(""); err == nil {
 		t.Fatal("an unreadable /config must be an error, not a silent fall-through to ./leadscore.yml")
 	}
@@ -103,7 +103,7 @@ func TestSetHostingRefusesAnchorsAndMultipleDocuments(t *testing.T) {
 		p := filepath.Join(dir, name+".yml")
 		write(t, p, text)
 		err := SetHosting(p, []string{"project=q"})
-		if err == nil || !(strings.Contains(err.Error(), "anchor") || strings.Contains(err.Error(), "more than one")) {
+		if err == nil || !strings.Contains(err.Error(), "anchor") && !strings.Contains(err.Error(), "more than one") {
 			t.Errorf("%s: err = %v, want a refusal naming the anchor or the extra document", name, err)
 		}
 		if got, _ := os.ReadFile(p); string(got) != text {

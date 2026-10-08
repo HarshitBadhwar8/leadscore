@@ -24,7 +24,7 @@ func TestMakeBundleRoundTrips(t *testing.T) {
 			t.Fatalf("%q: %v", rubric, err)
 		}
 		path := filepath.Join(t.TempDir(), "bundle.yaml")
-		os.WriteFile(path, b, 0o600)
+		_ = os.WriteFile(path, b, 0o600)
 		c, err := Load(Options{ConfigPath: path, Getenv: func(string) string { return "" }})
 		if err != nil {
 			t.Fatalf("%q: %v", rubric, err)

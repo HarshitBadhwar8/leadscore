@@ -34,7 +34,7 @@ func editOverrides(inv *invocation, edit func(m *model.Model) (string, error)) i
 		return inv.fail(fmt.Errorf("opening the store: %w", err))
 	}
 	if cl, ok := b.(io.Closer); ok {
-		defer cl.Close()
+		defer func() { _ = cl.Close() }()
 	}
 	m, err := codec.Load(ctx, b)
 	if err != nil {

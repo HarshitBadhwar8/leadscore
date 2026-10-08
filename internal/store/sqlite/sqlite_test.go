@@ -19,7 +19,7 @@ func open(t *testing.T) *Store {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { s.Close() })
+	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
 
@@ -43,7 +43,7 @@ func TestRegisteredFactory(t *testing.T) {
 	if err != nil || b == nil || l == nil {
 		t.Fatalf("factory = %v, %v, %v", b, l, err)
 	}
-	b.(*Store).Close()
+	_ = b.(*Store).Close()
 	if _, _, err := f(api.Config{"type": "sqlite"}); err == nil || !strings.Contains(err.Error(), "store.path") {
 		t.Errorf("a missing path must name store.path, got %v", err)
 	}
@@ -157,12 +157,12 @@ func TestAppendWaitsForAnotherWriter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer run.Close()
+	defer func() { _ = run.Close() }()
 	serve, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer serve.Close()
+	defer func() { _ = serve.Close() }()
 	ctx := context.Background()
 	tx, err := run.db.BeginTx(ctx, nil) // immediate: holds the write lock
 	if err != nil {
@@ -173,7 +173,7 @@ func TestAppendWaitsForAnotherWriter(t *testing.T) {
 	}
 	go func() {
 		time.Sleep(300 * time.Millisecond)
-		tx.Commit()
+		_ = tx.Commit()
 	}()
 	start := time.Now()
 	if err := serve.AppendEvents(ctx, []api.RawEvent{{Kind: "apollo_visit", ReceivedAt: time.Now(), Body: []byte("{}")}}); err != nil {
@@ -304,7 +304,7 @@ func TestOpenRefusesDSNPaths(t *testing.T) {
 	dir := t.TempDir()
 	for _, p := range []string{filepath.Join(dir, "a?mode=ro"), "file:" + filepath.Join(dir, "a.db"), "FILE:x.db", ""} {
 		if s, err := Open(p); err == nil {
-			s.Close()
+			_ = s.Close()
 			t.Errorf("Open(%q) must be refused", p)
 		}
 	}
@@ -319,7 +319,7 @@ func TestFileMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	if err := s.AppendEvents(context.Background(), []api.RawEvent{{Kind: "apollo_visit", ReceivedAt: time.Now()}}); err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +351,7 @@ func TestExistingFileMadeOwnerOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	for _, p := range []string{path, path + "-wal"} {
 		if fi, err := os.Stat(p); err != nil || fi.Mode().Perm() != 0o600 {
 			t.Errorf("%s mode = %v, %v; want 600", filepath.Base(p), fi.Mode().Perm(), err)
@@ -402,13 +402,13 @@ func TestOpenReadOnlyPaths(t *testing.T) {
 			Rows: []api.Row{{"key": "schema_version", "value": "1.0"}}}}); err != nil {
 			t.Fatal(err)
 		}
-		w.Close()
+		_ = w.Close()
 		r, err := OpenReadOnly(name)
 		if err != nil {
 			t.Fatalf("%s: OpenReadOnly: %v", name, err)
 		}
 		rows, err := r.ReadTable(context.Background(), model.TableState)
-		r.Close()
+		_ = r.Close()
 		if err != nil || len(rows) != 1 || rows[0]["value"] != "1.0" {
 			t.Errorf("%s: rows %v, %v", name, rows, err)
 		}

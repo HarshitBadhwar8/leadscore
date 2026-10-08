@@ -27,10 +27,10 @@ func TestHealthzCallsTheLocalEndpoint(t *testing.T) {
 			return
 		}
 		w.WriteHeader(int(status.Load()))
-		w.Write([]byte("verdict\n"))
+		_, _ = w.Write([]byte("verdict\n"))
 	})}
-	go srv.Serve(ln)
-	t.Cleanup(func() { srv.Close() })
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
 	port := ln.Addr().(*net.TCPAddr).Port
 
 	dir := t.TempDir()
@@ -48,7 +48,7 @@ func TestHealthzCallsTheLocalEndpoint(t *testing.T) {
 	if code := Main([]string{"--config", cfg, "healthz"}, &out, &errb); code != exitFail || !strings.Contains(errb.String(), "503") {
 		t.Errorf("unhealthy: exit %d, err %q, want 1 and the status", code, errb.String())
 	}
-	srv.Close()
+	_ = srv.Close()
 	if code := Main([]string{"--config", cfg, "healthz"}, &out, &errb); code != exitFail {
 		t.Errorf("nothing listening: exit %d, want 1", code)
 	}

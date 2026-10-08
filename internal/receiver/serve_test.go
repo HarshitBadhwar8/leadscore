@@ -89,7 +89,7 @@ func postHTTP(t *testing.T, url, path, body string) int {
 		t.Errorf("POST %s: %v", path, err)
 		return 0
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return resp.StatusCode
 }
 
@@ -99,7 +99,7 @@ func getHealthz(t *testing.T, url string) int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return resp.StatusCode
 }
 
@@ -116,7 +116,7 @@ func TestTimerNeverOverlaps(t *testing.T) {
 		overlapped atomic.Bool
 	)
 	t0 := time.Now()
-	run := func(ctx context.Context, opts api.RunOptions) (api.RunResult, error) {
+	run := func(_ context.Context, _ api.RunOptions) (api.RunResult, error) {
 		if active.Add(1) > 1 {
 			overlapped.Store(true)
 		}
@@ -156,7 +156,7 @@ func TestTimerNeverOverlaps(t *testing.T) {
 func TestAPanickingRunLeavesTheReceiverUp(t *testing.T) {
 	cfg, db := install(t, "")
 	var calls atomic.Int32
-	run := func(ctx context.Context, opts api.RunOptions) (api.RunResult, error) {
+	run := func(_ context.Context, _ api.RunOptions) (api.RunResult, error) {
 		if calls.Add(1) == 1 {
 			panic("boom in a hook")
 		}
@@ -177,7 +177,7 @@ func TestAPanickingRunLeavesTheReceiverUp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	rows, err := s.ReadTable(context.Background(), model.TableHealth)
 	if err != nil {
 		t.Fatal(err)
@@ -243,7 +243,7 @@ func TestSIGTERMDuringARunSavesBeforeExit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	people, err := s.ReadTable(context.Background(), model.TablePeople)
 	if err != nil {
 		t.Fatal(err)
@@ -303,7 +303,7 @@ func TestServeMarksTheSQLiteStoreAndRefusesCloudRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	rows, _ := s.ReadTable(context.Background(), model.TableState)
-	s.Close()
+	_ = s.Close()
 	found := false
 	for _, r := range rows {
 		if r["key"] == "opened_by" {

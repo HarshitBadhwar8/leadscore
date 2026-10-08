@@ -255,7 +255,7 @@ func (h *Handler) receive(w http.ResponseWriter, r *http.Request, kind string) {
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		io.WriteString(w, "stored\n")
+		_, _ = io.WriteString(w, "stored\n")
 	case <-t.C:
 		http.Error(w, "the event could not be stored in time; retry", http.StatusServiceUnavailable)
 	}
@@ -315,7 +315,7 @@ func (h *Handler) serveHealth(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}
-	io.WriteString(w, msg+"\n")
+	_, _ = io.WriteString(w, msg+"\n")
 }
 
 func (h *Handler) health(r *http.Request) (bool, string) {

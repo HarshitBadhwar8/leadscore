@@ -92,7 +92,7 @@ func readCSV(t *testing.T, w *world, lane string) [][]string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	recs, err := csv.NewReader(f).ReadAll()
 	if err != nil {
 		t.Fatal(err)
@@ -316,7 +316,7 @@ func TestExportResubscribe(t *testing.T) {
 	w.mustRun()
 	w.edit(func(m *model.Model) {
 		for _, e := range []string{"man@acme.example", "auto@beta.example", "sent@gamma.example"} {
-			merge.SetStatus(m, e, "unsubscribed", time.Now())
+			_, _ = merge.SetStatus(m, e, "unsubscribed", time.Now())
 		}
 	})
 	w.event("sent@gamma.example", api.Event{Kind: "sent", Email: "sent@gamma.example", Origin: events.OriginReceiver})
@@ -325,7 +325,7 @@ func TestExportResubscribe(t *testing.T) {
 	w.event("auto@beta.example", api.Event{Kind: "optout", Email: "auto@beta.example", Origin: events.OriginApolloLookup})
 	w.edit(func(m *model.Model) {
 		for _, e := range []string{"man@acme.example", "auto@beta.example", "sent@gamma.example"} {
-			merge.SetStatus(m, e, "resubscribe", time.Now())
+			_, _ = merge.SetStatus(m, e, "resubscribe", time.Now())
 		}
 	})
 	w.mustRun()
@@ -383,7 +383,7 @@ func TestExportCSVAfterRankedFailure(t *testing.T) {
 	}
 	s := in.store()
 	m := mustLoad(t, s)
-	merge.SetStatus(m, "ana@acme.example", "unsubscribed", time.Now())
+	_, _ = merge.SetStatus(m, "ana@acme.example", "unsubscribed", time.Now())
 	if err := s.Commit(t.Context(), encodeAll(m)); err != nil {
 		t.Fatal(err)
 	}
@@ -404,7 +404,7 @@ func TestExportCSVAfterRankedFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	recs, err := csv.NewReader(f).ReadAll()
 	if err != nil || len(recs) != 2 || recs[1][9] != "yes" {
 		t.Errorf("CSV after a failed Ranked write: %v %v", recs, err)
@@ -656,7 +656,7 @@ func TestExportDegradedRunNeverReopens(t *testing.T) {
 	in.write("leads.csv", csvText("Email,Name,Title,Domain", "ana@acme.example,Ana A,Head of Ops,acme.example", "bo@beta.example,Bo B,Clerk,beta.example"))
 	hooks := DefaultHooks()
 	hooks.Detect = func(*Run) (rules.DetectorResults, error) { return rules.DetectorResults{}, errors.New("detector down") }
-	in.run(hooks)
+	_, _, _ = in.run(hooks)
 	if got := in.dnc("list"); len(got) != 1 || got["ana@acme.example"] != "yes" {
 		t.Fatalf("a run with a failed Detect listed or reopened: %v", got)
 	}
@@ -742,7 +742,7 @@ func TestExportDirHousekeeping(t *testing.T) {
 	if v := in.health()["problem:"+exportDirProblem]; !strings.HasPrefix(v, "warning: ") {
 		t.Errorf("Health %q", v)
 	}
-	os.Chmod(dir, 0o700)
+	_ = os.Chmod(dir, 0o700)
 	if res := in.mustRun(DefaultHooks()); hasKey(res.Problems, exportDirProblem) {
 		t.Error("the warning stays after chmod 700")
 	}
@@ -819,7 +819,7 @@ func readInstallCSV(t *testing.T, in *install, lane string) [][]string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	recs, err := csv.NewReader(f).ReadAll()
 	if err != nil {
 		t.Fatal(err)

@@ -61,7 +61,7 @@ func openStore(inv *invocation) (c *config.Config, b api.Backend, closeStore fun
 	}
 	closeStore = func() {}
 	if cl, ok := b.(io.Closer); ok {
-		closeStore = func() { cl.Close() }
+		closeStore = func() { _ = cl.Close() }
 	}
 	return c, b, closeStore, nil
 }
@@ -101,7 +101,7 @@ func runStatus(inv *invocation) int {
 			fmt.Fprintf(tw, "%s\t%s\n", k, printable(v))
 		}
 	}
-	tw.Flush()
+	_ = tw.Flush()
 	sort.Slice(probs, func(i, j int) bool { return probs[i].key < probs[j].key })
 	if len(probs) == 0 {
 		fmt.Fprintln(inv.stdout, "no open problems")
@@ -200,7 +200,7 @@ func runRanked(inv *invocation) int {
 		}
 		fmt.Fprintln(tw, strings.Join(vals, "\t"))
 	}
-	tw.Flush()
+	_ = tw.Flush()
 	fmt.Fprintf(inv.stdout, "%d lead(s); `leadscore explain <person>` shows a lead's reasons\n", len(rows))
 	return exitOK
 }
@@ -209,13 +209,13 @@ func runRanked(inv *invocation) int {
 // every cell through csvsafe (`ranked --csv`, `facts --csv`).
 func writeCSV(out io.Writer, cols []string, rows []api.Row) error {
 	w := csv.NewWriter(out)
-	w.Write(cols)
+	_ = w.Write(cols)
 	for _, r := range rows {
 		rec := make([]string, len(cols))
 		for i, col := range cols {
 			rec[i] = r[col]
 		}
-		w.Write(csvsafe.Row(rec))
+		_ = w.Write(csvsafe.Row(rec))
 	}
 	w.Flush()
 	return w.Error()

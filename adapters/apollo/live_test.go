@@ -163,9 +163,9 @@ func TestLiveApolloReadOnly(t *testing.T) {
 	// The first live run showed emailerMessageDateRange is ignored: a min of
 	// tomorrow still returned old replies, while emailer_message_date_range
 	// (what Poll now sends) with that min returned none.
-	since := func(min string) map[string]any {
+	since := func(after string) map[string]any {
 		return map[string]any{"emailer_message_date_range_mode": "completed_at",
-			"emailer_message_date_range": map[string]string{"min": min}}
+			"emailer_message_date_range": map[string]string{"min": after}}
 	}
 	t.Run("reply_date_filter", func(t *testing.T) {
 		search(t, "replied, snake_case min a year ago", since(now.Add(-365*24*time.Hour).Format(time.DateOnly)))
@@ -303,7 +303,7 @@ func (g *liveGuard) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 	body, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -373,7 +373,7 @@ func readEnvFile(path string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	out := map[string]string{}
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {

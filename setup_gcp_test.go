@@ -75,7 +75,7 @@ func (e *gcpEnv) write(name, text string) {
 
 func (e *gcpEnv) touch(name string) {
 	e.t.Helper()
-	os.MkdirAll(filepath.Join(e.gcloud, "state"), 0o755)
+	_ = os.MkdirAll(filepath.Join(e.gcloud, "state"), 0o755)
 	if err := os.WriteFile(filepath.Join(e.gcloud, "state", name), []byte("x\n"), 0o600); err != nil {
 		e.t.Fatal(err)
 	}
@@ -316,7 +316,7 @@ func TestGCPScript(t *testing.T) {
 		if !strings.Contains(stdout, "gcloud secrets versions disable latest --secret receiver-secret-previous --project p") {
 			t.Errorf("--finish-rotation must give the disable command: %q", stdout)
 		}
-		os.Remove(filepath.Join(e.gcloud, "state", "version-receiver-secret-previous"))
+		_ = os.Remove(filepath.Join(e.gcloud, "state", "version-receiver-secret-previous"))
 		calls, _ = e.mustRun("redeploy")
 		noCall(t, calls, "LEADSCORE_RECEIVER_SECRET_PREVIOUS")
 

@@ -86,7 +86,7 @@ func Do(hc *http.Client, req *http.Request, timeout time.Duration, maxBytes int6
 		}
 		return Reply{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	reply := Reply{Status: resp.StatusCode, Header: resp.Header, Body: raw[:min(int64(len(raw)), maxBytes)]}
 	switch {

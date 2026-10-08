@@ -97,7 +97,7 @@ var doctorRows = map[string]doctorRow{
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer s.Close()
+		defer func() { _ = s.Close() }()
 		if _, err := s.Lease(context.Background(), "run-in-progress", time.Hour); err != nil {
 			t.Fatal(err)
 		}

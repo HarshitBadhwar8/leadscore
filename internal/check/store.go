@@ -104,15 +104,15 @@ func mountType(mountinfo, path string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return "", false
 	}
-	if real, err := filepath.EvalSymlinks(abs); err == nil {
-		abs = real
-	} else if real, err := filepath.EvalSymlinks(filepath.Dir(abs)); err == nil {
-		abs = filepath.Join(real, filepath.Base(abs))
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = resolved
+	} else if resolved, err := filepath.EvalSymlinks(filepath.Dir(abs)); err == nil {
+		abs = filepath.Join(resolved, filepath.Base(abs))
 	}
 	best, fs := -1, ""
 	sc := bufio.NewScanner(f)

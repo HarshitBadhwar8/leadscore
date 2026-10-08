@@ -28,7 +28,7 @@ func sqliteInstall(t *testing.T) (string, *sqlite.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { s.Close() })
+	t.Cleanup(func() { _ = s.Close() })
 	m := model.New()
 	var rows []merge.Normalized
 	for _, r := range []api.InputRow{

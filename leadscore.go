@@ -177,6 +177,7 @@ type WriteOp = api.WriteOp
 // both); Column and Before are for OpTrim only.
 type TableWrite = api.TableWrite
 
+// The WriteOp values.
 const (
 	OpReplace = api.OpReplace // rewrite the whole table
 	OpAppend  = api.OpAppend  // add rows; on a keyed store table, a key the table already holds fails the commit

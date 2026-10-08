@@ -23,57 +23,57 @@ import (
 type stubSource struct{}
 
 func (stubSource) ID() string { return "stub" }
-func (stubSource) Fetch(ctx context.Context, cursor leadscore.Cursor) ([]leadscore.InputRow, []leadscore.Event, leadscore.Cursor, error) {
+func (stubSource) Fetch(_ context.Context, cursor leadscore.Cursor) ([]leadscore.InputRow, []leadscore.Event, leadscore.Cursor, error) {
 	return []leadscore.InputRow{{SourceID: "stub", Headers: []string{"Email"}, Columns: map[string]string{"Email": "x"}}},
 		nil, cursor, nil
 }
 
 type stubEnricher struct{}
 
-func (stubEnricher) Enrich(ctx context.Context, domains []string, budget int) ([]leadscore.CompanyFacts, error) {
+func (stubEnricher) Enrich(_ context.Context, _ []string, _ int) ([]leadscore.CompanyFacts, error) {
 	return nil, leadscore.ErrRateLimited
 }
 
 type stubPoller struct{}
 
-func (stubPoller) Poll(ctx context.Context, since time.Time) ([]leadscore.Event, error) {
+func (stubPoller) Poll(_ context.Context, _ time.Time) ([]leadscore.Event, error) {
 	return nil, nil
 }
 
 type stubLookup struct{}
 
-func (stubLookup) Lookup(ctx context.Context, leads []leadscore.LeadRef) ([]leadscore.Event, map[leadscore.LeadID]error, error) {
+func (stubLookup) Lookup(_ context.Context, _ []leadscore.LeadRef) ([]leadscore.Event, map[leadscore.LeadID]error, error) {
 	return nil, map[leadscore.LeadID]error{}, nil
 }
 
 type stubSink struct{}
 
-func (stubSink) Steps(dest string) []string { return []string{"contact", "enroll"} }
-func (stubSink) Do(ctx context.Context, req leadscore.StepRequest) (string, error) {
+func (stubSink) Steps(_ string) []string { return []string{"contact", "enroll"} }
+func (stubSink) Do(_ context.Context, req leadscore.StepRequest) (string, error) {
 	return string(req.Key.LeadID) + "/" + req.Key.Step, nil
 }
 
 type stubDetector struct{}
 
 func (stubDetector) Name() string { return "stub" }
-func (stubDetector) Evaluate(s leadscore.Subject, events []leadscore.Event, now time.Time) (bool, []leadscore.EventID) {
+func (stubDetector) Evaluate(_ leadscore.Subject, events []leadscore.Event, _ time.Time) (bool, []leadscore.EventID) {
 	return len(events) > 0, nil
 }
 
 type stubLease struct{}
 
-func (stubLease) Check(ctx context.Context) error   { return nil }
-func (stubLease) Release(ctx context.Context) error { return nil }
+func (stubLease) Check(_ context.Context) error   { return nil }
+func (stubLease) Release(_ context.Context) error { return nil }
 
 type stubBackend struct{}
 
-func (stubBackend) ReadTable(ctx context.Context, name string) ([]leadscore.Row, error) {
+func (stubBackend) ReadTable(_ context.Context, _ string) ([]leadscore.Row, error) {
 	return nil, nil
 }
-func (stubBackend) Lease(ctx context.Context, owner string, ttl time.Duration) (leadscore.RunLease, error) {
+func (stubBackend) Lease(_ context.Context, _ string, _ time.Duration) (leadscore.RunLease, error) {
 	return stubLease{}, nil
 }
-func (stubBackend) Commit(ctx context.Context, writes []leadscore.TableWrite) error {
+func (stubBackend) Commit(_ context.Context, writes []leadscore.TableWrite) error {
 	for _, w := range writes {
 		if (w.Op == leadscore.OpUpsert || w.Op == leadscore.OpDelete) && len(w.Key) == 0 {
 			return fmt.Errorf("%s: no key", w.Table)
@@ -81,17 +81,17 @@ func (stubBackend) Commit(ctx context.Context, writes []leadscore.TableWrite) er
 	}
 	return nil
 }
-func (stubBackend) LeaseInfo(ctx context.Context) (string, time.Time, error) {
+func (stubBackend) LeaseInfo(_ context.Context) (string, time.Time, error) {
 	return "", time.Time{}, nil
 }
 
 type stubEventLog struct{}
 
-func (stubEventLog) AppendEvents(ctx context.Context, events []leadscore.RawEvent) error { return nil }
-func (stubEventLog) ReadEvents(ctx context.Context, cursor leadscore.Cursor) ([]leadscore.RawEvent, leadscore.Cursor, error) {
+func (stubEventLog) AppendEvents(_ context.Context, _ []leadscore.RawEvent) error { return nil }
+func (stubEventLog) ReadEvents(_ context.Context, cursor leadscore.Cursor) ([]leadscore.RawEvent, leadscore.Cursor, error) {
 	return nil, cursor, nil
 }
-func (stubEventLog) DeleteProcessed(ctx context.Context, committed leadscore.Cursor, olderThan time.Time) (leadscore.Cursor, error) {
+func (stubEventLog) DeleteProcessed(_ context.Context, committed leadscore.Cursor, _ time.Time) (leadscore.Cursor, error) {
 	return committed, nil
 }
 
@@ -115,7 +115,7 @@ func init() {
 	leadscore.RegisterPoller("stub", func(leadscore.Config) (leadscore.Poller, error) { return stubPoller{}, nil })
 	leadscore.RegisterLookup("stub", func(leadscore.Config) (leadscore.Lookup, error) { return stubLookup{}, nil })
 	leadscore.RegisterSink("stub", func(leadscore.Config) (leadscore.Sink, error) { return stubSink{}, nil })
-	leadscore.RegisterDetector("stub", func(params leadscore.Config) (leadscore.Detector, error) { return stubDetector{}, nil })
+	leadscore.RegisterDetector("stub", func(_ leadscore.Config) (leadscore.Detector, error) { return stubDetector{}, nil })
 	leadscore.RegisterBackend("stub", func(leadscore.Config) (leadscore.Backend, leadscore.EventLog, error) {
 		return stubBackend{}, stubEventLog{}, nil
 	})

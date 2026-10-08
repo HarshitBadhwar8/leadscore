@@ -51,7 +51,7 @@ func TestOverrides(t *testing.T) {
 
 // The client is a copy that refuses redirects; the caller's is unchanged.
 func TestNewClientRefusesRedirects(t *testing.T) {
-	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	other := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		t.Errorf("followed a redirect, with key %q", r.Header.Get("X-Key"))
 	}))
 	defer other.Close()
@@ -76,7 +76,7 @@ func TestNewClientRefusesRedirects(t *testing.T) {
 }
 
 func TestDoReadsTheReply(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Retry-After", "3")
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(`{"error_code":"INVALID_EMAIL","message":"ada@example.com is bad"}`))
@@ -94,7 +94,7 @@ func TestDoReadsTheReply(t *testing.T) {
 // status with the error, so a 429, 401 or 403 is still read as one.
 func TestDoKeepsTheStatusWhenTheBodyFails(t *testing.T) {
 	for _, status := range []int{http.StatusUnauthorized, http.StatusTooManyRequests} {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Length", "1000")
 			w.WriteHeader(status)
 			_, _ = w.Write([]byte(`{"error":`)) // then the connection closes early
@@ -114,7 +114,7 @@ func TestDoKeepsTheStatusWhenTheBodyFails(t *testing.T) {
 }
 
 func TestDoCapsTheReply(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(strings.Repeat("x", 65)))
 	}))
 	defer srv.Close()
@@ -131,7 +131,7 @@ func TestDoCapsTheReply(t *testing.T) {
 // The timeout bounds the call on its own context, whatever the client.
 func TestDoTimesOut(t *testing.T) {
 	release := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		select {
 		case <-release:
 		case <-r.Context().Done():
