@@ -40,7 +40,8 @@ var (
 // spreadsheet. As in `setup sheet`, a person's gcloud login creates it and
 // shares it with the signed-in account: the active login, or the account
 // LEADSCORE_LIVE_SHEETS_OWNER names (it needs
-// `gcloud auth login --enable-gdrive-access`).
+// `gcloud auth login --enable-gdrive-access`). Its access token lasts about
+// an hour, so the delete at the end works only if the check ends within it.
 func TestLiveSheets(t *testing.T) {
 	v := os.Getenv("LEADSCORE_LIVE_SHEETS")
 	if v == "" {
@@ -60,12 +61,20 @@ func TestLiveSheets(t *testing.T) {
 	if a := os.Getenv("LEADSCORE_LIVE_SHEETS_OWNER"); a != "" {
 		args = append(args, a)
 	}
-	token, err := exec.CommandContext(ctx, "gcloud", args...).Output()
+	out, err := exec.CommandContext(ctx, "gcloud", args...).Output()
 	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			err = fmt.Errorf("%w: %s", err, strings.TrimSpace(string(ee.Stderr)))
+		}
 		t.Fatalf("the person's gcloud login, to create the spreadsheet: %v", err)
 	}
+	token := strings.TrimSpace(string(out))
+	if token == "" {
+		t.Fatal("gcloud printed no access token; run `gcloud auth login --enable-gdrive-access`")
+	}
 	owner, err := sheets.Connect(ctx, api.Config{"_http_client": &http.Client{
-		Transport: bearer{token: strings.TrimSpace(string(token))}, Timeout: time.Minute}})
+		Transport: bearer{token: token}, Timeout: time.Minute}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +126,11 @@ func liveCheck(ctx context.Context, t *testing.T, svc, owner *sheets.Services, s
 			t.Logf("deleting the scratch spreadsheet: %v", err)
 		}
 	})
-	if owner != svc {
+	ownerAbout, err := owner.Drive.About.Get().Fields("user(emailAddress)").Context(ctx).Do()
+	if err != nil || ownerAbout.User == nil {
+		t.Fatalf("who owns the spreadsheet: %v", err)
+	}
+	if !strings.EqualFold(ownerAbout.User.EmailAddress, me) {
 		if err := sheets.Share(ctx, owner, id, sheets.Accounts{Run: me}); err != nil {
 			t.Fatal(err)
 		}
