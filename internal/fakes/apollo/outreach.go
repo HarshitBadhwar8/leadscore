@@ -313,8 +313,8 @@ func (s *Server) createContact(body map[string]any) (Fixture, []byte) {
 }
 
 // addToSequence enrolls the contacts the body names. A contact already in
-// this sequence is left as it is and not reported as skipped (S0 confirms
-// Apollo does the same); an opted-out one, one with a bad email, or one in
+// this sequence is left as it is and not reported as skipped (unconfirmed
+// that Apollo does the same); an opted-out one, one with a bad email, or one in
 // any other sequence is skipped with the fixtures' reason.
 func (s *Server) addToSequence(r *http.Request, body map[string]any) (Fixture, []byte) {
 	o := s.out

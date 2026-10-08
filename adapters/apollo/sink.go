@@ -21,7 +21,7 @@ import (
 // What follows about Apollo's calls is mostly taken from its public API docs.
 // Where a live API test or production code backs a part, the comment says so;
 // the rest (paths' bodies, field names, how a refusal looks) is marked
-// "S0 confirms".
+// "unconfirmed".
 
 func init() {
 	api.RegisterSink("apollo", NewSink)
@@ -43,7 +43,7 @@ const SequencePrefix = "sequence/"
 // Paths of the outreach calls. Production code creates contacts with POST,
 // and a live API test reached the three searches with POST and the mailbox
 // list with GET. Enrichment answers on /api/v1/; the others were seen on
-// /v1/. S0 confirms the rest.
+// /v1/. The rest is unconfirmed.
 const (
 	contactsPath        = "/api/v1/contacts"                 // POST: create; GET /<id>: read one
 	contactsSearchPath  = "/api/v1/contacts/search"          // POST: search the team's contacts (no credits)
@@ -166,7 +166,7 @@ func (s *Sink) contact(ctx context.Context, lead api.LeadRef) (string, error) {
 //
 // run_dedupe is always on, so a step replayed after a crash (the create went
 // out, the id was never saved) gets the contact Apollo already holds for the
-// email rather than a second one. S0 confirms that run_dedupe returns the
+// email rather than a second one. Unconfirmed: that run_dedupe returns the
 // existing contact's id.
 func (c *Client) CreateContact(ctx context.Context, contact NewContact) (string, error) {
 	email := strings.TrimSpace(contact.Email)
@@ -234,7 +234,7 @@ func splitName(full string) (first, last string) {
 // Before the add call it reads the contact and searches the team's contacts
 // by email, so neither a repeat nor a duplicate contact can enroll anyone
 // twice:
-//   - the contact already in this sequence is a no-op (S0 confirms whether
+//   - the contact already in this sequence is a no-op (unconfirmed whether
 //     Apollo's add call is itself one);
 //   - the contact in any other sequence (active, paused or finished), or
 //     opted out (email_unsubscribed, read whatever ContactOptOutFlag says), is
@@ -322,9 +322,9 @@ var errSaysInSequence = errors.New("apollo: the add reply says the contact is al
 // one attempt (a skip means nobody was added, so a retry cannot contact the
 // person twice; after three the step fails until a `retry`).
 //
-// S0 confirms the skip shape; until then a skip is any mention of the contact
-// id under a key naming "skip": keyed by id, a plain list, a reason-to-ids
-// map, or nested deeper.
+// The skip shape is unconfirmed; until then a skip is any mention of the
+// contact id under a key naming "skip": keyed by id, a plain list, a
+// reason-to-ids map, or nested deeper.
 func addOutcome(reply map[string]any, contactID string) error {
 	var skipped bool
 	var reasons []string
@@ -453,7 +453,7 @@ const maxSearchPages = 50
 
 // ResolveSequence finds the id of the one sequence whose name is exactly
 // name. Apollo's name filter is a keyword search, so every page is read and
-// matched exactly. S0 confirms the call and the q_name filter.
+// matched exactly. The call and the q_name filter are unconfirmed.
 func (c *Client) ResolveSequence(ctx context.Context, name string) (string, error) {
 	var found []string
 	err := eachPage(maxSearchPages, func(page int) (int, pagination, error) {
@@ -487,7 +487,7 @@ func (c *Client) ResolveSequence(ctx context.Context, name string) (string, erro
 	return "", ErrSequenceAmbiguous
 }
 
-// EmailAccountIDs lists the ids of the team's sending mailboxes. S0 confirms
+// EmailAccountIDs lists the ids of the team's sending mailboxes. Unconfirmed:
 // the call and that one page holds them all.
 func (c *Client) EmailAccountIDs(ctx context.Context) ([]string, error) {
 	var reply struct {
@@ -537,7 +537,7 @@ func (r *contactRecord) read() (apolloContact, error) {
 	return c, nil
 }
 
-// readContact reads one contact. S0 confirms the call and the
+// readContact reads one contact. Unconfirmed: the call and the
 // contact_campaign_statuses and email_unsubscribed fields.
 func (c *Client) readContact(ctx context.Context, contactID string) (apolloContact, error) {
 	var reply struct {
@@ -555,8 +555,8 @@ func (c *Client) readContact(ctx context.Context, contactID string) (apolloConta
 const maxContactPages = 5
 
 // contactsByEmail returns every team contact whose email is exactly email.
-// The search is a keyword search, so near matches are dropped here. S0
-// confirms the call, that it spends no credits, and the q_keywords filter.
+// The search is a keyword search, so near matches are dropped here.
+// Unconfirmed: the call, that it spends no credits, and the q_keywords filter.
 func (c *Client) contactsByEmail(ctx context.Context, email string) ([]apolloContact, error) {
 	var out []apolloContact
 	err := eachPage(maxContactPages, func(page int) (int, pagination, error) {
@@ -588,7 +588,7 @@ func (c *Client) contactsByEmail(ctx context.Context, email string) ([]apolloCon
 // and returns the reply for addOutcome to read.
 //
 // The flags ask Apollo to skip, not enroll, a contact active or finished in
-// another sequence, with no email, or with an unverified email. S0 confirms
+// another sequence, with no email, or with an unverified email. Unconfirmed:
 // the call and the flags.
 func (c *Client) addToSequence(ctx context.Context, seqID, contactID, mailbox string) (map[string]any, error) {
 	body := map[string]any{
@@ -618,8 +618,8 @@ const (
 )
 
 // refusalMarkers tell Apollo's refusal reasons apart, by words in a skip
-// reason or an error reply's error and error_code fields, lowercased. S0
-// confirms the real wording; these come from Apollo's public docs and UI.
+// reason or an error reply's error and error_code fields, lowercased. The
+// real wording is unconfirmed; these come from Apollo's public docs and UI.
 // Order matters: the first match wins, and "this sequence" is checked before
 // "another".
 var refusalMarkers = []struct{ marker, reason string }{
@@ -658,7 +658,7 @@ func refusalOf(text string) string {
 // errorFields is the text of an error reply's top-level error and error_code
 // fields: the only part of a body a refusal is read from, since the rest may
 // echo the contact back (an email like unsubscribe-me@..., a flag set false).
-// S0 confirms Apollo's error shape.
+// Apollo's error shape is unconfirmed.
 func errorFields(body []byte) string {
 	var reply map[string]any
 	if json.Unmarshal(body, &reply) != nil {

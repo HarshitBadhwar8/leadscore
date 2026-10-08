@@ -8,7 +8,7 @@
 // in a real Apollo account shows the reply variables (email, stage,
 // conversation link; the catalogue seen lists no contact id) and the visit body (the contact's email,
 // name, title and LinkedIn URL, and an account block). Fields still unknown
-// are marked "S0 confirms" where it matters.
+// are marked "unconfirmed" where it matters.
 package apollo
 
 import (
@@ -44,7 +44,7 @@ const (
 	AttrFullName         = "full_name"
 	AttrTitle            = "title"
 	AttrCompany          = "company"
-	AttrPage             = "page" // the visited page, when a body carries one (S0 confirms)
+	AttrPage             = "page" // the visited page, when a body carries one (unconfirmed)
 	// AttrNoVisitTime is "yes" on a visit with no usable visited_at: it is
 	// timed at receipt and keyed by person, page and received day.
 	AttrNoVisitTime = "no_visited_at"
@@ -108,7 +108,7 @@ func parseReplyRaw(raw api.RawEvent) ([]api.Event, []api.InputRow, error) {
 	if !n.acts() {
 		return nil, nil, fmt.Errorf("%w: engagement kind %q is not one we act on", ErrIgnored, short(n.Event))
 	}
-	at := raw.ReceivedAt.UTC() // reply bodies carry no vendor time (S0 confirms)
+	at := raw.ReceivedAt.UTC() // reply bodies carry no vendor time (unconfirmed)
 	e := api.Event{
 		Kind:        replyKinds[n.Event],
 		Email:       n.Email,

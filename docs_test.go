@@ -5,11 +5,64 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/HarshitBadhwar8/leadscore/internal/model"
 )
 
-// The root godoc carries C1's field-level notes: the root aliases have no
+// The reference's "Store tables" section names every table the store
+// writes, with its columns in order, so the doc cannot drift from the code.
+// A table's row is the one whose first cell starts with the table's name;
+// the backticked names in its last cell that are columns of the table must
+// be exactly its columns, in order.
+func TestReferenceStoreTablesMatchModel(t *testing.T) {
+	src, err := os.ReadFile("docs/reference.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, section, ok := strings.Cut(string(src), "\n## Store tables\n")
+	if ok {
+		section, _, ok = strings.Cut(section, "\n## ")
+	}
+	if !ok {
+		t.Fatal(`docs/reference.md has no "## Store tables" section followed by another section`)
+	}
+	ticked := regexp.MustCompile("`([^`]+)`")
+	docName := map[string]string{model.EventsPrefix: "Events YYYY-MM", model.ExportPrefix: "Export <lane id>"}
+	for _, def := range model.Tables {
+		name := def.Name
+		if d, ok := docName[name]; ok {
+			name = d
+		}
+		var row string
+		for _, line := range strings.Split(section, "\n") {
+			if strings.HasPrefix(line, "| `"+name+"`") {
+				row = line
+				break
+			}
+		}
+		if row == "" {
+			t.Errorf("docs/reference.md, Store tables: no row for %q", name)
+			continue
+		}
+		cells := strings.Split(strings.TrimSuffix(strings.TrimSpace(row), "|"), "|")
+		last := cells[len(cells)-1]
+		var got []string
+		for _, m := range ticked.FindAllStringSubmatch(last, -1) {
+			if slices.Contains(def.Columns, m[1]) {
+				got = append(got, m[1])
+			}
+		}
+		if !slices.Equal(got, def.Columns) {
+			t.Errorf("docs/reference.md, Store tables, %q: columns %v, want %v", name, got, def.Columns)
+		}
+	}
+}
+
+// The root godoc carries the types' field-level notes: the root aliases have no
 // fields of their own in godoc, so the alias comment is all a reader sees.
 func TestRootGodocCarriesFieldNotes(t *testing.T) {
 	f, err := parser.ParseFile(token.NewFileSet(), "leadscore.go", nil, parser.ParseComments)
@@ -58,8 +111,10 @@ func TestRegistryCommentMatchesRoot(t *testing.T) {
 	}
 }
 
-func TestContractsSuiteBlockUsesAPINames(t *testing.T) {
-	src, err := os.ReadFile("docs/design/oss-outbound-engine-contracts.md")
+// The reference's conformance-suite block names api.X, as the suites'
+// signatures do, and says they are the root's types.
+func TestReferenceSuiteBlockUsesAPINames(t *testing.T) {
+	src, err := os.ReadFile("docs/reference.md")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +125,7 @@ func TestContractsSuiteBlockUsesAPINames(t *testing.T) {
 		"same types as `leadscore.X`",
 	} {
 		if !strings.Contains(s, want) {
-			t.Errorf("contracts C1 conformance block must contain %q", want)
+			t.Errorf("docs/reference.md conformance block must contain %q", want)
 		}
 	}
 }

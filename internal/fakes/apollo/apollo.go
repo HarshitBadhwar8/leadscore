@@ -1,6 +1,6 @@
 // Package apollo is a fake of the Apollo API calls leadscore makes, served
-// from the fixtures in testdata/vendors/apollo (S0's shape; provisional until
-// S0's captures replace them). This file covers what enrichment and the
+// from the fixtures in testdata/vendors/apollo (provisional until real captured
+// calls replace them). This file covers what enrichment and the
 // apollo-key check call: auth health and the organization lookup.
 // outreach.go covers the sink, the contact lookup, the reply poller and the
 // apollo-sequences check.
@@ -35,7 +35,7 @@ type Fixture struct {
 	ResponseBody    json.RawMessage   `json:"response_body"`
 	Provisional     bool              `json:"provisional"`
 	Documented      bool              `json:"documented"`
-	Note            string            `json:"note"`           // what S0 must confirm about this file
+	Note            string            `json:"note"`           // what is still unconfirmed about this file
 	ConfirmedFrom   string            `json:"confirmed_from"` // which record confirms which parts, when one does
 }
 

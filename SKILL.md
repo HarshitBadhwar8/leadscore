@@ -7,8 +7,8 @@ description: Run and maintain a leadscore install, the open-source outbound engi
 
 leadscore is one binary. `leadscore serve` receives Apollo webhooks (and, on
 Docker, runs the loop on a timer); `leadscore run` is one run of the loop. The
-team's rules live in two files: `leadscore.yml` (settings, contracts doc
-section 3) and the rubric (`rubric.yml`, section 2). Setting it up is the
+team's rules live in two files: `leadscore.yml` (settings) and the rubric
+(`rubric.yml`); `docs/reference.md` has the full format of both. Setting it up is the
 README, step by step; this file is for running it afterwards.
 
 Where commands run:
@@ -60,7 +60,7 @@ new `deadline` needs `setup/gcp.sh redeploy`.
 
 ## Troubleshooting
 
-Each section is one `leadscore doctor` check (contracts doc section 10). The
+Each section is one `leadscore doctor` check (`docs/reference.md`, "Doctor checks"). The
 line doctor prints is `FAIL  <check>: <key>: <message>` (or `warn` for a
 warning), with `fix:` under it. Checks marked "in run" also run inside every
 run, so the same problem shows in `leadscore status` under its key.

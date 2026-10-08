@@ -1,9 +1,9 @@
-# leadscore.yml for Google Cloud (contracts section 9.1): the receiver runs as
+# leadscore.yml for Google Cloud (docs/reference.md, "Google Cloud"): the receiver runs as
 # a Cloud Run service, each run as a Cloud Run job that Cloud Scheduler starts,
 # and the store is a Google Sheet. Copy it into an empty folder as
 # leadscore.yml, beside your rubric, and follow the README's Google Cloud
 # steps; setup/gcp.sh and `leadscore setup sheet` fill in what is marked
-# below. Every key is in the contracts doc, section 3.
+# below. Every key is in docs/reference.md, "leadscore.yml".
 #
 # On Google Cloud this file and the rubric are uploaded together with
 # `leadscore config push`; the next run uses them, with no redeploy.

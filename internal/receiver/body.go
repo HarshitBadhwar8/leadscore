@@ -74,7 +74,7 @@ const maxCandidates = 16
 // unescaped quote in some value still authenticates (and is stored marked as
 // not JSON, its secrets masked).
 //
-// S0 confirms: whether Apollo escapes quotes in the variable values it puts
+// Unconfirmed: whether Apollo escapes quotes in the variable values it puts
 // into a workflow body. If it does not, such bodies are not JSON, and a body
 // secret is found by the text match here.
 func scanSecret(raw []byte) []string {

@@ -59,8 +59,8 @@ func (e *apiError) Unwrap() error { return e.kind }
 // token, a missing scope: the sink stops for the run and no attempt is
 // counted, since no lead is at fault; the `hubspot` check raises the
 // problem); 5xx is transient. HubSpot's own: a 400 whose body names
-// INVALID_EMAIL is a refusal that retrying cannot change (S0 confirms the
-// code). Anything else counts an attempt.
+// INVALID_EMAIL is a refusal that retrying cannot change (the code
+// is unconfirmed). Anything else counts an attempt.
 func classify(status int, body []byte) error {
 	if class := vendorhttp.Class(status); class != nil {
 		return class
@@ -80,8 +80,8 @@ func statusOf(err error) int {
 }
 
 // existingIDPattern reads the contact id out of a 409's message, which reads
-// "Contact already exists. Existing ID: 12345" (S0 confirms the wording; when
-// it does not match, the sink searches by email instead).
+// "Contact already exists. Existing ID: 12345" (the wording is unconfirmed;
+// when it does not match, the sink searches by email instead).
 var existingIDPattern = regexp.MustCompile(`Existing ID:\s*(\d+)`)
 
 func existingID(err error) string {
@@ -161,8 +161,8 @@ func newClient(base, token string, hc *http.Client) *client {
 }
 
 // pacer spaces search calls: HubSpot limits its search endpoints to a few
-// requests a second per account, well below the general limit (S0 confirms
-// the number; 4 a second stays under the documented 5).
+// requests a second per account, well below the general limit (the number
+// is unconfirmed; 4 a second stays under the documented 5).
 type pacer struct {
 	mu    sync.Mutex
 	next  time.Time
@@ -279,7 +279,7 @@ func (e batchError) notFound() bool { return e.Category == "OBJECT_NOT_FOUND" }
 
 // batchRead reads records by id (or by idProperty, such as email). Inputs
 // that do not exist are left out of the answer; any other error fails the
-// read (S0 confirms the 207 shape).
+// read (the 207 shape is unconfirmed).
 func (c *client) batchRead(ctx context.Context, objectType, idProperty string, ids, props []string) ([]object, error) {
 	var all []object
 	for start := 0; start < len(ids); start += batchSize {
@@ -343,7 +343,7 @@ func (c *client) associations(ctx context.Context, fromType, toType string, ids 
 		}
 		for _, e := range ans.Errors {
 			// A record with no associations of the type is reported as an
-			// error entry, not an empty result (S0 confirms the category).
+			// error entry, not an empty result (the category is unconfirmed).
 			if !e.notFound() && e.Category != "NO_ASSOCIATIONS_FOUND" {
 				return nil, fmt.Errorf("hubspot: reading %s-%s associations: an input failed with %s: %w", fromType, toType, clip(e.Category), api.ErrTransient)
 			}

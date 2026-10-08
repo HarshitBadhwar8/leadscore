@@ -119,7 +119,7 @@ func TestEnrichOrganizationLeavesAnAbsentHeadcountNil(t *testing.T) {
 }
 
 // A 200 with no organization is ErrNotFound; a 404 is an ordinary failure
-// until S0 confirms Apollo uses it for an unknown domain.
+// until it is confirmed that Apollo uses it for an unknown domain.
 func TestEnrichOrganizationNotFound(t *testing.T) {
 	c, fake := fakeClient(t)
 	fake.Serve("ghost-co.example", "status_404")
@@ -470,8 +470,9 @@ func TestFundingStage(t *testing.T) {
 	}
 }
 
-// Every fixture is in S0's shape and marked provisional until S0 replaces it.
-func TestFixturesAreInS0Shape(t *testing.T) {
+// Every fixture has the full fixture shape and is marked provisional until a
+// real capture replaces it.
+func TestFixturesAreProvisionalAndComplete(t *testing.T) {
 	files, err := filepath.Glob(filepath.Join(fakeapollo.Dir(), "*", "*.json"))
 	if err != nil || len(files) == 0 {
 		t.Fatalf("no fixtures: %v", err)

@@ -1,7 +1,7 @@
 # Example rubric for a made-up company, Dockyard, which sells warehouse
 # scheduling software to mid-size logistics firms in Europe. Copy it and change
-# it to describe your own ideal customer. The format is in the contracts doc,
-# section 2 (docs/design/oss-outbound-engine-contracts.md).
+# it to describe your own ideal customer. The format is in docs/reference.md,
+# "The rubric".
 #
 # Check your edits with:  leadscore rules check rubric.yml
 version: 1

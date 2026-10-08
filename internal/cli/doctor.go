@@ -46,7 +46,7 @@ func runDoctor(inv *invocation) int {
 	w := inv.stdout
 	c, err := config.Load(inv.configOptions())
 	if err != nil {
-		fmt.Fprintf(w, "FAIL  config: %s\n      fix: correct leadscore.yml (every key is in the contracts doc, section 3)\n", doctorText(err.Error()))
+		fmt.Fprintf(w, "FAIL  config: %s\n      fix: correct leadscore.yml (every key is in docs/reference.md)\n", doctorText(err.Error()))
 		fmt.Fprintln(w, "doctor: 1 failed; the other checks need a configuration that loads")
 		return exitFail
 	}

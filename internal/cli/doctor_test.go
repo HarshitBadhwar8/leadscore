@@ -252,7 +252,7 @@ func healthyReceiver(t *testing.T) string {
 }
 
 // Every DoctorOrder name has a doctorRows test (the root test checks the
-// contracts table; this one checks the order list doctor prints from).
+// docs/reference.md table; this one checks the order list doctor prints from).
 func TestEveryDoctorCheckHasARowTest(t *testing.T) {
 	for _, name := range DoctorOrder {
 		if _, ok := doctorRows[name]; !ok {

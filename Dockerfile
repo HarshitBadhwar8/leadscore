@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # The leadscore image: one static binary, run as the non-root user `leadscore`
-# (contracts section 5.1). On Docker, compose.yaml runs `serve --every`; on
+# (docs/reference.md, "Receiver"). On Docker, compose.yaml runs `serve --every`; on
 # Google Cloud the same image is the receiver service and the run job.
 
 # Cross-compile on the build machine's platform; the binary is pure Go.

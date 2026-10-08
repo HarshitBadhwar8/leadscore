@@ -3,7 +3,7 @@
 # scheduling software for mid-size logistics firms in Europe), with export
 # lanes only. Each run keeps one list per lane (a CSV in export.dir on SQLite,
 # a tab on a Sheets store). Copy it as rubric.yml and change it to describe
-# your own ideal customer. The format is in the contracts doc, section 2.
+# your own ideal customer. The format is in docs/reference.md, "The rubric".
 #
 # It has no cold lane on purpose. A cold lane claims every lead it matches,
 # even before its tool is set up, and such leads show do_not_contact: yes on

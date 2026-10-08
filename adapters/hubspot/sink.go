@@ -171,7 +171,7 @@ const maxTextLen = 65536
 //     company's (elsewhere: a different domain property, or company records
 //     with other domains only): a retry of this step whose earlier call
 //     created the deal and timed out, or a salesperson's deal on the
-//     person, read through the association, which (S0 confirms) does not
+//     person, read through the association, which (unconfirmed) does not
 //     lag as search does;
 //  3. deals carrying the company's domain, found by search.
 //
@@ -313,7 +313,7 @@ func (k *Sink) deal(ctx context.Context, req api.StepRequest) (string, error) {
 const unknownStageText = "at a stage no pipeline lists"
 
 // dealToContact is HubSpot's built-in association type from a deal to a
-// contact (S0 confirms the id).
+// contact (the id is unconfirmed).
 const dealToContact = 3
 
 func (k *Sink) remember(domain, id string) {

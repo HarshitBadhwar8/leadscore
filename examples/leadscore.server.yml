@@ -1,7 +1,7 @@
-# leadscore.yml for Docker on a server or VM with a domain (contracts section
-# 9.2). Copy it into the folder holding compose.yaml and your rubric, as
+# leadscore.yml for Docker on a server or VM with a domain
+# (docs/reference.md, "Docker"). Copy it into the folder holding compose.yaml and your rubric, as
 # leadscore.yml, and enable the compose file's Caddy service for HTTPS.
-# Every key is in the contracts doc, section 3.
+# Every key is in docs/reference.md, "leadscore.yml".
 version: 1
 
 # The rubric file, beside this one.

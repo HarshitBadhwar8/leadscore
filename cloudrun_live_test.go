@@ -53,9 +53,9 @@ import (
 // LEADSCORE_LIVE_IMAGE (the image to deploy); optional LEADSCORE_LIVE_REGION
 // (asia-south1) and LEADSCORE_LIVE_ROWS (synthetic leads, 60000).
 // LEADSCORE_LIVE_DENY_PROJECTS is required: a comma-separated list of project
-// ids the test refuses to touch. Set it to your real projects (for example
-// leadscore-dev) so a mistyped LEADSCORE_LIVE_PROJECT fails before anything
-// is created. The test does not run while it is empty.
+// ids the test refuses to touch. Set it to every project a real install
+// uses, so a mistyped LEADSCORE_LIVE_PROJECT fails before anything is
+// created. The test does not run while it is empty.
 //
 // Before it: `gcloud auth login --enable-gdrive-access` as a person who owns
 // the project; the Cloud Run service agent of the project may pull the image
@@ -72,7 +72,7 @@ func TestLiveCloudRun(t *testing.T) {
 	}
 	deny := os.Getenv("LEADSCORE_LIVE_DENY_PROJECTS")
 	if strings.TrimSpace(strings.ReplaceAll(deny, ",", "")) == "" {
-		t.Fatal("set LEADSCORE_LIVE_DENY_PROJECTS to the projects the live check must never touch (for example leadscore-dev)")
+		t.Fatal("set LEADSCORE_LIVE_DENY_PROJECTS to the projects the live check must never touch (every project a real install uses)")
 	}
 	if deniedProject(project, deny) {
 		t.Fatalf("project %s is in LEADSCORE_LIVE_DENY_PROJECTS; run the live check in a throwaway project", project)
@@ -411,7 +411,7 @@ func liveVisits(t *testing.T, marker string, n int) [][]byte {
 }
 
 // maxTries is how often a request is sent before giving up: Apollo retries a
-// 5xx or a failed connection (S0 confirms how often), never a 4xx.
+// 5xx or a failed connection (how often is unconfirmed), never a 4xx.
 const maxTries = 6
 
 // retryPause is the wait before the nth retry: n times this.
