@@ -365,7 +365,7 @@ step_deploy() {
   check_timing
 
   # The bundle each run reads, and its version number, which runs record:
-  # both are read at :latest when an execution starts (S0 confirms), so a
+  # both are read at :latest when an execution starts (unconfirmed), so a
   # config push needs no redeploy.
   if ! has_version "$CONFIG_SECRET" || ! has_version "$CONFIG_VERSION_SECRET"; then
     die "$CONFIG_SECRET or $CONFIG_VERSION_SECRET has no version yet; run leadscore config push first"
@@ -375,7 +375,7 @@ step_deploy() {
   case $image in
     ghcr.io/*)
       # Cloud Run cannot pull from ghcr.io; a remote repository proxies it
-      # (docs/reference.md, "Google Cloud"). S0 confirms the proxy works for ghcr.io.
+      # (docs/reference.md, "Google Cloud"); that the proxy works for ghcr.io is unconfirmed.
       if gc artifacts repositories describe "$PROXY_REPO" --location "$REGION" --project "$PROJECT" >/dev/null 2>&1; then
         say "repository $PROXY_REPO exists"
       else
@@ -391,12 +391,12 @@ step_deploy() {
   esac
 
   # The receiver: its own account, at most one instance, no sign-in check
-  # (Apollo cannot sign in; S0 confirms --no-invoker-iam-check works under
-  # common organization policies), the receiver secrets and the bundle. The
+  # (Apollo cannot sign in; that --no-invoker-iam-check works under common
+  # organization policies is unconfirmed), the receiver secrets and the bundle. The
   # previous secret is attached while it has an enabled version, until
   # --finish-rotation detaches it (docs/reference.md, "Google Cloud"). Detach before
-  # disabling: S0 confirms a disabled version attached at :latest stops a new
-  # instance from starting.
+  # disabling: a disabled version attached at :latest is expected to stop a
+  # new instance from starting (unconfirmed).
   local recv_secrets="LEADSCORE_RECEIVER_SECRET=$RECEIVER_SECRET:latest"
   has_version "$RECEIVER_SECRET" || say "warning: $RECEIVER_SECRET has no version, so every webhook gets 401; run setup/gcp.sh secrets"
   if [[ -n $finish_rotation ]]; then
@@ -450,8 +450,8 @@ step_schedule() {
   ensure_service_account "$sched_sa" "leadscore scheduler"
   run gc run jobs add-iam-policy-binding "$JOB" --project "$PROJECT" --region "$REGION" \
     --member "serviceAccount:$sched_sa" --role roles/run.invoker --quiet
-  # Cloud Scheduler calls the job's :run endpoint as its own account (S0
-  # confirms), in the Cloud Run region (S0 confirms Scheduler is offered there).
+  # Cloud Scheduler calls the job's :run endpoint as its own account, in
+  # the Cloud Run region (both unconfirmed).
   uri="https://run.googleapis.com/v2/projects/$PROJECT/locations/$REGION/jobs/$JOB:run"
   local verb=create
   if gc scheduler jobs describe "$SCHEDULER_JOB" --location "$REGION" --project "$PROJECT" >/dev/null 2>&1; then

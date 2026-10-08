@@ -121,7 +121,7 @@ Each op in `apply`, with `pk` built from the table's key columns:
 - `OpReplace`: `DELETE FROM leadscore_rows WHERE tbl = $1`, then insert every
   row.
 - `OpAppend`: `INSERT`; on a keyed table the unique index refuses a key that
-  exists, which fails the commit as the contract asks.
+  exists, which fails the commit as `Backend` requires.
 - `OpUpsert`: merge, so columns the writer does not know survive:
   `INSERT ... ON CONFLICT (tbl, pk) WHERE pk IS NOT NULL DO UPDATE SET row = leadscore_rows.row || EXCLUDED.row`.
 - `OpDelete`: on a keyed table by `pk`; on `Overrides` (keyed on all four
@@ -206,7 +206,7 @@ func (s *Store) AppendEvents(ctx context.Context, events []leadscore.RawEvent) e
 ```
 
 Retry Postgres' "slow down" answers (serialization failures, too many
-connections) until `ctx` is done, as the contract asks; never answer the
+connections) until `ctx` is done, as `EventLog` requires; never answer the
 receiver before the commit returned.
 
 - `ReadEvents(ctx, cursor)`: `SELECT ... WHERE seq > $1 ORDER BY seq LIMIT 5000`,

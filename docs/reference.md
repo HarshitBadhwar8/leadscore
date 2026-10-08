@@ -207,7 +207,7 @@ Relative paths are relative to the folder holding `leadscore.yml`.
 | `store.spreadsheet` | — | Sheets store: the spreadsheet id |
 | `store.lease_bucket` | `<hosting.project>-leadscore-lease` when `hosting.project` is set | Sheets store: the Cloud Storage bucket for the run lease |
 | `store.view_spreadsheet` | — | SQLite only: an optional read-only Sheet view |
-| `store.credentials` | Google's standard loading | Docker with Sheets: a service-account key file |
+| `store.credentials` | Google's standard loading | Docker with Sheets: a service-account key file (never commit it; see "Keep keys and data private") |
 | `sources[]` | — | each `{ id, type, channel, path or tabs, events, apollo_held, match_domain_name }` (below) |
 | `enrich` | — | `{ type, max_age: 30d, max_lookups_per_run: 100, max_lookups_per_day: 400 }` |
 | `replies` | `receiver` | where replies come from: `receiver` or `polling` |
@@ -260,9 +260,16 @@ exists, else `/config/leadscore.yml`, else `./leadscore.yml`. `--config` and
 rotating, `LEADSCORE_RECEIVER_SECRET_PREVIOUS`. On Google Cloud, a local
 command with an empty key variable reads the key from Secret Manager.
 
+**Keep keys and data private.** `chmod 600 .env`; never commit `.env` or a
+service-account key file (`store.credentials`); share a spreadsheet only
+with named people, never by link; `chmod 700 out` (the export lists hold
+personal data). The README's Docker path has the details.
+
 ## Store tables
 
-Every tool table has exactly these columns, in this order. A newer version
+A tool table is one leadscore creates and writes (every table below except
+the people-owned ones). Every tool table has exactly these columns, in this
+order. A newer version
 only adds tables or columns; every write keeps columns it does not know.
 JSON columns hold one JSON object as text. On SQLite, table names are lower
 snake case.
@@ -401,17 +408,37 @@ cold push for good.
 
 ## Receiver
 
-| Route | Purpose | Answers |
-|---|---|---|
-| `POST /apollo/visit` | Apollo website-visit workflow | 2xx once stored; 401 wrong or unset secret; 413 over 1 MB; 5xx when not stored within 10 seconds |
-| `POST /apollo/reply` | Apollo sent, reply and unsubscribe workflow | same |
-| `GET /healthz` | health check | With the timer (`serve --every`): 200 when the last run succeeded or none is due yet; 503 when the last run failed or none succeeded in three intervals. Without it (Cloud Run): 200 unless storing events failed |
+The receiver counts as configured when `replies: receiver` (the default) or
+`receiver.visit_events` is non-empty.
+
+| Route | Purpose |
+|---|---|
+| `POST /apollo/visit` | Apollo website-visit workflow |
+| `POST /apollo/reply` | Apollo sent, reply and unsubscribe workflow |
+| `GET /healthz` (or `HEAD`) | health check |
+
+| Answer | When |
+|---|---|
+| 200 | `POST`: the request is stored. `/healthz`: see below |
+| 400 | the body could not be read |
+| 401 | wrong secret, or no secret set |
+| 404 | any other path |
+| 405 | wrong method for the path |
+| 413 | body over 1 MB (not stored) |
+| 503 | not stored within 10 seconds; or no free slot to read a body-secret request; the sender must retry |
+
+`/healthz` with the timer (`serve --every`) is 200 when the last run
+succeeded or none is due yet, and 503 when the last run failed, none
+succeeded in three intervals, or the store cannot be read. Without the timer
+(Cloud Run) it is 200 unless storing events failed.
 
 - **Secret.** Send it in the `X-Leadscore-Secret` header, or in a top-level
-  `leadscore_secret` body field when Apollo cannot send headers (prefer the
-  header). It is compared in constant time against
-  `LEADSCORE_RECEIVER_SECRET` and, when set,
-  `LEADSCORE_RECEIVER_SECRET_PREVIOUS`, and removed from the body before
+  `leadscore_secret` body field when Apollo cannot send headers. Prefer the
+  header: a body secret is known only once the body is read, so such
+  requests are read at most 16 at a time, 3 seconds each; beyond that they
+  get 503 and the sender must retry. Header requests never wait. The secret
+  is compared in constant time against `LEADSCORE_RECEIVER_SECRET` and, when
+  set, `LEADSCORE_RECEIVER_SECRET_PREVIOUS`, and removed from the body before
   storing. With no secret set, every POST gets 401, while `/healthz` and the
   timer still work.
 - **Storing.** Requests are gathered for 2 seconds and stored together. A
@@ -438,7 +465,9 @@ send fake events, including a fake positive reply a deal lane would act on.
 Never paste it into chat, tickets or shared docs; rotate it if it might have
 leaked. To rotate: move the current value to
 `LEADSCORE_RECEIVER_SECRET_PREVIOUS`, set a new `LEADSCORE_RECEIVER_SECRET`,
-update each Apollo workflow, then remove the previous one.
+update each Apollo workflow, then remove the previous one. Both are accepted
+in between. On Docker, edit `.env` and run `docker compose up -d` after each
+change. On Google Cloud, see "Rotating keys" under "Google Cloud".
 
 ### Event rows
 
@@ -576,10 +605,15 @@ write raises `view_write_failed` and the run stays healthy.
   `rubric`), mounted at `/config/bundle.yaml`, then records its version in
   `leadscore-config-version`. The job reads that version when each run
   starts, so a push needs no redeploy.
-- **Rotating keys.** Add a version to the key's secret. For the receiver
-  secret, add the current value to `receiver-secret-previous` and the new one
-  to `receiver-secret`, run `setup/gcp.sh redeploy`, update each Apollo
-  workflow, then `setup/gcp.sh redeploy --finish-rotation`.
+- **Rotating keys.** For an API key, set its variable and run
+  `setup/gcp.sh secrets`; runs read the newest version. For the receiver
+  secret, in this order: add the current value as a version of
+  `receiver-secret-previous` and a new one to `receiver-secret`; run
+  `setup/gcp.sh redeploy` (both are accepted); update each Apollo workflow;
+  run `setup/gcp.sh redeploy --finish-rotation`, which detaches the previous
+  secret; only then disable its versions. A disabled version that is still
+  attached stops a new receiver instance from starting. The README's
+  "Rotating a secret" has the commands.
 
 **Roles.**
 
@@ -627,7 +661,7 @@ checks also run inside every run and make it unhealthy when they fail.
 | `receiver-silence` (in run; with `receiver.public_url`) | an expected event kind silent past the threshold (`silent:<kind>`) | check the Apollo workflow |
 | `lease` | on Sheets, the lease bucket missing or not writable (`lease:bucket`); a held lease shown as a warning (`lease:held`) | `setup/gcp.sh bucket` |
 | `pushes` (in run) | failed steps (`push_failed:<lead>:<lane>:<step>`); steps pending over 24 hours (warning `push_pending`) | `leadscore retry` |
-| `store` (in run) | store from a newer major version; SQLite or a CSV path on Cloud Run; ledger rows missing (`ledger_shrank`; pushing is blocked); SQLite on a disk that is not kept, or opened outside the container that last opened it | install a matching version; restore the ledger rows; use a named volume and `docker compose exec` |
+| `store` (in run) | store from a newer major version; SQLite or a CSV path on Cloud Run; fewer `Pushes` rows than a run once saved (`ledger_shrank`; pushing is blocked); SQLite on a disk that is not kept, or opened outside the container that last opened it | install a matching version; restore the `Pushes` rows; use a named volume and `docker compose exec` |
 | `rubric` (in run) | fails to compile; a rule reads a field that is not built in, declared, or a loaded column | fix the file |
 | `overrides` (in run) | unknown value; conflicting status rows (`status_conflict:<lead>`); a row naming no known person (warning `override_unmatched:<row>`); a `retry` row naming an unknown lane (warning `override_unknown_lane:<row>`) | fix the cell |
 | `pushes-enabled` | still off (warning `pushes-enabled:off`); a cold lane whose sink has no `sinks.<type>` block (warning `cold_lane_no_sink:<lane id>`) | review `--dry-run`, then set `pushes_enabled: true`; set the sink up or remove the lane |
@@ -637,10 +671,12 @@ checks also run inside every run and make it unhealthy when they fail.
 
 Set in code, not configurable: reply polling every 6 hours; pushes in
 batches of 25 leads; 3 attempts before a step fails; 30-second vendor call
-timeout; pending-push warning after 24 hours; lookup margin 10%; cell-use
-warning at 70%; one-day wait after a failed enrichment lookup; a HubSpot "no
-deal" answer within 15 minutes of a deal call is not trusted; receiver batch
-2 seconds, hold cap 10 seconds, `/healthz` cache 60 seconds; save budget 90
+timeout; pending-push warning after 24 hours; 10% extra leads looked up before
+pushing, to replace any a lookup removes; cell-use warning at 70%; one-day
+wait after a failed enrichment lookup; a HubSpot "no deal" answer within 15
+minutes of a deal call is not trusted; the receiver gathers requests for 2
+seconds and answers 503 if one is not stored within 10 seconds; `/healthz`
+cache 60 seconds; save budget 90
 seconds; lease length `deadline` plus 120 seconds; event window 90 days;
 `Seen events` one year.
 
@@ -699,6 +735,12 @@ type Backend interface {
     Lease(ctx context.Context, owner string, ttl time.Duration) (RunLease, error)
     Commit(ctx context.Context, writes []TableWrite) error
 }
+type RunLease interface {
+    // Check returns ErrLeaseLost if the lease expired or another owner took it.
+    Check(ctx context.Context) error
+    // Release gives the lease up only if this owner still holds it.
+    Release(ctx context.Context) error
+}
 type EventLog interface {
     AppendEvents(ctx context.Context, events []RawEvent) error
     ReadEvents(ctx context.Context, cursor Cursor) ([]RawEvent, Cursor, error)
@@ -710,11 +752,16 @@ type EventLog interface {
   Rows are `map[string]string`; keep every value exactly.
 - `Lease` takes the run lease or returns `ErrLeaseHeld`, taking over an
   expired one. It must be a real compare-and-swap.
-- `Commit` applies every write all-or-nothing. Ops: `OpReplace`, `OpAppend`
-  (a key the keyed table already holds fails the commit), `OpUpsert` and
-  `OpDelete` (both need `Key`), `OpTrim` (delete rows whose `Column` is
-  before `Before`). It creates a missing table or column the first time a
-  write names it, and returns `ErrTooLarge` rather than splitting.
+- `Commit` applies every write all-or-nothing. Ops: `OpReplace`, `OpAppend`,
+  `OpUpsert`, `OpDelete`, `OpTrim` (delete rows whose `Column` is before
+  `Before`). An `OpUpsert` or `OpDelete` with no `Key` is refused before
+  anything applies. An `OpAppend` to a keyed table of a key the table
+  already holds, or that the same commit already wrote, fails the whole
+  commit. It creates a missing table or column the first time a write names
+  it, and returns `ErrTooLarge` rather than splitting.
+- `ErrCommittedWithProblems` from `Commit` means every write was saved but a
+  people-owned table needs a person's look; the engine treats the commit as
+  done and never resends it.
 - `AppendEvents` stores a batch all-or-nothing, in order, and returns only
   once it is durable. `ReadEvents` returns events after the cursor; sequence
   numbers are never reused. It returns `ErrEventsShrank` when the log holds
