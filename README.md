@@ -692,8 +692,10 @@ go test -race ./...
 
 `LEADSCORE_LIVE_SHEETS=1` (or the path of a service-account key file) also
 runs the live Sheets check: it saves 20,000 leads and a year of events to a
-scratch spreadsheet and loads them within a minute. Without it the check is
-skipped.
+scratch spreadsheet and loads them within a minute. Service accounts have no
+Drive storage, so, as in `setup sheet`, your own gcloud login (or the account
+`LEADSCORE_LIVE_SHEETS_OWNER` names) creates the spreadsheet; it needs
+`gcloud auth login --enable-gdrive-access`. Without it the check is skipped.
 
 `LEADSCORE_LIVE_CLOUDRUN=1`, with `LEADSCORE_LIVE_PROJECT` (a billed,
 throwaway project, never `leadscore-dev`) and `LEADSCORE_LIVE_IMAGE`, runs
