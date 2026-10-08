@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="200" viewBox="0 0 880 200" role="img" aria-label="leadscore: merge your leads, score them with a YAML rubric, and send each one to one place">
+  <rect width="880" height="200" rx="16" fill="#161B22"/>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="16">
+    <text x="48" y="42" fill="#8B949E">$ leadscore ranked --csv | cut -d, -f4,10,12</text>
+    <rect x="44" y="53" width="236" height="24" rx="4" fill="#E6EDF3"/>
+    <text x="52" y="70" fill="#161B22">Anna Weber,65,call-list</text>
+    <text x="52" y="94" fill="#8B949E">Marie Laurent,15,nurture</text>
+  </g>
+  <text x="48" y="150" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="52" font-weight="700" letter-spacing="-1.5" fill="#E6EDF3">leadscore</text>
+  <text x="48" y="182" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="18" fill="#C9D1D9">Merge your leads, score them with a YAML rubric, and send each one to one place.</text>
+</svg>
