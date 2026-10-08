@@ -216,7 +216,7 @@ Relative paths are relative to the folder holding `leadscore.yml`.
 | `receiver.public_url` | — | where Apollo posts; `doctor` probes its `/healthz` |
 | `receiver.visit_events` | `[]` | the `visit_<name>` kinds your workflows send, for silence checks |
 | `receiver.port` | `$PORT`, else `8080` | listen port |
-| `sinks.apollo.mailbox_id` | — | the sending mailbox for sequences: its id, or its address (looked up once per run and turned into the id; `doctor` shows which id) |
+| `sinks.apollo.mailbox_id` | — | the sending mailbox for sequences: its id, or its address (looked up once per run and turned into the id) |
 | `sinks.hubspot` | — | `{ pipeline, stage, property_prefix: leadscore_ }` |
 | `export.dir` | `/out` | SQLite: where export CSVs go |
 | `reply_labels` | see "Reply labels" | `{ <label>: <status or none> }` overrides |
@@ -659,7 +659,7 @@ checks also run inside every run and make it unhealthy when they fail.
 | `sheets` (in run) | not recalculating hourly (`sheets:recalc`) or not on UTC (`sheets:timezone`); cell use past 70% (`sheets:cells`, warning) | `leadscore setup sheet --repair`; shorten `log_retention` or move to SQLite |
 | `hubspot` (in run; with `sinks.hubspot` and the token) | missing scopes (`hubspot:scopes`); properties missing or wrong type (`hubspot:properties`); pipeline or stage not found, unset for a deals lane, or closed (`hubspot:pipeline`); a deal step waiting on an unknown stage (`hubspot:unknown_stage`); the block unreadable (`hubspot:config`); HubSpot unreachable (`hubspot:api`) | re-create the private app; `leadscore setup hubspot` |
 | `apollo-key` (in run) | Apollo refuses the key (`apollo-key:auth`); no answer (warning `apollo-key:unreachable`); no readable opt-out flag for an Apollo-only team until an unsubscribe webhook arrives (warning `apollo-key:no_optout_flag`); a block cannot build a client (`apollo-key:config`) | check the key |
-| `apollo-sequences` (in run) | mailbox id (or address) not found; in doctor, the id an address resolves to (warning `apollo-sequences:mailbox_address`); a lane's sequence name missing or ambiguous; key refused for sequences (`apollo-sequences:key`); no answer (warning `apollo-sequences:unreachable`) | check `sinks.apollo.mailbox_id` and the sequence names; use a master key |
+| `apollo-sequences` (in run) | mailbox id (or address) not found; a lane's sequence name missing or ambiguous; key refused for sequences (`apollo-sequences:key`); no answer (warning `apollo-sequences:unreachable`) | check `sinks.apollo.mailbox_id` and the sequence names; use a master key |
 | `receivers` | with the receiver configured: `receiver.public_url`'s `/healthz` unreachable or answering other than 200 or 503 (`receivers:unreachable`), or not http(s) (`receivers:public_url`); a 503 (warning `receivers:unhealthy`); no `receiver.public_url` (warning `receivers:no_public_url`) | re-deploy; on a laptop, `replies: polling` or a tunnel |
 | `receiver-silence` (in run; with `receiver.public_url`) | an expected event kind silent past the threshold (`silent:<kind>`) | check the Apollo workflow |
 | `lease` | on Sheets, the lease bucket missing or not writable (`lease:bucket`); a held lease shown as a warning (`lease:held`) | `setup/gcp.sh bucket` |

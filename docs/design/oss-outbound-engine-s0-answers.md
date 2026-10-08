@@ -66,7 +66,7 @@ stayed outside the repo; the fixtures it touched now carry `recorded_from`.
 | Question | Answer | What changed |
 |---|---|---|
 | Reply search: filter by date? | Yes, on the send date (`completed_at`), with the key `emailer_message_date_range`. `emailerMessageDateRange` is silently ignored (every reply comes back). | The poller sends the working key. The engine's window already reaches back by `sequence_length` + `window_margin`. |
-| Reply search: paging | No `pagination` record; `page` works. | The poller reads until a short page. |
+| Reply search: paging | No `pagination` record; `page` works. | The poller reads until an empty page (a short page may be a silent per_page cap). |
 | Reply time field | None: no `replied_at`. Times are `completed_at`, `created_at`, `due_at`, `failed_at`. | A polled reply is timed at its send (`completed_at`). |
 | Reply fields | `to_email` always set; `contact_id` sometimes null; `reply_class` seen as null, `willing_to_meet`, `person_referral`, `follow_up_question`. | A reply with no contact id is matched by email. |
 | Bad key | Auth health: 200 with `is_logged_in: false`. Elsewhere: 401 with `{error, error_details: {code, context, message, suggestions}}`, code `AUTH.AUTHENTICATION.API_KEY_INVALID`. | Refusal text also reads `error_details.code`; the prose is never read. |
@@ -80,6 +80,8 @@ stayed outside the repo; the fixtures it touched now carry `recorded_from`.
 
 Enrollment (the call, its flags, re-enrolling, skip reasons), the opt-out
 flag on a contact, whether the contact search spends credits, a real 429
-body and `Retry-After`, HubSpot reads, and all the Cloud Run checks. These
+body and `Retry-After`, the full set of eight documented reply labels (only
+three were seen, plus `null`), whether a label can be added to a reply after
+it first appears, HubSpot reads, and all the Cloud Run checks. These
 need a write-side check on test accounts (a paused test sequence, test
 contacts).

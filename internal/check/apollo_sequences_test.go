@@ -115,9 +115,9 @@ func TestApolloSequences(t *testing.T) {
 	}
 }
 
-// sinks.apollo.mailbox_id may be the mailbox's address. Doctor says which
-// mailbox id it resolves to (a warning row, never the address itself); a run
-// says nothing; an address no mailbox has fails as apollo-sequences:mailbox.
+// sinks.apollo.mailbox_id may be the mailbox's address (or one of its
+// aliases). It resolves quietly, in doctor and in a run; an address no
+// mailbox has fails as apollo-sequences:mailbox, without the address.
 func TestApolloSequencesMailboxAddress(t *testing.T) {
 	fake := fakeapollo.New("good-key")
 	fake.AddMailboxAddress("mailbox-7", "sales@acme.example")
@@ -144,15 +144,16 @@ func TestApolloSequencesMailboxAddress(t *testing.T) {
 		}
 		return ps
 	}
-	if ps := run("Sales@Acme.example", true); len(ps) != 1 || ps[0].Key != "apollo-sequences:mailbox_address" || !ps[0].Warning ||
-		!strings.Contains(ps[0].Message, `"mailbox-7"`) {
+	if ps := run("Sales@Acme.example", true); len(ps) != 0 {
 		t.Errorf("doctor, a known address: %+v", ps)
 	}
 	if ps := run("sales@acme.example", false); len(ps) != 0 {
 		t.Errorf("a run, a known address: %+v", ps)
 	}
-	if ps := run("nobody@acme.example", false); len(ps) != 1 || ps[0].Key != "apollo-sequences:mailbox" || ps[0].Warning {
-		t.Errorf("an unknown address: %+v", ps)
+	for _, doctor := range []bool{false, true} {
+		if ps := run("nobody@acme.example", doctor); len(ps) != 1 || ps[0].Key != "apollo-sequences:mailbox" || ps[0].Warning {
+			t.Errorf("an unknown address (doctor %v): %+v", doctor, ps)
+		}
 	}
 	if ps := run("mailbox-7", true); len(ps) != 0 {
 		t.Errorf("doctor, an id: %+v", ps)

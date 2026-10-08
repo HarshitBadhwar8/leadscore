@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 
@@ -73,7 +74,7 @@ func SequenceName(dest string) (string, bool) {
 func MailboxID(cfg api.Config) (string, error) {
 	v, ok := cfg["mailbox_id"]
 	if !ok || v == nil {
-		return "", errors.New("apollo: sinks.apollo.mailbox_id is not set; enrollment needs the sending mailbox's id")
+		return "", errors.New("apollo: sinks.apollo.mailbox_id is not set; enrollment needs the sending mailbox's id or address")
 	}
 	s, isStr := v.(string)
 	if !isStr {
@@ -98,9 +99,11 @@ type Sink struct {
 }
 
 // sendingMailbox is the mailbox id enrollment sends from, resolved once per run
-// (an address needs the mailbox list). An address no mailbox has is
-// ErrTransient: the step waits until mailbox_id is fixed, and the
-// apollo-sequences check says so.
+// (an address needs the mailbox list). A key refusal or a rate limit is
+// classified as for any call (the sink stops for the run). Any other failure
+// to resolve, an address no mailbox has included, is ErrTransient: it is a
+// setup problem, no lead's, so the step waits until it is fixed (the
+// apollo-sequences check says so) rather than spending the lead's attempts.
 func (s *Sink) sendingMailbox(ctx context.Context) (string, error) {
 	s.mu.Lock()
 	id := s.mailboxID
@@ -110,10 +113,11 @@ func (s *Sink) sendingMailbox(ctx context.Context) (string, error) {
 	}
 	id, err := s.c.ResolveMailbox(ctx, s.mailbox)
 	switch {
-	case errors.Is(err, ErrMailboxNotFound):
-		return "", fmt.Errorf("%w: %w", api.ErrTransient, err)
-	case err != nil:
+	case err == nil:
+	case KeyRefused(err) || errors.Is(err, api.ErrRateLimited):
 		return "", classify(err)
+	default:
+		return "", fmt.Errorf("%w: apollo: resolving sinks.apollo.mailbox_id: %w", api.ErrTransient, err)
 	}
 	s.mu.Lock()
 	s.mailboxID = id
@@ -175,6 +179,11 @@ type NewContact struct {
 }
 
 func (s *Sink) contact(ctx context.Context, lead api.LeadRef) (string, error) {
+	// A mailbox_id that does not resolve makes the step wait before the
+	// contact is created: no enrollment could send from it.
+	if _, err := s.sendingMailbox(ctx); err != nil {
+		return "", err
+	}
 	nc := NewContact{FullName: lead.FullName, Title: lead.Title, Company: lead.Fields["company.name"]}
 	if len(lead.Emails) > 0 {
 		nc.Email = lead.Emails[0]
@@ -271,6 +280,12 @@ func splitName(full string) (first, last string) {
 // The add call also asks Apollo to skip contacts active or finished in other
 // sequences, so a race between the reads and the add still refuses.
 func (s *Sink) enroll(ctx context.Context, name, contactID string, lead api.LeadRef) (string, error) {
+	// The mailbox first: a mailbox_id that does not resolve makes the step
+	// wait before any read.
+	mailbox, err := s.sendingMailbox(ctx)
+	if err != nil {
+		return "", err
+	}
 	seqID, err := s.sequenceID(ctx, name)
 	if err != nil {
 		return "", err
@@ -310,10 +325,6 @@ func (s *Sink) enroll(ctx context.Context, name, contactID string, lead api.Lead
 				return "", fmt.Errorf("apollo: another contact with the lead's email is in a sequence: %w", api.ErrRefused)
 			}
 		}
-	}
-	mailbox, err := s.sendingMailbox(ctx)
-	if err != nil {
-		return "", err
 	}
 	reply, err := s.c.addToSequence(ctx, seqID, contactID, mailbox)
 	var se *StatusError
@@ -519,8 +530,9 @@ func (c *Client) ResolveSequence(ctx context.Context, name string) (string, erro
 
 // emailAccount is a sending mailbox: its id and its address.
 type emailAccount struct {
-	ID    string `json:"id"`
-	Email string `json:"email"`
+	ID      string   `json:"id"`
+	Email   string   `json:"email"`
+	Aliases []string `json:"aliases"`
 }
 
 // emailAccounts lists the team's sending mailboxes. The live check
@@ -554,9 +566,10 @@ var ErrMailboxNotFound = errors.New("apollo: no mailbox of this Apollo account h
 
 // ResolveMailbox turns sinks.apollo.mailbox_id into the mailbox id
 // enrollment sends from. A value with no "@" is an id and is returned as
-// given, with no call. An address is looked up in the team's mailbox list
-// (matched case-insensitively on the mailbox's address); no match is
-// ErrMailboxNotFound.
+// given, with no call. An address is looked up in the team's mailbox list,
+// matched case-insensitively on each mailbox's address and its aliases (the
+// mailbox's address first, so an alias another mailbox shares never wins
+// over it); no match is ErrMailboxNotFound.
 func (c *Client) ResolveMailbox(ctx context.Context, mailbox string) (string, error) {
 	if !strings.Contains(mailbox, "@") {
 		return mailbox, nil
@@ -565,8 +578,14 @@ func (c *Client) ResolveMailbox(ctx context.Context, mailbox string) (string, er
 	if err != nil {
 		return "", err
 	}
+	same := func(s string) bool { return strings.EqualFold(strings.TrimSpace(s), mailbox) }
 	for _, a := range accounts {
-		if a.ID != "" && strings.EqualFold(strings.TrimSpace(a.Email), mailbox) {
+		if a.ID != "" && same(a.Email) {
+			return a.ID, nil
+		}
+	}
+	for _, a := range accounts {
+		if a.ID != "" && slices.ContainsFunc(a.Aliases, same) {
 			return a.ID, nil
 		}
 	}
@@ -686,10 +705,10 @@ const (
 )
 
 // refusalMarkers tell Apollo's refusal reasons apart, by words in a skip
-// reason or an error reply's error and error_code fields, lowercased. The
-// real wording is unconfirmed; these come from Apollo's public docs and UI.
-// Order matters: the first match wins, and "this sequence" is checked before
-// "another".
+// reason or an error reply's error, error_code and error_details.code fields
+// (errorFields), lowercased. The real wording is unconfirmed; these come from
+// Apollo's public docs and UI. Order matters: the first match wins, and "this
+// sequence" is checked before "another".
 var refusalMarkers = []struct{ marker, reason string }{
 	{"already_in_campaign", reasonInSequence},
 	{"already in this sequence", reasonInSequence},

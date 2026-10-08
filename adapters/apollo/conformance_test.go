@@ -2,6 +2,7 @@ package apollo_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -84,7 +85,15 @@ func TestALaterLabelIsANewEvent(t *testing.T) {
 func TestAnUntimedReplyKeepsItsKey(t *testing.T) {
 	t.Setenv(apollo.KeyVariable, key)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"emailer_messages":[{"contact_id":"contact-1","to_email":"dana@acme-robotics.example","reply_class":"not_interested"}],"pagination":{"page":1,"total_pages":1}}`))
+		var body struct {
+			Page int `json:"page"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body.Page > 1 { // the reply search ends on an empty page
+			_, _ = w.Write([]byte(`{"emailer_messages":[]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"emailer_messages":[{"contact_id":"contact-1","to_email":"dana@acme-robotics.example","reply_class":"not_interested"}]}`))
 	}))
 	t.Cleanup(srv.Close)
 	p, err := apollo.NewPoller(api.Config{"base_url": srv.URL, "_http_client": srv.Client()})

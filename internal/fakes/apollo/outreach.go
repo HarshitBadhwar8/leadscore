@@ -63,7 +63,7 @@ type outreach struct {
 	byEmail   map[string]string   // lowercased email -> id
 	nextID    int
 	sequences [][2]string // id, name, in the order added
-	mailboxes [][2]string // id, address
+	mailboxes [][]string  // id, address, aliases...
 	replies   []Reply
 	pageSize  int            // overrides the per_page asked, when set
 	created   map[string]int // sinktest step -> objects created
@@ -87,11 +87,12 @@ func (s *Server) AddMailbox(id string) {
 	s.AddMailboxAddress(id, id+"@leadscore-demo.example")
 }
 
-// AddMailboxAddress makes the fake hold a sending mailbox with this address.
-func (s *Server) AddMailboxAddress(id, address string) {
+// AddMailboxAddress makes the fake hold a sending mailbox with this address
+// and these aliases (Apollo lists the address among the aliases too).
+func (s *Server) AddMailboxAddress(id, address string, aliases ...string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.out.mailboxes = append(s.out.mailboxes, [2]string{id, address})
+	s.out.mailboxes = append(s.out.mailboxes, append([]string{id, address}, aliases...))
 }
 
 // AddContact puts a contact in the fake as if the team already had it. It is
@@ -291,7 +292,12 @@ func (s *Server) answerOutreach(call string, r *http.Request, raw []byte) (Fixtu
 		var list []any
 		for _, mb := range o.mailboxes {
 			rec := clone(tmpl)
-			rec["id"], rec["email"], rec["aliases"] = mb[0], mb[1], []any{mb[1]}
+			rec["id"], rec["email"] = mb[0], mb[1]
+			aliases := []any{}
+			for _, a := range mb[1:] {
+				aliases = append(aliases, a)
+			}
+			rec["aliases"] = aliases
 			list = append(list, rec)
 		}
 		return f, mustJSON(map[string]any{"email_accounts": nonNil(list)})
@@ -404,8 +410,8 @@ func (s *Server) skipBody(fixtureCase, contactID string) []byte {
 // min day on the send (completed_at), and any other key for it (the camelCase
 // emailerMessageDateRange) is ignored, so every reply comes back; the reply
 // has no pagination record; a message has no reply time. Only the replied
-// filter is served. SetPageSize does not apply: with no total_pages, a short
-// page is the end, so the fake keeps the per_page asked.
+// filter is served. SetPageSize caps the page silently, as Apollo may cap
+// per_page below what was asked.
 func (s *Server) searchMessages(body map[string]any) (Fixture, []byte) {
 	o := s.out
 	stats, _ := body["emailer_message_stats"].([]any)
@@ -431,6 +437,9 @@ func (s *Server) searchMessages(body map[string]any) (Fixture, []byte) {
 	per := num(body["per_page"])
 	if per <= 0 {
 		per = 25
+	}
+	if o.pageSize > 0 {
+		per = min(per, o.pageSize)
 	}
 	page := max(num(body["page"]), 1)
 	from, to := min(len(hits), (page-1)*per), min(len(hits), page*per)

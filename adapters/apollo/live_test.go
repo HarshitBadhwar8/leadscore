@@ -308,7 +308,7 @@ func (g *liveGuard) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 	resp.Body = io.NopCloser(bytes.NewReader(body))
-	g.lastRaw, g.lastHdr = body, resp.Header
+	g.lastRaw, g.lastHdr = body, resp.Header // in memory only, for rateHeaders
 	for k := range resp.Header {
 		g.names[k] = true
 	}
@@ -317,10 +317,13 @@ func (g *liveGuard) RoundTrip(req *http.Request) (*http.Response, error) {
 		reqHeaders = append(reqHeaders, k)
 	}
 	sort.Strings(reqHeaders)
+	// Cookies are session state, not shape: never saved.
+	respHeaders := resp.Header.Clone()
+	respHeaders.Del("Set-Cookie")
 	capture := map[string]any{
 		"method": req.Method, "path": req.URL.Path, "query": req.URL.Query(),
 		"request_headers": reqHeaders, "request_body": rawJSON(reqBody),
-		"status": resp.StatusCode, "response_headers": resp.Header, "response_body": rawJSON(body),
+		"status": resp.StatusCode, "response_headers": respHeaders, "response_body": rawJSON(body),
 	}
 	out, _ := json.MarshalIndent(capture, "", "  ")
 	name := fmt.Sprintf("apollo-%s-%02d.json", g.lastAt.UTC().Format("20060102T150405"), g.calls)

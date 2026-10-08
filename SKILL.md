@@ -147,8 +147,6 @@ mailbox's id or its email address) is not one of the account's mailboxes. `apoll
 sequence name is missing or not unique in Apollo; names must match exactly.
 `apollo-sequences:key`: the key is not a master key; a person makes one.
 `apollo-sequences:unreachable` (a warning): Apollo did not answer.
-`apollo-sequences:mailbox_address` (a warning, doctor only): `mailbox_id` is an
-address; it names the mailbox id it resolves to. Nothing to fix.
 
 ### receivers
 

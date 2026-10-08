@@ -356,8 +356,8 @@ func TestPollUsesSinceAndCarriesLabelAndMessageID(t *testing.T) {
 			t.Errorf("poll call %d: %s, query %v, body %v", pages, c.Method, c.Query, body)
 		}
 	}
-	if pages != 1 {
-		t.Errorf("%d search pages read, want 1 (a short page is the last)", pages)
+	if pages != 2 {
+		t.Errorf("%d search pages read, want 2 (the second empty: only an empty page ends the read)", pages)
 	}
 	if len(evs) != 2 {
 		t.Fatalf("events = %+v, want the two replies sent since", evs)
@@ -374,14 +374,19 @@ func TestPollUsesSinceAndCarriesLabelAndMessageID(t *testing.T) {
 }
 
 // The reply search has no pagination record (live check 2026-10-08), so the
-// poller reads pages until a short one: 250 replies are three pages, and 200
-// are three too (the third empty). A poll that stopped at total_pages would
-// fail on the first full page.
-func TestPollReadsPagesUntilAShortOne(t *testing.T) {
-	for _, n := range []int{250, 200} {
+// poller reads pages until an empty one, never stopping on a short page:
+// Apollo may cap per_page below the 100 asked without saying so, and a poll
+// that stopped short would lose replies yet count as complete. 250 replies
+// are four calls at 100 a page, and every reply is read when the page is
+// silently capped at 30 (nine pages, then an empty one).
+func TestPollReadsPagesUntilAnEmptyOne(t *testing.T) {
+	for _, tc := range []struct{ n, capped, calls int }{{250, 0, 4}, {200, 0, 3}, {250, 30, 10}} {
 		fake, cfg := outreachFake(t)
+		if tc.capped > 0 {
+			fake.SetPageSize(tc.capped)
+		}
 		sent := time.Date(2026, 9, 2, 9, 0, 0, 0, time.UTC)
-		for i := range n {
+		for i := range tc.n {
 			fake.AddReply(fakeapollo.Reply{MessageID: fmt.Sprintf("msg-%03d", i), Email: fmt.Sprintf("p%d@acme-robotics.example", i), SentAt: sent})
 		}
 		p, err := NewPoller(cfg)
@@ -390,24 +395,40 @@ func TestPollReadsPagesUntilAShortOne(t *testing.T) {
 		}
 		evs, err := p.Poll(context.Background(), sent.Add(-time.Hour))
 		if err != nil {
-			t.Fatalf("%d replies: %v", n, err)
+			t.Fatalf("%+v: %v", tc, err)
 		}
 		ids := map[string]bool{}
 		for _, e := range evs {
 			ids[e.Attrs[AttrMessageID]] = true
 		}
-		if len(evs) != n || len(ids) != n || callsOf(fake, messagesSearchPath) != 3 {
-			t.Errorf("%d replies: %d events (%d distinct) in %d calls, want all in 3", n, len(evs), len(ids), callsOf(fake, messagesSearchPath))
+		if len(evs) != tc.n || len(ids) != tc.n || callsOf(fake, messagesSearchPath) != tc.calls {
+			t.Errorf("%+v: %d events (%d distinct) in %d calls", tc, len(evs), len(ids), callsOf(fake, messagesSearchPath))
 		}
 	}
 }
 
-// Past maxPollPages full pages the poll is an error, never read as complete.
-func TestPollRefusesTooManyPages(t *testing.T) {
+// Up to maxPages pages may hold records; one more is read, and the search is
+// complete only if that one is empty. More is an error, never read as
+// complete.
+func TestPollPageLimit(t *testing.T) {
+	pages := func(full int) func(int) (int, error) {
+		return func(page int) (int, error) {
+			if page <= full {
+				return perPage, nil
+			}
+			return 0, nil
+		}
+	}
+	if err := eachUntilEmpty(3, pages(3)); err != nil {
+		t.Errorf("exactly 3 full pages, then an empty one: %v", err)
+	}
+	if err := eachUntilEmpty(3, pages(4)); err == nil {
+		t.Errorf("4 full pages under a limit of 3: no error")
+	}
 	calls := 0
-	err := eachShortPage(3, func(int) (int, error) { calls++; return perPage, nil })
-	if err == nil || calls != 3 {
-		t.Errorf("err %v after %d pages", err, calls)
+	err := eachUntilEmpty(3, func(int) (int, error) { calls++; return 1, nil })
+	if err == nil || calls != 4 {
+		t.Errorf("never empty: err %v after %d calls, want an error after 4", err, calls)
 	}
 }
 
@@ -466,17 +487,61 @@ func TestMailboxByAddress(t *testing.T) {
 		t.Errorf("an id: %d mailbox list calls, want 0", n)
 	}
 
+	// An unknown address: both steps wait, before any contact is created or
+	// read.
 	fake3, cfg3 := outreachFake(t)
 	cfg3["mailbox_id"] = "nobody@leadscore-demo.example"
 	s3 := newTestSink(t, cfg3)
 	l := lead("lead-1", "a@acme-robotics.example")
-	cid, err := s3.Do(context.Background(), step(l, StepContact, nil))
-	if err != nil {
-		t.Fatal(err)
+	_, err := s3.Do(context.Background(), step(l, StepContact, nil))
+	if !errors.Is(err, api.ErrTransient) || !errors.Is(err, ErrMailboxNotFound) || fake3.Count("contact") != 0 {
+		t.Errorf("an unknown address, contact step: err = %v, %d created", err, fake3.Count("contact"))
 	}
-	_, err = s3.Do(context.Background(), step(l, StepEnroll, map[string]string{StepContact: cid}))
-	if !errors.Is(err, api.ErrTransient) || !errors.Is(err, ErrMailboxNotFound) || fake3.Count("enroll") != 0 {
-		t.Errorf("an unknown address: err = %v, %d enrolled", err, fake3.Count("enroll"))
+	_, err = s3.Do(context.Background(), step(l, StepEnroll, map[string]string{StepContact: "contact-0001"}))
+	if !errors.Is(err, api.ErrTransient) || callsOf(fake3, "/api/v1/contacts/contact-0001") != 0 {
+		t.Errorf("an unknown address, enroll step: err = %v (or the contact was read)", err)
+	}
+}
+
+// An alias of a mailbox resolves to that mailbox; the mailbox's own address
+// wins over an alias another mailbox shares.
+func TestMailboxByAlias(t *testing.T) {
+	fake, cfg := outreachFake(t)
+	fake.AddMailboxAddress("mailbox-0002", "old@leadscore-demo.example", "old@leadscore-demo.example", "team@leadscore-demo.example")
+	fake.AddMailboxAddress("mailbox-0003", "team@leadscore-demo.example")
+	c := newTestSink(t, cfg).c
+	for addr, want := range map[string]string{"OLD@leadscore-demo.example": "mailbox-0002", "team@leadscore-demo.example": "mailbox-0003"} {
+		if id, err := c.ResolveMailbox(context.Background(), addr); err != nil || id != want {
+			t.Errorf("%s: %q, %v; want %s", addr, id, err, want)
+		}
+	}
+	fake.AddMailboxAddress("mailbox-0004", "main@leadscore-demo.example", "main@leadscore-demo.example", "sales@leadscore-demo.example")
+	if id, err := c.ResolveMailbox(context.Background(), "sales@leadscore-demo.example"); err != nil || id != "mailbox-0004" {
+		t.Errorf("an alias: %q, %v", id, err)
+	}
+}
+
+// A mailbox lookup that fails other than by the key or a rate limit (a 404,
+// a 422, a 5xx) is a setup problem, no lead's: the step waits (ErrTransient)
+// rather than spending the lead's attempts. A refused key still stops the
+// sink for the run (ErrRateLimited).
+func TestMailboxLookupFailuresWait(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		want   error
+	}{{404, api.ErrTransient}, {422, api.ErrTransient}, {500, api.ErrTransient}, {401, api.ErrRateLimited}, {429, api.ErrRateLimited}} {
+		c := handlerClient(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(tc.status)
+			_, _ = w.Write([]byte(`{"error":"nope"}`))
+		})
+		s := &Sink{c: c, mailbox: "sales@leadscore-demo.example", sequences: map[string]string{}}
+		_, err := s.sendingMailbox(context.Background())
+		if !errors.Is(err, tc.want) {
+			t.Errorf("%d: err = %v, want %v", tc.status, err, tc.want)
+		}
+		if tc.want == api.ErrTransient && (errors.Is(err, api.ErrRateLimited) || errors.Is(err, api.ErrRefused)) {
+			t.Errorf("%d: err = %v is also another class", tc.status, err)
+		}
 	}
 }
 

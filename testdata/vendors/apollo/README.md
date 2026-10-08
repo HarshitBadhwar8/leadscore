@@ -1,19 +1,15 @@
 # Apollo fixtures
 
 Most of these files are **provisional** (a few are recorded; see "Recorded
-shapes" below). They are built from earlier working code's
-Apollo client tests and Apollo's public API docs, with made-up companies and example
-domains, not from S0's real captures. Each file carries `"provisional": true`;
-a shape taken from the docs because a real reply cannot be had safely (the
-429) also carries `"documented": true`.
+shapes" below). The provisional ones are built from
+earlier working code's Apollo client tests and Apollo's public API docs, with
+made-up companies and example domains, and carry `"provisional": true`; a
+shape taken from the docs because a real reply cannot be had safely (the 429)
+also carries `"documented": true`.
 
 Each file is one call and case, in S0's shape: `{method, path, query,
 request_headers (names only), request_body, status, response_headers,
 response_body}`. `internal/fakes/apollo` serves them.
-
-When S0 lands, replace each file with the real capture (scrubbed: no keys, no
-real people or companies), drop `provisional`, and re-run the tests. Code that
-depends on an S0 answer says "S0 confirms" next to it.
 
 | Call | Cases |
 |---|---|
@@ -33,7 +29,7 @@ The read-only live check (`adapters/apollo/live_test.go`, 2026-10-08) ran
 against a real account. Files whose shape now matches it carry
 `recorded_from` (naming what was recorded) instead of `provisional`: real
 field names, types, nesting, status and header names; every value made up.
-They are `auth_health/bad_key` and `not_logged_in` (a bad key gets 200 with
+They are `auth_health/ok`, `bad_key` and `not_logged_in` (a bad key gets 200 with
 `is_logged_in: false` there), `email_accounts/list` and `bad_key` (a 401 with
 `error_details.code`), `contacts_get/not_found` (422, not 404) and
 `emailer_messages_search/replies` (no `pagination`, no `replied_at`, a null

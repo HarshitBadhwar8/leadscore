@@ -52,11 +52,11 @@ func NewPoller(cfg api.Config) (api.Poller, error) {
 // JSON body; Apollo applies the replied filter; the date filter's key is
 // emailer_message_date_range (the camelCase emailerMessageDateRange is
 // silently ignored, returning every reply ever); the reply has no pagination
-// record, so pages are read until a short one; the label field is reply_class
+// record, so pages are read until an empty one; the label field is reply_class
 // (null on most); to_email is always set, contact_id is sometimes null.
 func (p *Poller) Poll(ctx context.Context, since time.Time) ([]api.Event, error) {
 	var out []api.Event
-	err := eachShortPage(maxPollPages, func(page int) (int, error) {
+	err := eachUntilEmpty(maxPollPages, func(page int) (int, error) {
 		body := map[string]any{
 			"emailer_message_stats":           []string{"replied"},
 			"emailer_message_date_range_mode": "completed_at",

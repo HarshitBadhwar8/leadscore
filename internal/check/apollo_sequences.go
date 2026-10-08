@@ -16,8 +16,8 @@ func init() { Register(apolloSequences{getenv: os.Getenv}) }
 
 // apolloSequences is the `apollo-sequences` check: for
 // an install with lanes pushing to Apollo, sinks.apollo.mailbox_id must be
-// one of the team's sending mailboxes, by id or by address (apollo-sequences:mailbox;
-// doctor shows the id an address resolves to as apollo-sequences:mailbox_address), and every
+// one of the team's sending mailboxes, by id or by address
+// (apollo-sequences:mailbox), and every
 // such lane must name one sequence that exists, by its exact name
 // (apollo-sequences:<lane id>). A lane whose name does not resolve waits
 // (the sink returns ErrTransient), so this check is what tells the team.
@@ -72,7 +72,7 @@ func (a apolloSequences) Run(ctx context.Context, env Env) []Problem {
 	case strings.Contains(mailbox, "@"):
 		// An address: resolved to its mailbox id as the sink does. The
 		// address is not repeated in the message (logs carry ids, not emails).
-		id, err := c.ResolveMailbox(ctx, mailbox)
+		_, err := c.ResolveMailbox(ctx, mailbox)
 		switch {
 		case errors.Is(err, apollo.ErrMailboxNotFound):
 			out = append(out, Problem{Key: "apollo-sequences:mailbox",
@@ -80,11 +80,6 @@ func (a apolloSequences) Run(ctx context.Context, env Env) []Problem {
 				Fix:     "check sinks.apollo.mailbox_id against Apollo's email accounts, or give the mailbox's id"})
 		case err != nil:
 			return unreachable(err)
-		case env.Doctor:
-			// Doctor says which mailbox the address resolved to; a run stays quiet.
-			out = append(out, Problem{Key: "apollo-sequences:mailbox_address", Warning: true,
-				Message: fmt.Sprintf("sinks.apollo.mailbox_id is an address; it resolves to the mailbox id %q", id),
-				Fix:     "nothing; or set mailbox_id to that id to skip the lookup"})
 		}
 	default:
 		ids, err := c.EmailAccountIDs(ctx)
