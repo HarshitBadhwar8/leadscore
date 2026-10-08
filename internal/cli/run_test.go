@@ -48,11 +48,12 @@ func TestRunStatusRankedExplain(t *testing.T) {
 		t.Fatalf("status before any run: %d %q %q", code, out, errOut)
 	}
 	code, out, errOut = cli("run", "--dry-run", "--config", cfg)
-	if code != 0 || !strings.Contains(out, "dry run:") || !strings.Contains(out, "totals: 2 lead(s) scored: 2 new") {
+	if code != 0 || !strings.Contains(out, "dry run:") || !strings.Contains(out, "totals: 2 lead(s) scored: 2 new") ||
+		!strings.Contains(out, "dry run (healthy): 2 lead(s) would be scored") || strings.Contains(out, "@") {
 		t.Fatalf("dry run: %d %q %q", code, out, errOut)
 	}
-	if code, out, _ := cli("ranked", "--config", cfg); code != 0 || !strings.Contains(out, "Ranked is empty") {
-		t.Errorf("a dry run writes nothing: %d %q", code, out)
+	if code, _, errOut := cli("ranked", "--config", cfg); code != 1 || !strings.Contains(errOut, "no run has finished yet") {
+		t.Errorf("a dry run writes nothing: %d %q", code, errOut)
 	}
 
 	code, out, errOut = cli("run", "--config", cfg)
@@ -147,5 +148,39 @@ func TestPrintedStoredTextIsSafe(t *testing.T) {
 		if strings.ContainsRune(out, '\x1b') {
 			t.Errorf("%v printed a control character: %q", args, out)
 		}
+	}
+}
+
+// The read-only commands never create the SQLite file: on a fresh folder each
+// says no run has finished yet, and the folder still has no store. status
+// exits 0 (that is the state it reports); the others have nothing to show
+// and exit 1. doctor still warns store:not_created.
+func TestReadOnlyCommandsCreateNoStore(t *testing.T) {
+	cfg := runInstall(t)
+	db := filepath.Join(filepath.Dir(cfg), "store.db")
+	for _, tc := range []struct {
+		args []string
+		code int
+	}{
+		{[]string{"status"}, exitOK},
+		{[]string{"ranked"}, exitFail},
+		{[]string{"ranked", "--csv"}, exitFail},
+		{[]string{"explain", "ana@acme.example"}, exitFail},
+		{[]string{"facts"}, exitFail},
+		{[]string{"facts", "--csv"}, exitFail},
+	} {
+		code, out, errOut := cli(append(tc.args, "--config", cfg)...)
+		if code != tc.code || !strings.Contains(out+errOut, "no run has finished yet; run `leadscore run` first") {
+			t.Errorf("%v: %d %q %q", tc.args, code, out, errOut)
+		}
+		if _, err := os.Stat(db); !os.IsNotExist(err) {
+			t.Fatalf("%v created the SQLite file: %v", tc.args, err)
+		}
+	}
+	if _, out, _ := cli("doctor", "--config", cfg); !strings.Contains(out, "warn  store: store:not_created:") {
+		t.Errorf("doctor: %q", out)
+	}
+	if _, err := os.Stat(db); !os.IsNotExist(err) {
+		t.Fatalf("doctor created the SQLite file: %v", err)
 	}
 }

@@ -84,7 +84,14 @@ func TestReleaseWorkflowSettings(t *testing.T) {
 			}
 			if strings.Contains(st.Run, "go build") && strings.Contains(st.Run, "./cmd/leadscore") {
 				built = true
-				for _, w := range []string{"darwin", "linux", "windows", "amd64", "arm64", "sha256sum", "-trimpath"} {
+				for _, w := range []string{"darwin", "linux", "windows", "amd64", "arm64", "sha256sum", "-trimpath",
+					// The release sets the version `leadscore version` prints.
+					"-X github.com/HarshitBadhwar8/leadscore/internal/cli.Version=${TAG}",
+					// Each platform is one archive: zip on Windows, tar.gz elsewhere,
+					// with the license texts beside the binary.
+					`zip -qr "../dist/$name.zip"`, `tar -C build -czf "dist/$name.tar.gz"`,
+					`cp LICENSE NOTICE "build/$name/"`, `cp -R third_party/licenses "build/$name/third_party/"`,
+					"sha256sum leadscore_* > checksums.txt"} {
 					if !strings.Contains(st.Run, w) {
 						t.Errorf("the binaries step does not mention %s", w)
 					}
@@ -102,6 +109,10 @@ func TestReleaseWorkflowSettings(t *testing.T) {
 		if needs := fmt.Sprint(job.Needs); needs != "test" && needs != "[test]" {
 			t.Errorf("job %s needs %v, want test", name, job.Needs)
 		}
+	}
+	// The image carries the same version as the binaries.
+	if !strings.Contains(string(data), "build-args: VERSION=${{ github.ref_name }}") {
+		t.Error("the image job must pass the tag as the VERSION build argument")
 	}
 	// latest moves only for a final version, never for a v1.2.0-rc1 tag.
 	if !strings.Contains(string(data), `"$TAG" != *-*`) {

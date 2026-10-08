@@ -17,7 +17,7 @@ import (
 )
 
 // goldenDir holds one stored body per file (testdata/events/README.md). They
-// are provisional: built from earlier working code's test bodies until real
+// are provisional: built from another client's test bodies until real
 // captured calls replace them.
 const goldenDir = "../../testdata/events"
 

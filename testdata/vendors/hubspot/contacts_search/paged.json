@@ -55,6 +55,6 @@
       }
     }
   },
-  "confirmed_from": "HubSpot code that runs in production searches at /crm/v3/objects/{object}/search. Only the path and method; the reply is not confirmed.",
+  "confirmed_from": "A HubSpot client used against the live API searches at /crm/v3/objects/{object}/search. Only the path and method; the reply is not confirmed.",
   "provisional": true
 }

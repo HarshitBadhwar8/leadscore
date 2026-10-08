@@ -49,7 +49,11 @@ func runDoctor(inv *invocation) int {
 	w := inv.stdout
 	c, err := config.Load(inv.configOptions())
 	if err != nil {
-		fmt.Fprintf(w, "FAIL  config: %s\n      fix: correct leadscore.yml (every key is in docs/reference.md)\n", doctorText(err.Error()))
+		fix := "correct leadscore.yml (every key is in docs/reference.md)"
+		if errors.Is(err, config.ErrNoConfig) {
+			fix = "create leadscore.yml (start from examples/leadscore.csv-only.yml) or pass --config"
+		}
+		fmt.Fprintf(w, "FAIL  config: %s\n      fix: %s\n", doctorText(err.Error()), fix)
 		fmt.Fprintln(w, "doctor: 1 failed; the other checks need a configuration that loads")
 		return exitFail
 	}

@@ -1,6 +1,6 @@
 {
   "provisional": true,
-  "confirmed_from": "Contact-create code that runs in production: POST with run_dedupe true, a 200 or 201 answer, and the id read from contact.id (that code calls /v1/contacts; this file keeps /api/v1/contacts). The other reply fields are not confirmed.",
+  "confirmed_from": "A contact-create client used against the live API: POST with run_dedupe true, a 200 or 201 answer, and the id read from contact.id (that code calls /v1/contacts; this file keeps /api/v1/contacts). The other reply fields are not confirmed.",
   "note": "S0 confirms: run_dedupe returning the existing contact (same id) for a known email",
   "method": "POST",
   "path": "/api/v1/contacts",

@@ -175,6 +175,23 @@ var commands = []*command{
 		help: "call the local /healthz",
 		run:  runHealthz,
 	},
+	{
+		path: []string{"version"},
+		help: "print the version",
+		run:  runVersion,
+	},
+}
+
+// groups is how `leadscore help` lists the commands: by what a person is
+// doing. Every command is in exactly one group (a test holds this).
+var groups = []struct {
+	name     string
+	commands []string
+}{
+	{"Set up", []string{"setup sheet", "setup hubspot", "config get", "config set-hosting", "config push", "rules check"}},
+	{"Run", []string{"run", "serve"}},
+	{"Inspect", []string{"status", "ranked", "explain", "facts", "doctor", "healthz", "version"}},
+	{"Fix", []string{"set-status", "merge", "mark-distinct", "retry"}},
 }
 
 // invocation is one parsed command line.
@@ -205,16 +222,51 @@ func (inv *invocation) fail(err error) int {
 
 func inCloudRun() bool { return os.Getenv("K_SERVICE") != "" || os.Getenv("CLOUD_RUN_JOB") != "" }
 
-var errHelp = errors.New("help requested")
+var (
+	errHelp    = errors.New("help requested")
+	errVersion = errors.New("version requested")
+)
+
+// usageError is a known command used wrongly: Main prints the message and
+// that command's usage, not the whole list.
+type usageError struct {
+	cmd *command
+	msg string
+}
+
+func (e *usageError) Error() string { return e.msg }
 
 // Main runs the command line and returns the exit code.
 func Main(args []string, stdout, stderr io.Writer) int {
 	// Before anything can log: mask the exact key values from the environment.
 	logredact.MaskEnvSecrets(os.Getenv)
+	if cmd, asked, unknown := helpTarget(args); asked {
+		switch {
+		case cmd != nil:
+			commandUsage(stdout, cmd)
+		case unknown != "":
+			fmt.Fprintf(stderr, "leadscore: unknown command %q\n\n", unknown)
+			usage(stderr)
+			return exitUsage
+		default:
+			usage(stdout)
+		}
+		return exitOK
+	}
 	inv, err := parse(args)
 	if errors.Is(err, errHelp) {
 		usage(stdout)
 		return exitOK
+	}
+	if errors.Is(err, errVersion) {
+		fmt.Fprintln(stdout, versionLine())
+		return exitOK
+	}
+	var ue *usageError
+	if errors.As(err, &ue) {
+		fmt.Fprintf(stderr, "leadscore %s: %s\n", ue.cmd.name(), ue.msg)
+		commandUsage(stderr, ue.cmd)
+		return exitUsage
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "leadscore: %s\n\n", err)
@@ -227,6 +279,47 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 	return inv.cmd.run(inv)
+}
+
+// helpTarget reports whether args ask for help (-h, --help, or a first word
+// "help"), and for which command: the longest run of the words that names
+// one. unknown is set for `help <words>` when the words name no command.
+func helpTarget(args []string) (cmd *command, asked bool, unknown string) {
+	var words []string
+	helpWord := false
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			break
+		}
+		if strings.HasPrefix(a, "-") && a != "-" {
+			name, _, hasValue := strings.Cut(strings.TrimLeft(a, "-"), "=")
+			if name == "h" || name == "help" {
+				asked = true
+			}
+			if kind, ok := globalFlags[name]; ok && kind == valueFlag && !hasValue {
+				i++ // its value is not a command word
+			}
+			continue
+		}
+		if len(words) == 0 && a == "help" && !helpWord {
+			asked, helpWord = true, true
+			continue
+		}
+		words = append(words, a)
+	}
+	if !asked {
+		return nil, false, ""
+	}
+	for n := len(words); n > 0; n-- {
+		if c, _ := match(words[:n]); c != nil {
+			return c, true, ""
+		}
+	}
+	if helpWord && len(words) > 0 {
+		return nil, true, strings.Join(words, " ")
+	}
+	return nil, true, ""
 }
 
 // parse reads global flags, the command words, then the command's flags and
@@ -246,6 +339,9 @@ func parse(args []string) (*invocation, error) {
 			if name == "h" || name == "help" {
 				return nil, errHelp
 			}
+			if name == "version" && inv.cmd == nil {
+				return nil, errVersion
+			}
 			kind, ok := globalFlags[name]
 			if !ok && inv.cmd != nil {
 				kind, ok = inv.cmd.flags[name]
@@ -254,7 +350,7 @@ func parse(args []string) (*invocation, error) {
 				if inv.cmd == nil {
 					return nil, fmt.Errorf("unknown flag %s before the command", a)
 				}
-				return nil, fmt.Errorf("%s: unknown flag %s", inv.cmd.name(), a)
+				return nil, &usageError{inv.cmd, "unknown flag " + a}
 			}
 			switch kind {
 			case boolFlag:
@@ -311,7 +407,16 @@ func parse(args []string) (*invocation, error) {
 		return nil, fmt.Errorf("incomplete command %q", strings.Join(words, " "))
 	}
 	if n := len(inv.args); n < inv.cmd.minArgs || (inv.cmd.maxArgs >= 0 && n > inv.cmd.maxArgs) {
-		return nil, fmt.Errorf("usage: leadscore %s %s", inv.cmd.name(), inv.cmd.args)
+		want := "takes no arguments"
+		switch {
+		case inv.cmd.maxArgs < 0:
+			want = fmt.Sprintf("needs at least %d argument(s)", inv.cmd.minArgs)
+		case inv.cmd.minArgs == inv.cmd.maxArgs && inv.cmd.minArgs > 0:
+			want = fmt.Sprintf("needs %d argument(s)", inv.cmd.minArgs)
+		case inv.cmd.maxArgs > 0:
+			want = fmt.Sprintf("takes at most %d argument(s)", inv.cmd.maxArgs)
+		}
+		return nil, &usageError{inv.cmd, fmt.Sprintf("%s, got %d", want, n)}
 	}
 	return inv, nil
 }
@@ -341,21 +446,45 @@ func match(words []string) (cmd *command, partial bool) {
 	return nil, partial
 }
 
+// usageLine is a command's name and arguments.
+func (c *command) usageLine() string {
+	line := c.name()
+	if c.args != "" {
+		line += " " + c.args
+	}
+	return line
+}
+
+// commandUsage prints one command's usage line and what it does.
+func commandUsage(w io.Writer, c *command) {
+	fmt.Fprintf(w, "Usage: leadscore %s [--config <file>] [--rubric <file>]\n", c.usageLine())
+	note := c.help
+	if c.run == nil {
+		note += " (not built yet: " + c.slice + ")"
+	}
+	fmt.Fprintf(w, "%s.\n", strings.ToUpper(note[:1])+note[1:])
+}
+
 func usage(w io.Writer) {
 	fmt.Fprintln(w, "Usage: leadscore [--config <file>] [--rubric <file>] <command> [arguments]")
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Commands:")
+	byName := map[string]*command{}
 	for _, c := range commands {
-		line := c.name()
-		if c.args != "" {
-			line += " " + c.args
+		byName[c.name()] = c
+	}
+	for _, g := range groups {
+		fmt.Fprintf(w, "\n%s:\n", g.name)
+		for _, n := range g.commands {
+			c := byName[n]
+			note := c.help
+			if c.run == nil {
+				note += " (not built yet: " + c.slice + ")"
+			}
+			fmt.Fprintf(w, "  %-40s %s\n", c.usageLine(), note)
 		}
-		note := c.help
-		if c.run == nil {
-			note += " (not built yet: " + c.slice + ")"
-		}
-		fmt.Fprintf(w, "  %-52s %s\n", line, note)
 	}
 	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Overrides: the table where people correct leads (statuses, merges, retries); runs read it, never write it.")
+	fmt.Fprintln(w, "Health: the table where each run records its result and any open problems.")
+	fmt.Fprintln(w, "One command's usage: leadscore help <command>, or leadscore <command> --help.")
 	fmt.Fprintln(w, "Without --config, leadscore reads /config/bundle.yaml, else /config/leadscore.yml, else ./leadscore.yml.")
 }

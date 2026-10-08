@@ -182,6 +182,17 @@ func Locate(configFlag string) (path string, err error) {
 	return filepath.Abs(localConfigPath)
 }
 
+// ErrNoConfig is Load's error when no leadscore.yml exists at any default
+// location, or the --config file does not exist.
+var ErrNoConfig = errors.New("no leadscore.yml")
+
+// noConfig is a --config file that does not exist: it is ErrNoConfig too.
+type noConfig struct{ err error }
+
+func (e noConfig) Error() string        { return e.err.Error() }
+func (e noConfig) Unwrap() error        { return e.err }
+func (e noConfig) Is(target error) bool { return target == ErrNoConfig }
+
 // Load locates, reads and parses the configuration.
 func Load(opts Options) (*Config, error) {
 	path, err := Locate(opts.ConfigPath)
@@ -193,12 +204,16 @@ func Load(opts Options) (*Config, error) {
 		if opts.ConfigPath == "" && errors.Is(err, fs.ErrNotExist) {
 			// Nothing at any default location: say where we looked, since on
 			// Docker an empty /config usually means the folder was not shared.
-			return nil, fmt.Errorf("no leadscore.yml: looked for %s, %s and %s; "+
+			return nil, fmt.Errorf("%w: looked for %s, %s and %s; "+
 				"pass --config, or on Docker check the folder is mounted at /config "+
 				"(Colima on macOS shares only your home folder)",
-				defaultBundlePath, defaultConfigPath, path)
+				ErrNoConfig, defaultBundlePath, defaultConfigPath, path)
 		}
-		return nil, fmt.Errorf("reading config: %w", err)
+		err = fmt.Errorf("reading config: %w", err)
+		if errors.Is(err, fs.ErrNotExist) {
+			err = noConfig{err}
+		}
+		return nil, err
 	}
 	dir := filepath.Dir(path)
 

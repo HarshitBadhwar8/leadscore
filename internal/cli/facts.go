@@ -7,13 +7,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"sort"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/HarshitBadhwar8/leadscore/internal/api"
-	"github.com/HarshitBadhwar8/leadscore/internal/config"
 	"github.com/HarshitBadhwar8/leadscore/internal/model"
 )
 
@@ -24,25 +22,11 @@ import (
 // never takes the lease: SQLite is opened read-only and a missing file is not
 // created.
 func runFacts(inv *invocation) int {
-	c, err := config.Load(inv.configOptions())
+	_, b, closeStore, err := openStore(inv)
 	if err != nil {
 		return inv.fail(err)
 	}
-	addTestClients(c)
-	open, ok := api.BackendFactory(c.Store.Type)
-	if !ok {
-		return inv.fail(fmt.Errorf("store type %q is not registered", c.Store.Type))
-	}
-	if c.Store.Type == "sqlite" && !fileExists(c.Store.Path) {
-		return inv.fail(fmt.Errorf("there is no SQLite file at %s yet: no run has saved", c.Store.Path))
-	}
-	b, _, err := openReadOnly(c, open)
-	if err != nil {
-		return inv.fail(fmt.Errorf("opening the store: %w", err))
-	}
-	if cl, ok := b.(io.Closer); ok {
-		defer func() { _ = cl.Close() }()
-	}
+	defer closeStore()
 	rows, err := b.ReadTable(context.Background(), model.TableCompanyFacts)
 	if err != nil {
 		return inv.fail(fmt.Errorf("reading Company facts: %w", err))
