@@ -20,7 +20,7 @@ new      <lead id>  fit_signal=none tier=none score=15 status=new lane=nurture
 new      <lead id>  fit_signal=yes tier=4 score=0 status=new lane=none
 new      <lead id>  fit_signal=yes tier=4 score=0 status=new lane=none
 totals: 8 lead(s) scored: 8 new, 0 changed, 0 unchanged; planned lanes: call-list 5, none 2, nurture 1
-run <run id>: healthy; 8 lead(s) scored, 8 input row(s) merged, 0 left for later runs, 0 pushed
+dry run (healthy): 8 lead(s) would be scored from 8 input row(s), 0 left for later runs; nothing was saved or pushed
 leads.csv
 leadscore.yml
 rubric.yml
@@ -29,5 +29,5 @@ call-list.csv
 nurture.csv
 dry run: no lease taken, nothing written, no enrichment, no lookups and no pushes
 totals: 8 lead(s) scored: 0 new, 0 changed, 8 unchanged; planned lanes: call-list 5, none 2, nurture 1
-run <run id>: healthy; 8 lead(s) scored, 0 input row(s) merged, 0 left for later runs, 0 pushed
+dry run (healthy): 8 lead(s) would be scored from 0 input row(s), 0 left for later runs; nothing was saved or pushed
 ```
