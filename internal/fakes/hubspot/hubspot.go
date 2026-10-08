@@ -6,7 +6,7 @@
 // pipelines, properties, the token-info call), backed by in-memory records.
 //
 // Its answers follow the provisional fixtures in testdata/vendors/hubspot
-// (taken from HubSpot's public API documentation and earlier working code,
+// (taken from HubSpot's public API documentation and another client,
 // not recorded calls; real captures will replace or confirm them). Error
 // answers are the fixtures' bodies, served as recorded; a test checks every
 // fixture against the fake.

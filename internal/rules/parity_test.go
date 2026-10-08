@@ -24,8 +24,9 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/rules"
 )
 
-// The parity directory holds a team's private rubric and the verdicts its
-// previous scoring system gave, kept outside the repo:
+// A parity harness: bring your own rubric and the verdicts a previous
+// scoring system gave the same leads, and these tests check the rubric
+// reproduces them. The parity directory is kept outside the repo:
 //
 //	rubric.yml          the rubric
 //	parity.json         {"rows": [{id, inputs, account_pass, lead_pass}]}
@@ -38,11 +39,14 @@ import (
 // Values compare as JSON, and null means no value.
 //
 // These tests are skipped unless LEADSCORE_PARITY_DIR is set. Never set it in
-// CI: the directory is private and its contents must not reach CI logs.
+// CI: the directory may hold personal data and must not reach CI logs.
 
 // parityFields are the verdict fields every parity.json row must carry, across
-// account_pass and lead_pass, so a row cannot pass by leaving one out.
-var parityFields = []string{"fit_signal", "tier", "priority", "needs_review", "account_score", "contact_score"}
+// account_pass and lead_pass, so a row cannot pass by leaving one out: the
+// score halves and every name the rubric derives.
+func parityFields(r *rules.Rubric) []string {
+	return append([]string{"account_score", "contact_score"}, r.DerivedNames()...)
+}
 
 // A private rubric kept outside the repo, in LEADSCORE_PARITY_DIR, must
 // compile.
@@ -119,7 +123,7 @@ func TestParity(t *testing.T) {
 
 	// parity.json: one evaluation over every row, so leads sharing a company
 	// domain are one company, oldest first in file order.
-	rows := parityRows(t, dir)
+	rows := parityRows(t, dir, r)
 	in, err := buildInput(rowsInputs(rows))
 	if err != nil {
 		t.Fatalf("parity.json: %v", err)
@@ -219,7 +223,7 @@ type parityRow struct {
 	LeadPass    map[string]any `json:"lead_pass"`
 }
 
-func parityRows(t *testing.T, dir string) []parityRow {
+func parityRows(t *testing.T, dir string, r *rules.Rubric) []parityRow {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join(dir, "parity.json"))
 	if err != nil {
@@ -236,15 +240,16 @@ func parityRows(t *testing.T, dir string) []parityRow {
 	if len(file.Rows) == 0 {
 		t.Fatal("parity.json has no rows; the comparison would pass vacuously")
 	}
+	fields := parityFields(r)
 	for i, row := range file.Rows {
 		if row.ID == "" {
 			t.Fatalf("parity.json: row %d has no id", i+1)
 		}
-		for _, f := range parityFields {
+		for _, f := range fields {
 			_, inAccount := row.AccountPass[f]
 			_, inLead := row.LeadPass[f]
 			if !inAccount && !inLead {
-				t.Fatalf("parity.json: row %s has no %s; every row needs %s", row.ID, f, strings.Join(parityFields, ", "))
+				t.Fatalf("parity.json: row %s has no %s; every row needs %s", row.ID, f, strings.Join(fields, ", "))
 			}
 		}
 	}

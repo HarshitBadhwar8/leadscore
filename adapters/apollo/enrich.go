@@ -53,8 +53,8 @@ type Organization struct {
 // domain? Until then a 404 is an ordinary failure (the path could be wrong),
 // so it never marks a company not-found for a whole max age.
 //
-// The field names below are the ones enrichment code running in production
-// reads.
+// The field names below are the ones an enrichment client used against the
+// live API reads.
 func (c *Client) EnrichOrganization(ctx context.Context, domain string) (*Organization, error) {
 	domain = strings.ToLower(strings.TrimSpace(domain))
 	if domain == "" {

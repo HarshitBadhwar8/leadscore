@@ -36,7 +36,7 @@ import (
 )
 
 // TestLiveCloudRun is the LEADSCORE_LIVE_CLOUDRUN live check. It sets
-// a throwaway Google Cloud project up with setup/gcp.sh exactly as the README
+// a throwaway Google Cloud project up with setup/gcp.sh exactly as docs/setup.md
 // does, then checks what only real Cloud Run can show:
 //
 //   - a run started by Cloud Scheduler as its own account runs longer than 3
@@ -49,7 +49,7 @@ import (
 //     own service accounts, and a local command reaches it as the run account;
 //   - the hosting check passes.
 //
-// It prints the run's length and the measures the README's cost section needs.
+// It prints the run's length and the measures behind the cost line in the README's "Before you rely on it".
 //
 // Variables: LEADSCORE_LIVE_CLOUDRUN=1; LEADSCORE_LIVE_PROJECT (a billed,
 // throwaway project, never one a real install uses);
@@ -62,7 +62,8 @@ import (
 //
 // Before it: `gcloud auth login --enable-gdrive-access` as a person who owns
 // the project; the Cloud Run service agent of the project may pull the image
-// (before release, Artifact Registry Reader on leadscore-dev's repository).
+// (for a private image, Artifact Registry Reader on the repository that
+// LEADSCORE_LIVE_IMAGE is in).
 // `setup/gcp.sh accounts` opens a browser for the impersonated login. The test
 // pauses the scheduler at the end; delete the project afterwards.
 func TestLiveCloudRun(t *testing.T) {

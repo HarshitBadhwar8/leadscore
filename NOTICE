@@ -98,6 +98,6 @@ license text is under third_party/licenses/, at the path given.
 - The Go standard library and runtime (the release toolchain), BSD-3-Clause, https://go.dev
   third_party/licenses/go/LICENSE
 
-The container image is built on alpine:3.24. Its Alpine packages (musl,
-busybox, ca-certificates, tzdata and the rest) carry their own licenses, which
-the image's package database records in /lib/apk/db/installed.
+The container image is built on gcr.io/distroless/static-debian12:nonroot. Its Debian
+packages (base-files, ca-certificates, media-types, netbase, tzdata) carry their own
+copyright and license files inside the image, under /usr/share/doc/*/copyright.

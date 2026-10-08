@@ -1,6 +1,6 @@
 {
   "provisional": true,
-  "confirmed_from": "A live API test (record: Apollo transport spike, 2026-08-10): POST /v1/contacts/search answers 200. Only the endpoint and method; the body is not confirmed.",
+  "confirmed_from": "A live API test (record: notes from live API calls, 2026-08-10): POST /v1/contacts/search answers 200. Only the endpoint and method; the body is not confirmed.",
   "method": "POST",
   "path": "/api/v1/contacts/search",
   "query": {},

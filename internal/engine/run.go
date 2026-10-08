@@ -713,6 +713,12 @@ func (x *exec) finish(err error) (api.RunResult, error) {
 	}
 	line := fmt.Sprintf("run %s: %s; %d lead(s) scored, %d input row(s) merged, %d left for later runs, %d pushed",
 		x.run.ID, state, len(x.run.Input.Leads), x.merged, x.backlog, x.run.Pushed)
+	if x.run.DryRun {
+		// No run id (nothing stores one) and no "merged" (nothing is saved):
+		// the line says what a real run would do.
+		line = fmt.Sprintf("dry run (%s): %d lead(s) would be scored from %d input row(s), %d left for later runs; nothing was saved or pushed",
+			state, len(x.run.Input.Leads), x.merged, x.backlog)
+	}
 	if len(res.Problems) > 0 {
 		line += "; open problems: " + strings.Join(res.Problems, ", ")
 	}

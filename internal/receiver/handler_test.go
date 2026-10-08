@@ -802,3 +802,49 @@ func TestSlowSendersDoNotLockOutBodySecrets(t *testing.T) {
 		t.Errorf("a body-secret request behind slow senders: %d, want 200", resp.StatusCode)
 	}
 }
+
+// Exactly 16 body-secret requests are read at once: with 16 slow senders
+// holding every slot, the 17th body-secret request gets 503, and a
+// header-secret request, which needs no slot, still gets 200.
+func TestSixteenBodySecretReadSlots(t *testing.T) {
+	oldRead, oldWait := unauthReadTime, unauthWait
+	unauthReadTime, unauthWait = 30*time.Second, 100*time.Millisecond
+	t.Cleanup(func() { unauthReadTime, unauthWait = oldRead, oldWait })
+	h := newTestHandler(t, sqliteStore(t), nil)
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	addr := strings.TrimPrefix(srv.URL, "http://")
+	const slots = 16
+	for range slots {
+		c, err := net.Dial("tcp", addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = c.Close() })
+		// Headers and part of a body-secret body, then nothing.
+		_, _ = io.WriteString(c, "POST /apollo/reply HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 1000\r\n\r\n{\"leadscore_secret\":")
+	}
+	waitFor(t, func() bool { return len(h.unauth) == slots })
+	if cap(h.unauth) != slots {
+		t.Fatalf("%d body-secret read slots, want %d", cap(h.unauth), slots)
+	}
+	body := `{"event":"email_sent","contact_email":"a@example.com","leadscore_secret":"` + testSecret + `"}`
+	resp, err := http.Post(srv.URL+"/apollo/reply", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("the 17th body-secret request: %d, want 503", resp.StatusCode)
+	}
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/apollo/reply", strings.NewReader(`{"event":"email_sent","contact_email":"a@example.com"}`))
+	req.Header.Set(SecretHeader, testSecret)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("a header-secret request with every slot held: %d, want 200", resp.StatusCode)
+	}
+}

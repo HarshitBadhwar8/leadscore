@@ -15,7 +15,7 @@
 // (default leadscore_) names the custom properties setup creates.
 //
 // Request and answer shapes are provisional: they come from HubSpot's public
-// API documentation and earlier working code, not from recorded calls. Every
+// API documentation and another client, not from recorded calls. Every
 // behaviour that rests on an answer still to be checked is marked
 // "unconfirmed".
 package hubspot

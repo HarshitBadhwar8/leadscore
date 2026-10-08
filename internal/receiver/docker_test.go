@@ -32,11 +32,15 @@ func readRepo(t *testing.T, name string) []byte {
 	return b
 }
 
-// The image runs as the non-root user leadscore with its own HOME, with
-// leadscore as the entrypoint.
+// The image runs as the non-root user 10001 with its own HOME, with
+// leadscore as the entrypoint, on a distroless base pinned by digest, with the
+// license texts inside.
 func TestDockerfileRunsAsLeadscore(t *testing.T) {
 	df := string(readRepo(t, "Dockerfile"))
-	for _, want := range []string{"USER leadscore", "ENV HOME=/home/leadscore", `ENTRYPOINT ["leadscore"]`, "-h /home/leadscore leadscore", "chmod 700 /data /out"} {
+	for _, want := range []string{"USER 10001:10001", "ENV HOME=/home/leadscore", `ENTRYPOINT ["leadscore"]`,
+		"--chown=10001:10001 /rootfs/home/leadscore /home/leadscore", "--chown=10001:10001 --chmod=700 /rootfs/data /data", "--chown=10001:10001 --chmod=700 /rootfs/out /out",
+		"FROM gcr.io/distroless/static-debian12:nonroot@sha256:", "COPY LICENSE NOTICE /usr/share/doc/leadscore/",
+		"COPY third_party/licenses /usr/share/doc/leadscore/licenses", "cli.Version=${VERSION}"} {
 		if !strings.Contains(df, want) {
 			t.Errorf("Dockerfile lacks %q", want)
 		}

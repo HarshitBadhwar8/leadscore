@@ -7,6 +7,8 @@
 
 # Local runtime state
 /out/
+# The README quick start's folder
+/try/
 *.db
 *.db-wal
 *.db-shm
