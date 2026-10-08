@@ -919,7 +919,7 @@ is set:
 |---|---|
 | `LEADSCORE_LIVE_APOLLO` | Read-only calls against a real Apollo account. It names an env file holding `APOLLO_API_KEY` and `APOLLO_MAILBOX_ID`. It never writes, and keeps raw answers outside the repository. |
 | `LEADSCORE_LIVE_SHEETS` | Saves 20,000 leads and a year of events to a scratch spreadsheet and loads them within a minute. Set it to `1` or the path of a service-account key file. Your own gcloud login (or the account `LEADSCORE_LIVE_SHEETS_OWNER` names) creates the spreadsheet, so it needs `gcloud auth login --enable-gdrive-access`. |
-| `LEADSCORE_LIVE_CLOUDRUN` | Sets up a billed, throwaway project (`LEADSCORE_LIVE_PROJECT`, never `leadscore-dev`) with `setup/gcp.sh` and the image in `LEADSCORE_LIVE_IMAGE`. It starts a run longer than 3 minutes from Cloud Scheduler, posts webhook bursts during the run and during a redeploy, and checks no event was lost. Its comment lists what to do first. |
+| `LEADSCORE_LIVE_CLOUDRUN` | Sets up a billed, throwaway project (`LEADSCORE_LIVE_PROJECT`, never one a real install uses; it refuses any project listed in `LEADSCORE_LIVE_DENY_PROJECTS`) with `setup/gcp.sh` and the image in `LEADSCORE_LIVE_IMAGE`. It starts a run longer than 3 minutes from Cloud Scheduler, posts webhook bursts during the run and during a redeploy, and checks no event was lost. Its comment lists what to do first. |
 
 ### Contributing, security and license
 
