@@ -11,8 +11,7 @@ leadscore does that on a schedule. It merges your leads into people, scores
 them with a rubric you write in YAML, and sends each lead to one place: an
 Apollo sequence, HubSpot, or a plain list you send from yourself.
 
-Status: pre-release, maintained by [@HarshitBadhwar8](https://github.com/HarshitBadhwar8).
-Before v1, the `leadscore.yml` keys, the rubric format and the commands may
+Status: pre-release. Before v1, the `leadscore.yml` keys, the rubric format and the commands may
 change, and [CHANGELOG.md](CHANGELOG.md) says how.
 
 ## Contents
@@ -926,7 +925,7 @@ is set:
 
 - Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) and the
   [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
-- Report a vulnerability privately, as [SECURITY.md](SECURITY.md) says.
+- Report a vulnerability privately through the repo's [Security tab](https://github.com/HarshitBadhwar8/leadscore/security).
 - Licensed under the [MIT License](LICENSE).
 
 Copyright 2026 Workloom Solutions Private Limited.
