@@ -121,7 +121,7 @@ func TestReadmeDuties(t *testing.T) {
 		"plain-binary secret in this terminal only":  "export LEADSCORE_RECEIVER_SECRET=$(openssl rand -hex 32)",
 		"the port in .env":                           "LEADSCORE_PORT=8080",
 		"upgrade and roll back":                      "Rolling back is the previous tag.",
-		"dry-run summary line":                       "`dry run:` summary line",
+		"dry-run summary line":                       "summary line starting `dry run`",
 		"look leads up by email after a dry run":     "Look a lead up by email with `leadscore explain <email>`",
 	}
 	for duty, phrase := range inSetup {
