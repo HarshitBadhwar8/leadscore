@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package check
 
 import (
@@ -113,7 +116,7 @@ func (c receivers) Run(ctx context.Context, env Env) []Problem {
 		return []Problem{{Key: "receivers:unreachable",
 			Message: fmt.Sprintf("%s did not answer: %v", u.Redacted(), err), Fix: fix}}
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	switch resp.StatusCode {
 	case http.StatusOK:
 		return nil

@@ -1,0 +1,51 @@
+version: "2"
+run:
+  tests: true
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+linters:
+  default: standard
+  enable:
+    - misspell
+    - revive
+  settings:
+    errcheck:
+      # Writes to the command's stdout and stderr: a failed write to a closed
+      # terminal has no recovery, and checking each one only adds noise.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        # Model.Put fails only for an export table whose lane id is malformed
+        # or differs from a recorded lane by case (model.checkExportLane). The
+        # other tables never fail, so checking each of those calls adds noise.
+        - (*github.com/HarshitBadhwar8/leadscore/internal/model.Model).Put
+  exclusions:
+    rules:
+      # Error messages start with the sheet tab or service they name (Health,
+      # State, Drive), and the Google Sheets fake returns Google's own error
+      # text word for word. Both are capitalised on purpose.
+      - linters: [staticcheck]
+        text: "ST1005:"
+      - linters: [revive]
+        text: "^error-strings:"
+      # Packages under internal/ cannot be imported from outside the module.
+      # The public contract is documented once, on the root package's aliases
+      # and wrappers, which this rule still checks.
+      - path: ^internal/
+        linters: [revive]
+        text: "^exported:"
+      # The declared types are what this test holds: the public aliases must
+      # stay assignable to and from the internal ones.
+      - path: stub_adapters_test\.go
+        linters: [staticcheck]
+        text: "QF1011:"
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/HarshitBadhwar8/leadscore

@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package hosting is the Google Cloud side of leadscore: the fixed resource
 // names, the schedule's cron form, Secret Manager reads and writes (`config
 // push` and the keys a local command reads on a hosted install), and the reads

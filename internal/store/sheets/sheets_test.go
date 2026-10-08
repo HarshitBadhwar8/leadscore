@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package sheets_test
 
 import (
@@ -438,7 +441,7 @@ func TestOverridesDeleteInsertAtWrite(t *testing.T) {
 	f := newFakeGoogle(t)
 	s := openStore(t, f)
 	id := s.SpreadsheetID()
-	f.Sheets.Put(id, model.TableOverrides, [][]any{{"person", "action", "value", "note"}, {"a@x.example", "retry", "", ""}, {"b@x.example", "retry", "", ""}})
+	_ = f.Sheets.Put(id, model.TableOverrides, [][]any{{"person", "action", "value", "note"}, {"a@x.example", "retry", "", ""}, {"b@x.example", "retry", "", ""}})
 	f.Sheets.OnBatchUpdate(func() {
 		f.Sheets.OnBatchUpdate(nil)
 		f.Sheets.InsertRow(id, model.TableOverrides, 1, []string{"c@x.example", "status", "blocked", ""})
@@ -456,7 +459,7 @@ func TestOverridesChangedBeforeSend(t *testing.T) {
 	f := newFakeGoogle(t)
 	s := openStore(t, f)
 	id := s.SpreadsheetID()
-	f.Sheets.Put(id, model.TableOverrides, [][]any{{"person", "action", "value", "note"}, {"a@x.example", "retry", "", ""}})
+	_ = f.Sheets.Put(id, model.TableOverrides, [][]any{{"person", "action", "value", "note"}, {"a@x.example", "retry", "", ""}})
 	reads := 0
 	f.Sheets.OnValuesRead(func() {
 		if reads++; reads == 2 { // the pre-send check
@@ -557,7 +560,7 @@ func TestNewColumnAfterLastUsed(t *testing.T) {
 	f := newFakeGoogle(t)
 	s := openStore(t, f)
 	id := s.SpreadsheetID()
-	f.Sheets.Put(id, "Custom", [][]any{{"a", "b"}, {"1", "2", "", "stray"}})
+	_ = f.Sheets.Put(id, "Custom", [][]any{{"a", "b"}, {"1", "2", "", "stray"}})
 	commit(t, s, api.TableWrite{Table: "Custom", Op: api.OpAppend, Rows: []api.Row{{"a": "3", "new_col": "x"}}})
 	if got := f.Sheets.Cell(id, "Custom", "E1"); got != "new_col" {
 		t.Errorf("E1 = %q, want new_col", got)

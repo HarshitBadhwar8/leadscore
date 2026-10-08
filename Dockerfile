@@ -1,4 +1,6 @@
 # syntax=docker/dockerfile:1
+# Copyright 2026 Workloom Solutions Private Limited
+# SPDX-License-Identifier: MIT
 # The leadscore image: one static binary, run as the non-root user `leadscore`
 # (docs/reference.md, "Receiver"). On Docker, compose.yaml runs `serve --every`; on
 # Google Cloud the same image is the receiver service and the run job.
@@ -26,6 +28,11 @@ RUN apk add --no-cache ca-certificates tzdata \
     && chown leadscore:leadscore /data /out \
     && chmod 700 /data /out
 COPY --from=build /bin/leadscore /usr/local/bin/leadscore
+# The binary's license and its dependencies' license texts travel with it.
+COPY LICENSE NOTICE /usr/share/doc/leadscore/
+COPY third_party/licenses /usr/share/doc/leadscore/licenses
+LABEL org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.title="leadscore"
 ENV HOME=/home/leadscore
 USER leadscore
 WORKDIR /home/leadscore

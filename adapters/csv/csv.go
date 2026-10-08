@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package csv is the CSV file source. It only parses:
 // UTF-8 with an optional byte-order mark, comma-delimited, ragged rows allowed,
 // headers returned as written. Merge, not this package, applies aliases to
@@ -63,6 +66,7 @@ func New(cfg api.Config) (api.Source, error) {
 	return &Source{id: id, path: path, events: events, now: time.Now}, nil
 }
 
+// ID returns the source id from leadscore.yml.
 func (s *Source) ID() string { return s.id }
 
 // Limits that keep one bad file from exhausting memory. Variables, not
@@ -394,7 +398,7 @@ func ParseEvents(sourceID string, headers []string, records []EventRecord, recei
 func visitKind(sourceID string) string {
 	b := []byte("visit_" + strings.ToLower(sourceID))
 	for i, c := range b {
-		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_') {
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '_' {
 			b[i] = '_'
 		}
 	}
@@ -406,7 +410,7 @@ func visitKind(sourceID string) string {
 func plainKind(kind string) bool {
 	for i := 0; i < len(kind); i++ {
 		c := kind[i]
-		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_') {
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '_' {
 			return false
 		}
 	}

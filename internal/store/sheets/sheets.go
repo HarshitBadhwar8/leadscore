@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package sheets is the built-in Google Sheets store: a Backend and EventLog
 // over one spreadsheet, one tab per table, and a run lease held as a file in a
 // Cloud Storage bucket.
@@ -90,7 +93,7 @@ func Connect(ctx context.Context, cfg api.Config, scopes ...string) (*Services, 
 		return nil, err
 	}
 	var common []option.ClientOption
-	endpoint := func(path string) []option.ClientOption { return nil }
+	endpoint := func(_ string) []option.ClientOption { return nil }
 	switch {
 	case base != "":
 		common = append(common, option.WithHTTPClient(client))

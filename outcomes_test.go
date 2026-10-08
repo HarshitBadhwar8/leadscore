@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package leadscore_test
 
 // Outcomes, end to end through the public entry point: an unsubscribe the receiver
@@ -58,7 +61,7 @@ lanes:
 	}
 	t.Cleanup(func() {
 		if c, ok := store.(interface{ Close() error }); ok {
-			c.Close()
+			_ = c.Close()
 		}
 	})
 

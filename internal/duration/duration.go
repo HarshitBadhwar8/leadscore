@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package duration reads the durations leadscore.yml and the rubric use.
 package duration
 

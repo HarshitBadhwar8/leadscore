@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package cli
 
 import (
@@ -77,7 +80,7 @@ func runDoctor(inv *invocation) int {
 			Message: "the store cannot be opened: " + err.Error(), Fix: "check the store block in leadscore.yml and its access"})
 	} else {
 		if cl, ok := b.(io.Closer); ok {
-			defer cl.Close()
+			defer func() { _ = cl.Close() }()
 		}
 		env.Store, env.Events = b, ev
 		// Load only reads; doctor never encodes or commits what it holds.

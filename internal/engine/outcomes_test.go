@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package engine
 
 // The outcome suite: every way we learn about a reply or an opt-out

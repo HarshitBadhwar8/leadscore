@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package sheets
 
 import (
@@ -190,7 +193,7 @@ func TestEventRowsDeleted(t *testing.T) {
 func TestEventsTabNameCase(t *testing.T) {
 	now := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
 	s, fs := clockStore(t, &now)
-	fs.Put(s.id, "events 2026-11", [][]any{{"seq", "received_at", "kind", "body"}})
+	_ = fs.Put(s.id, "events 2026-11", [][]any{{"seq", "received_at", "kind", "body"}})
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second) // a refused tab name would retry forever
 	defer cancel()
 	if err := s.AppendEvents(ctx, visit(now)); err != nil {

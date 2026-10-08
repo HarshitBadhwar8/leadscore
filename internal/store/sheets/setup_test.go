@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package sheets_test
 
 import (
@@ -46,12 +49,12 @@ func TestCreateTemplate(t *testing.T) {
 		name := sh.Properties.Title
 		gp := sh.Properties.GridProperties
 		width := int64(0)
-		switch {
-		case name == "Leads":
+		switch name {
+		case "Leads":
 			width = int64(len(sheets.LeadsHeaders))
-		case name == "Companies":
+		case "Companies":
 			width = 1
-		case name == "Health":
+		case "Health":
 			width = 8
 		default:
 			d, _ := model.Def(name)

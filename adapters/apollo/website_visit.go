@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package apollo
 
 import (
@@ -62,7 +65,7 @@ func (v websiteVisit) kind() string {
 	}
 	b := []byte(name)
 	for i, c := range b {
-		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_') {
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '_' {
 			b[i] = '_'
 		}
 	}

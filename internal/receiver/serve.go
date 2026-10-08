@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package receiver
 
 import (
@@ -102,7 +105,7 @@ func serve(ctx context.Context, o ServeOptions, d deps) error {
 		return fmt.Errorf("opening the store: %w", err)
 	}
 	if c, ok := store.(io.Closer); ok {
-		defer c.Close()
+		defer func() { _ = c.Close() }()
 	}
 	// Records which container uses a SQLite file, for the store check; other
 	// stores ignore it.

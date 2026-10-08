@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package config
 
 import (
@@ -203,8 +206,8 @@ func mappingValue(m *yaml.Node, key string) *yaml.Node {
 
 func writeAtomic(path string, data []byte) error {
 	// Write through a symlink rather than replacing the link with a file.
-	if real, err := filepath.EvalSymlinks(path); err == nil {
-		path = real
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
 	}
 	mode := os.FileMode(0o644)
 	if fi, err := os.Stat(path); err == nil {
@@ -214,17 +217,17 @@ func writeAtomic(path string, data []byte) error {
 	if err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
-	defer os.Remove(tmp.Name()) // no-op after a successful rename
+	defer func() { _ = os.Remove(tmp.Name()) }() // no-op after a successful rename
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	if err := tmp.Chmod(mode); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	if err := tmp.Sync(); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	if err := tmp.Close(); err != nil {
@@ -239,7 +242,7 @@ func writeAtomic(path string, data []byte) error {
 	}
 	if d, err := os.Open(filepath.Dir(path)); err == nil {
 		syncErr := d.Sync()
-		d.Close()
+		_ = d.Close()
 		if syncErr != nil {
 			return fmt.Errorf("syncing %s: %w", filepath.Dir(path), syncErr)
 		}

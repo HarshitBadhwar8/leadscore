@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package apollo
 
 // The outreach part of the fake: contacts, sequences and enrollment (the

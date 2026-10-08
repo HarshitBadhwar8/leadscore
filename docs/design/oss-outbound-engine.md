@@ -142,18 +142,13 @@ The parts compose in number order: receivers (2) only ever append to the store (
 
 ## 5. What we copy, modify and add
 
-"Copy" means near-verbatim; "Modify" means copied and reworked; "Reference" means the logic is re-implemented against the rules the file encodes, with its tests used as the scenario list. Paths starting `pkg/` are under `backend/pkg/`; paths starting `processor/` are under `backend/scripts/god-script/processor/`; every other path is under `backend/workloom/gtm/`. Shared core packages follow the company plan's pattern: a library several repos need is a published module we depend on; a small helper only we need is copied in.
-
-### Depend on (at carve time)
-
-| Module | Why |
-|---|---|
-| `logredact` | Redacts emails and secrets from logs and vendor errors. Until the plan publishes it, we copy `Redact` and `VendorErrorDetail` with their tests from `backend/pkg/logredact/` (not `RedactStruct`, which needs protobuf); at carve time (S19) we switch to the published module if it exists, otherwise keep the copy with its notice. The staged repo cannot be imported yet: it is private, untagged, and its `go.mod` declares another module name |
+"Copy" means near-verbatim; "Modify" means copied and reworked; "Reference" means the logic is re-implemented against the rules the file encodes, with its tests used as the scenario list. Paths starting `pkg/` are under `backend/pkg/`; paths starting `processor/` are under `backend/scripts/god-script/processor/`; every other path is under `backend/workloom/gtm/`. leadscore is standalone: it depends on no other company repo. Shared core code is copied in and maintained here.
 
 ### Copy (near-verbatim)
 
 | From core | Lines | Lands in | Why it carries over |
 |---|---|---|---|
+| `pkg/logredact/` (`Redact`, `VendorErrorDetail`) + tests | | `internal/logredact/` | Redacts emails and secrets from logs and vendor errors; not `RedactStruct`, which needs protobuf. Maintained here |
 | `outreach/email_shape.go` + test | 106 + 91 | `internal/merge/email.go` | Pure standard library; merge does the shape check (contracts section 12.5) |
 | `pkg/emaildomain/public.go` | 72 | `internal/merge/emaildomain.go` | Personal-provider check the domain derivation needs; small, only we need it |
 | `pkg/channelauth/` + test | 113 + 79 | `internal/receiver/auth/` | Shared-secret and HMAC checks; small, only we need it |
@@ -599,7 +594,7 @@ This is a public repo, not a production service, so there is no per-org rollout 
 1. Run the check-before-building calls; adjust the design if any fails.
 2. Build all slices in the private working repo; the suite is green in CI. CI also builds the multi-architecture image and pushes it to a private Artifact Registry in our test project, which every pre-release deploy (S14b, S16, S18) uses; the setup script takes the image reference.
 3. Dogfood with our ICP on our data, on Google Cloud (Sheets) and then Docker (SQLite); parity holds.
-4. Carve through the company's open-source process: one scrubbed commit, licence, credits, reviewer panel, private staging, then publish when the plan's gates close. Switch `logredact` as section 5 says.
+4. Carve through the company's open-source process: one scrubbed commit, licence, credits, reviewer panel, private staging, then publish when the plan's gates close.
 5. Tag `v0.1.0`, the plan's first version; our repo's release workflow publishes binaries for macOS, Linux and Windows and a multi-architecture (amd64 and arm64) container image to `ghcr.io/tetriz-ai/leadscore`, tagged by version, as the plan's other repos ship; announce on LinkedIn. Cloud Run cannot pull from GHCR directly, so the setup script creates an Artifact Registry remote repository that proxies it (contracts section 9).
 
 **Readiness:** `doctor`, `Health`, the run summary and the Log; the README and `SKILL.md` are the runbook. **Rollback:** deploy the previous tag; an older version runs on a store a newer minor version extended.
@@ -654,7 +649,7 @@ Choices that follow directly from these rows (event sequencing, atomic commits, 
 | 16 | Example ICP | Ours; made up | Made up; ours tested privately | Protects our targeting | author | decided |
 | 17 | Ownership | Harshit maintains; plan maintainer | Harshit owns delivery; maintainer at publish per the plan | One maintainer model across company repos | author | decided |
 | 18 | Company open-source plan | Alone; follow it | Follow it; develop privately first | Company policy; publishing waits for the plan's gates | author | decided |
-| 19 | Shared core packages | Copy all; depend on all | Copy `channelauth` and `emaildomain`; copy the two `logredact` functions for now and depend on the published module at carve time if it exists | The plan's pattern; the staged `logredact` module cannot be imported yet | author | decided |
+| 19 | Shared core packages | Copy all; depend on all | Copy `channelauth`, `emaildomain` and the two `logredact` functions, and maintain them here | leadscore is standalone: it depends on no other company repo | author | decided |
 | 20 | Rubric fields | Fixed; declared-only; auto plus optional | Every input column usable; `fields` optional | No setup work for most teams | author, from review | decided |
 | 21 | Company rollups | Per-lead only; company pass | Company pass first | Parity; mirrors core's account aggregation | author, from review | decided |
 | 22 | HubSpot deals | One per lead; one per company | One per company | Core moved to one per company to stop duplicates | author, from review | decided |

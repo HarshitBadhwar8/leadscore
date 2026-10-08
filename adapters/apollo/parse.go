@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package apollo is the Apollo adapter. This part holds the parsers for the
 // bodies the receiver stores from Apollo workflows: they turn one stored
 // request into events and the receiver

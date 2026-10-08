@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package engine
 
 import (
@@ -289,7 +292,7 @@ func TestNonColdOnceAndExportNeverCold(t *testing.T) {
 	}
 	// Remove the override: Ana is new again; her listing on the export lane
 	// never held a cold push, so she gets one.
-	w.edit(func(m *model.Model) { merge.SetStatus(m, "ana@acme.example", "none", time.Now()) })
+	w.edit(func(m *model.Model) { _, _ = merge.SetStatus(m, "ana@acme.example", "none", time.Now()) })
 	w.mustRun()
 	if got := pushedTo(w, w.apollo, "enroll"); !slices.Equal(got, []string{"ana@acme.example"}) {
 		t.Errorf("cold pushes %v", got)

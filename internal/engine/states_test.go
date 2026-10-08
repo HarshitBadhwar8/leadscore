@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package engine
 
 import (
@@ -74,7 +77,7 @@ func TestThreeFailuresThenRetry(t *testing.T) {
 	if len(w.apollo.Calls()) != 3 || !hasKey(res.Problems, key) || len(w.fake.Calls()) != 0 {
 		t.Fatalf("a failed step was called again, or the lead moved lanes: %v %v", calls(w.apollo), calls(w.fake))
 	}
-	w.edit(func(m *model.Model) { merge.AddRetry(m, "ana@acme.example", "seq-a", time.Now()) })
+	w.edit(func(m *model.Model) { _, _ = merge.AddRetry(m, "ana@acme.example", "seq-a", time.Now()) })
 	res, _ = w.mustRun()
 	if r := w.push("ana@acme.example", "seq-a", "enroll"); r["state"] != stateDone {
 		t.Errorf("after the retry the push finishes: %v", r)
@@ -212,7 +215,7 @@ func TestDeletedLedgerRowsBlockPushes(t *testing.T) {
 		Key: []string{"lead_id", "lane_id", "step"}, Rows: []api.Row{{"lead_id": saved["lead_id"], "lane_id": "seq-a", "step": "enroll"}}}}); err != nil {
 		t.Fatal(err)
 	}
-	w.edit(func(m *model.Model) {}) // nothing else changes
+	w.edit(func(_ *model.Model) {}) // nothing else changes
 	res, _ := w.mustRun()
 	if !hasKey(res.Problems, "ledger_shrank") || res.Healthy {
 		t.Errorf("problems %v", res.Problems)

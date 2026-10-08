@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package hubspot is a fake HubSpot portal for tests: the CRM calls the
 // HubSpot adapter makes (contacts, deals, companies, v4 associations,
 // pipelines, properties, the token-info call), backed by in-memory records.

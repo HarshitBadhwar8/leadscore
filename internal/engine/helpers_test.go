@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package engine
 
 import (
@@ -277,7 +280,7 @@ func (in *install) store() *sqlite.Store {
 	if err != nil {
 		in.t.Fatal(err)
 	}
-	in.t.Cleanup(func() { s.Close() })
+	in.t.Cleanup(func() { _ = s.Close() })
 	return s
 }
 

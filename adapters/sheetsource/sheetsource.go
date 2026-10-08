@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package sheetsource is the Google Sheet tab source (leadscore.yml's
 // `sources[]`): it reads people-owned tabs of the team's spreadsheet as they
 // appear on screen (FORMATTED_VALUE), headers in order as written, one
@@ -90,6 +93,7 @@ func New(cfg api.Config) (api.Source, error) {
 	return &Source{id: id, sheet: sheet, tabs: tabs, events: events, svc: svc, now: time.Now}, nil
 }
 
+// ID returns the source id from leadscore.yml.
 func (s *Source) ID() string { return s.id }
 
 // Fetch reads every tab in one call. A missing tab, or a tab whose header row

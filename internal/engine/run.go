@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package engine
 
 import (
@@ -124,7 +127,7 @@ func execute(ctx context.Context, opts api.RunOptions, s settings) (api.RunResul
 			return api.RunResult{}, fmt.Errorf("opening the store: %w", err)
 		}
 		if c, ok := store.(io.Closer); ok {
-			defer c.Close()
+			defer func() { _ = c.Close() }()
 		}
 	}
 
@@ -595,7 +598,7 @@ func (x *exec) commit(name string, writes []api.TableWrite, halvable bool) error
 		x.problem("people_tab_check", errText(err), "open the tab the message names and check its rows", true)
 		err = nil
 	}
-	if err != nil && !x.lost && r.Ctx.Err() == nil && !(halvable && errors.Is(err, api.ErrTooLarge)) {
+	if err != nil && !x.lost && r.Ctx.Err() == nil && (!halvable || !errors.Is(err, api.ErrTooLarge)) {
 		err = try()
 	}
 	if err != nil {

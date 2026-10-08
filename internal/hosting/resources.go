@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package hosting
 
 import (
@@ -72,11 +75,11 @@ func (c *Client) ReceiverService(ctx context.Context, project, region string) (*
 	if err := c.call(ctx, http.MethodGet, "run", runPath(project, region, "services", ServiceName), nil, &out); err != nil {
 		return nil, err
 	}
-	max := out.Template.Scaling.MaxInstanceCount
-	if s := out.Scaling.MaxInstanceCount; s > 0 && (max == 0 || s < max) {
-		max = s
+	most := out.Template.Scaling.MaxInstanceCount
+	if s := out.Scaling.MaxInstanceCount; s > 0 && (most == 0 || s < most) {
+		most = s
 	}
-	return &Service{MaxInstances: max, Account: out.Template.ServiceAccount, SecretEnv: out.Template.secretEnv()}, nil
+	return &Service{MaxInstances: most, Account: out.Template.ServiceAccount, SecretEnv: out.Template.secretEnv()}, nil
 }
 
 // Job is what the hosting check reads of the run job.

@@ -23,4 +23,5 @@ gha-creds-*.json
 .DS_Store
 
 # Local agent tooling state
-.claude/
+/.claude/*
+!/.claude/settings.json

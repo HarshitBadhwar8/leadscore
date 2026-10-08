@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package gcp is an in-memory fake of the Google Cloud calls internal/hosting
 // makes, served under one base URL with each API under its own prefix
 // (/secretmanager, /run, /cloudscheduler, /artifactregistry), as
@@ -146,7 +149,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	io.WriteString(w, doc)
+	_, _ = io.WriteString(w, doc)
 }
 
 // secretManager serves {project}/secrets/{secret} (get),
@@ -225,12 +228,12 @@ func (s *Server) secretManager(w http.ResponseWriter, r *http.Request, rest stri
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 // apiError writes Google's error shape: {"error":{"code","message","status"}}.
 func apiError(w http.ResponseWriter, code int, status string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"code": code, "message": status, "status": status}})
+	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"code": code, "message": status, "status": status}})
 }

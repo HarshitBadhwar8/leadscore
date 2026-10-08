@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 // Package api defines the public surface of leadscore: its types, interfaces,
 // errors and adapter registry, plus the built-in header
 // alias table.

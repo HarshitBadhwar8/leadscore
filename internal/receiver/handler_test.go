@@ -1,3 +1,6 @@
+// Copyright 2026 Workloom Solutions Private Limited
+// SPDX-License-Identifier: MIT
+
 package receiver
 
 import (
@@ -51,7 +54,7 @@ func sqliteStore(t *testing.T) testStore {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { s.Close() })
+	t.Cleanup(func() { _ = s.Close() })
 	return testStore{name: "sqlite", store: s, events: s}
 }
 
@@ -784,9 +787,9 @@ func TestSlowSendersDoNotLockOutBodySecrets(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { c.Close() })
+		t.Cleanup(func() { _ = c.Close() })
 		// Headers and part of a body, then nothing.
-		io.WriteString(c, "POST /apollo/reply HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 1000\r\n\r\n{\"event\":")
+		_, _ = io.WriteString(c, "POST /apollo/reply HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: 1000\r\n\r\n{\"event\":")
 	}
 	waitFor(t, func() bool { return len(h.unauth) == cap(h.unauth) }) // every slot held
 	body := `{"event":"email_sent","contact_email":"a@example.com","leadscore_secret":"` + testSecret + `"}`
@@ -794,7 +797,7 @@ func TestSlowSendersDoNotLockOutBodySecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Errorf("a body-secret request behind slow senders: %d, want 200", resp.StatusCode)
 	}
