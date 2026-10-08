@@ -464,13 +464,8 @@ read when present). Each identified request also counts as an input row from
 source `receiver`, so it adds `receiver` to the lead's `sources_seen`.
 
 **Keep the secret private.** It works like a password: anyone who has it can
-send fake events, including a fake positive reply a deal lane would act on.
-Never paste it into chat, tickets or shared docs; rotate it if it might have
-leaked. To rotate: move the current value to
-`LEADSCORE_RECEIVER_SECRET_PREVIOUS`, set a new `LEADSCORE_RECEIVER_SECRET`,
-update each Apollo workflow, then remove the previous one. Both are accepted
-in between. On Docker, edit `.env` and run `docker compose up -d` after each
-change. On Google Cloud, see "Rotating keys" under "Google Cloud".
+send fake events. The README's "Keep the receiver secret private" says how to
+keep it and rotate it.
 
 ### Event rows
 
@@ -610,13 +605,9 @@ write raises `view_write_failed` and the run stays healthy.
   starts, so a push needs no redeploy.
 - **Rotating keys.** For an API key, set its variable and run
   `setup/gcp.sh secrets`; runs read the newest version. For the receiver
-  secret, in this order: add the current value as a version of
-  `receiver-secret-previous` and a new one to `receiver-secret`; run
-  `setup/gcp.sh redeploy` (both are accepted); update each Apollo workflow;
-  run `setup/gcp.sh redeploy --finish-rotation`, which detaches the previous
-  secret; only then disable its versions. A disabled version that is still
-  attached stops a new receiver instance from starting. The README's
-  "Rotating a secret" has the commands.
+  secret, follow the README's "Rotating a secret", in its order:
+  `setup/gcp.sh redeploy --finish-rotation` detaches `receiver-secret-previous`
+  before its versions are disabled.
 
 **Roles.**
 
