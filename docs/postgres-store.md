@@ -42,8 +42,8 @@ types.
 
 ## What the engine needs from a store
 
-Read the contracts doc, section 1 (`Backend`, `EventLog`) and section 4 (the
-tables). In short:
+Read [`reference.md`](reference.md), "Plug-ins" (`Backend`, `EventLog`) and
+"Store tables". In short:
 
 - **Tables are text.** Every value is a string; keep it exactly (a value
   starting with `=`, leading zeros, newlines).
@@ -65,7 +65,7 @@ events; a third holds the lease.
 
 ```sql
 CREATE TABLE leadscore_rows (
-  tbl  text   NOT NULL,          -- the section 4 name, e.g. 'Ranked', 'Export call-list'
+  tbl  text   NOT NULL,          -- the table name, e.g. 'Ranked', 'Export call-list'
   pk   text,                     -- the key columns' values joined; NULL on keyless tables (Overrides, Log)
   seq  bigserial,                -- keeps keyless tables in insertion order
   row  jsonb  NOT NULL,
@@ -88,7 +88,7 @@ CREATE TABLE leadscore_lease (
 );
 ```
 
-The key columns of each keyed table are in section 4 (`People` by `lead_id`,
+The key columns of each keyed table are in the reference's "Store tables" (`People` by `lead_id`,
 `Pushes` by `lead_id, lane_id, step`, `Health` by `kind, key`, an
 `Export <lane id>` table by `lead_id`, and so on). Keep them in a map in your
 store; `OpUpsert` and `OpDelete` writes also carry their `Key`.

@@ -1,7 +1,7 @@
 # Provisional event bodies
 
 These Apollo workflow bodies are **provisional**. They are built from the shapes
-in earlier working code's parser tests and contracts section 5.1, with made-up people and
+in earlier working code's parser tests and docs/reference.md ("Receiver"), with made-up people and
 example domains, not from real Apollo captures. Each file carries
 `"provisional": true` (an unknown field the parsers ignore).
 

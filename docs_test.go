@@ -58,8 +58,10 @@ func TestRegistryCommentMatchesRoot(t *testing.T) {
 	}
 }
 
-func TestContractsSuiteBlockUsesAPINames(t *testing.T) {
-	src, err := os.ReadFile("docs/design/oss-outbound-engine-contracts.md")
+// The reference's conformance-suite block names api.X, as the suites'
+// signatures do, and says they are the root's types.
+func TestReferenceSuiteBlockUsesAPINames(t *testing.T) {
+	src, err := os.ReadFile("docs/reference.md")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +72,7 @@ func TestContractsSuiteBlockUsesAPINames(t *testing.T) {
 		"same types as `leadscore.X`",
 	} {
 		if !strings.Contains(s, want) {
-			t.Errorf("contracts C1 conformance block must contain %q", want)
+			t.Errorf("docs/reference.md conformance block must contain %q", want)
 		}
 	}
 }
