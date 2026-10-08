@@ -128,3 +128,17 @@ func TestReleaseWorkflowSettings(t *testing.T) {
 		t.Error("release binaries must be built with CGO_ENABLED=0")
 	}
 }
+
+// A tag with a "-" (v0.1.0-rc.1) is published as a pre-release, so a release
+// candidate never shows as the latest release.
+func TestReleaseMarksRCsAsPrerelease(t *testing.T) {
+	data, err := os.ReadFile(".github/workflows/release.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`*-*) pre=(--prerelease)`, `--generate-notes "${pre[@]}"`} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("release.yml lacks %q", want)
+		}
+	}
+}

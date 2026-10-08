@@ -6,7 +6,7 @@ All notable changes to this project are documented in this file. The format is b
 
 ## [Unreleased]
 
-## [0.1.0-rc.1] - RELEASE_DATE_PLACEHOLDER
+## [0.1.0-rc.1] - 2026-10-08
 
 ### Added
 

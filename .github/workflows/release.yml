@@ -86,7 +86,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
-        run: gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --generate-notes
+        # A tag with a "-" (v0.1.0-rc.1) is a pre-release, as for the image's latest tag.
+        run: |
+          pre=()
+          case "$TAG" in *-*) pre=(--prerelease) ;; esac
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --generate-notes "${pre[@]}"
 
   image:
     name: image to ghcr.io (linux/amd64, linux/arm64)
