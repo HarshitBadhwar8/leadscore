@@ -30,8 +30,9 @@ See `docs/reference.md`, section "Receiver". Code: `internal/receiver/queue.go` 
    to be below the sender's own timeout (10 seconds). Past the cap, or on any write failure,
    every request in the batch gets 5xx, so the sender can retry.
 4. **Store the raw request, not the parsed result.** The receiver checks the secret, strips it,
-   and stores the body as-is with a sequence number. Parsing happens later, in the run. A parser
-   bug is then fixed by re-reading stored bodies, not by asking the vendor to resend.
+   and stores the body as-is (shrunk to fit one cell when too large) with a sequence number.
+   Parsing happens later, in the run. A parser bug is then fixed by re-reading stored bodies,
+   not by asking the vendor to resend.
 5. **Make redelivery harmless.** Because we ask senders to retry, every event gets a dedupe key
    from its content, and processed keys are kept for a year. A retry of an event we did store is
    then a no-op.
@@ -54,8 +55,8 @@ See `docs/reference.md`, section "Receiver". Code: `internal/receiver/queue.go` 
 **Easier.** "Did we lose an event?" has one answer: if the sender got a 2xx, the event is stored.
 Parser fixes replay history. Silence detection can trust the store.
 
-**Harder.** Requests are held open for seconds, so the receiver needs a bounded number of
-in-flight requests and must answer 503 when full. Retries mean duplicates are normal, so the
+**Harder.** Requests are held open for seconds, so the receiver bounds what can pile
+up (unauthenticated body reads and waiting batches) and answers 503 when full. Retries mean duplicates are normal, so the
 dedupe key is part of correctness, not a nice-to-have. Its rules (what makes two events "the
 same") need their own tests, including a retry that crosses a day or month boundary.
 

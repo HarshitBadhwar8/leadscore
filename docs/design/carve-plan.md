@@ -90,7 +90,7 @@ Status on 2026-10-08:
 
 - **Rehearsal:** done (2026-10-07). The scrubbed copy built, passed vet and `go test -race`, and
   the CSV-only path filled `./out`. Every forbidden-term grep came back clean.
-- **Live vendor checks:** pending. 72 fixture files on `main` are still marked `provisional`.
+- **Live vendor checks:** pending. The vendor fixtures on `main` are still marked `provisional`.
 - **Staging repo:** not created; see the staging org row.
 - **Release workflow:** `.github/workflows/release.yml` exists on `main`. The carve checks it
   against shapes.md's Go CLI and runnable-service rules (goreleaser config, dependency license
