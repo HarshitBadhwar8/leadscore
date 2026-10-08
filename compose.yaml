@@ -2,13 +2,15 @@
 #
 # Put this file in one folder with your leadscore.yml (start from
 # examples/leadscore.laptop.yml or examples/leadscore.server.yml), your rubric
-# and a .env file holding the keys:
+# and a .env file holding the keys (docs/setup.md, "Path 3"):
 #
 #   APOLLO_API_KEY=...
 #   HUBSPOT_TOKEN=...
-#   LEADSCORE_RECEIVER_SECRET=...   # a long random value, e.g. `openssl rand -hex 32`
-#   LEADSCORE_IMAGE=asia-south1-docker.pkg.dev/leadscore-dev/leadscore/leadscore:<commit>
-#                                   # before the first release only; remove after release
+#   LEADSCORE_RECEIVER_SECRET=...   # the output of `openssl rand -hex 32`
+#   LEADSCORE_PORT=8080             # optional: the receiver's port on this machine
+#
+# Before a release image exists, build the image yourself in this repository
+# with `docker build -t leadscore .`, and add LEADSCORE_IMAGE=leadscore to .env.
 #
 # The receiver secret works like a password: anyone who has it can send fake
 # events, including a fake positive reply that a deal lane would act on. Never
@@ -21,9 +23,9 @@
 services:
   leadscore:
     # Pin a released version; upgrading is changing this tag and
-    # `docker compose up -d` (docs/reference.md, "Upgrading"). Before the first release,
-    # set LEADSCORE_IMAGE in .env to the private registry's image.
-    image: ${LEADSCORE_IMAGE:-ghcr.io/tetriz-ai/leadscore:v0.1.0}
+    # `docker compose up -d` (docs/reference.md, "Upgrading"). LEADSCORE_IMAGE
+    # in .env overrides it, for example with an image you built yourself.
+    image: ${LEADSCORE_IMAGE:-ghcr.io/harshitbadhwar8/leadscore:v0.1.0-rc.1}
     # The receiver and /healthz, plus a run every `schedule` (read at start).
     command: ["serve", "--every"]
     env_file: .env
