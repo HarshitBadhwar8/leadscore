@@ -3,7 +3,7 @@
 - **Status:** Draft
 - **Date:** 2026-09-30
 - **Author and delivery owner:** Harshit Badhwar
-- **PRD:** none. The product brief is the aligned plan doc, [Open-Source Lead Scoring](https://claude.ai/code/artifact/14431c5d-f37d-4039-a2d1-f845918a07b0), which adopts Mohit's [Open-Source Outbound Engine](https://claude.ai/artifact/HZbhar22Yx9ugYh8BZcmJ2) design. Every decision already made there is recorded here as `decided (author, from brief)`.
+- **PRD:** none. The product brief is the aligned plan doc, [Open-Source Lead Scoring](https://claude.ai/code/artifact/14431c5d-f37d-4039-a2d1-f845918a07b0), which adopts Mohit's [Open-Source Outbound Engine](https://claude.ai/artifact/HZbhar22Yx9ugYh8BZcmJ2) design. Decisions made there are recorded here as `decided (author, from brief)`.
 - **Company open-source plan:** this repo follows the company's open-source plan (`docs/open-source/STATE.md` on PR #10818) for licence (MIT, as the plan decided for every repo), copyright holder, org, repo name, maintainer at publish, contributor credit and how a repo is published. Where this RFC and the plan disagree, the plan wins.
 - **Related:** [gtm-outreach-lead-pipeline](gtm-outreach-lead-pipeline.md), [gtm-prospect-relevance-engine](gtm-prospect-relevance-engine.md), [gtm-account-model](gtm-account-model.md), [gtm-hubspot-push-properties](gtm-hubspot-push-properties.md), [gtm-website-visitor-capture](gtm-website-visitor-capture.md), [ADR-7627](../adr/7627-gtm-outreach-execution-layer.md), [Apollo transport spike](../research/apollo-transport-spike.md)
 - **Contracts:** the exact public types, store tables, receiver interface, HubSpot properties, status precedence, setup runbooks and `doctor` checks are in the companion [contracts doc](oss-outbound-engine-contracts.md).
@@ -18,7 +18,7 @@
 - **Company** — the employer a lead belongs to, keyed by its web domain. Company facts (headcount, funding, region) are shared by every lead at that company.
 - **Source** — anything that brings leads or events in: a CSV file, a Sheet tab, or the receiver (Apollo's workflow events). Apollo contacts that never engaged come in as a CSV export.
 - **Event** — one timestamped thing that happened to a lead or company, such as a website visit or a reply.
-- **Detector** — a rule over stored events that produces a named **detector signal** (for example "three pricing-page visits in seven days"). This is distinct from the ICP-fit flag the rubric derives, which the doc calls the **fit signal**.
+- **Detector** — a rule over stored events that produces a named **detector signal** (for example "three pricing-page visits in seven days"). Distinct from the rubric's ICP-fit flag, the **fit signal**.
 - **Rubric** — a team's ICP written as rules: one YAML file that declares fields, rolls lead facts up to the company, derives tier and priority, adds up a score, and defines lanes.
 - **CEL (Common Expression Language)** — Google's small, sandboxed expression language. The rubric's conditions compile to CEL; an expression cannot touch files or the network and always finishes.
 - **Rollup** — a company-level fact computed from its leads, such as "any lead named an AI tool".
@@ -119,7 +119,7 @@ The parts compose in number order: receivers (2) only ever append to the store (
 
 ### Execution model and trigger
 
-- **Trigger:** a periodic sweep. Google Cloud: Cloud Scheduler starts an execution of the Cloud Run job every 15 minutes by default. Docker: `leadscore serve --every` runs the loop on a timer inside the same container, and Docker's restart policy keeps it alive. All paths run the identical loop. Every run re-scores every lead: detector windows expire with no new input, `Ranked` holds every verdict, and at thousands of leads a full pass is cheap. Freshness is the interval.
+- **Trigger:** a periodic sweep. Google Cloud: Cloud Scheduler starts the Cloud Run job every 15 minutes by default. Docker: `leadscore serve --every` runs the loop on a timer inside the same container, and Docker's restart policy keeps it alive. All paths run the identical loop. Every run re-scores every lead: detector windows expire with no new input, `Ranked` holds every verdict, and at thousands of leads a full pass is cheap. Freshness is the interval.
 - **Mid-run arrivals:** receivers keep appending during a run; the run reads events present at its start, and later ones wait for the next run (section 6.7).
 - **Idempotency:** every push step is recorded in a ledger and every vendor call is find-or-create, so a re-run or a crashed run never pushes twice (section 6.10).
 - **Opt-outs mid-run:** events and Overrides are re-read before each push batch (section 6.9).
@@ -193,7 +193,7 @@ The parts compose in number order: receivers (2) only ever append to the store (
 
 ### Drop
 
-Postgres DAOs, migrations and mocks; gRPC services; `wire/`; `config/` and generated config; the scheduler adapter; all Prometheus metrics; the quiz packages; `apollosim`; and the purge, parity, cardinality, link-accounts and quiz-backfill jobs. None has standalone value outside our infrastructure.
+Postgres DAOs, migrations and mocks; gRPC services; `wire/`; `config/` and generated config; the scheduler adapter; all Prometheus metrics; the quiz packages; `apollosim`; and the purge, parity, cardinality, link-accounts and quiz-backfill jobs. None is useful outside our infrastructure.
 
 ### New
 
@@ -229,7 +229,7 @@ Other dependencies: `github.com/google/cel-go`, `modernc.org/sqlite` (pure Go, k
 | `setup/` | Google Cloud setup scripts and Apollo workflow templates |
 | `docs/postgres-store.md` | How to write a PostgreSQL plug-in store |
 | `examples/` | The made-up ICP, a sample CSV, and one `leadscore.yml` per path (laptop, server, Google Cloud) |
-| `README.md`, `SKILL.md`, `docs/` | The README is the ordered setup runbook an agent follows; `SKILL.md` covers rule changes and troubleshooting |
+| `README.md`, `SKILL.md`, `docs/` | The README is the setup runbook; `SKILL.md` covers rule changes and troubleshooting |
 
 The root package re-exports `internal/api`. The semver-frozen surface is the root package (contracts section 1); `storetest` and `sinktest` are public too.
 
@@ -388,7 +388,7 @@ The engine loads every table except `Log` (which is only appended and trimmed) a
 - **Local commands** (`set-status`, `merge`, `mark-distinct`, `retry`) write only `Overrides`, which the run re-reads, so they need no lease; this is the same on SQLite. The row formats are contracts section 4, and what `set-status` writes is section 7.
 - **Size.** Every tab is created at exactly its column count, because Sheets counts empty cells toward its 10-million-cell cap. The contracts doc's budget puts a 20,000-lead install at about 60% of the cap; `doctor` warns at 70%. Setup sets the spreadsheet to recalculate every hour, so the `Health` staleness formula updates with no edits.
 
-**SQLite specifics.** WAL mode with a busy timeout, so `leadscore serve` can write events during a run. The lease is a row in `State`, not a file lock. Events use `INTEGER PRIMARY KEY AUTOINCREMENT`, so deleting processed rows never lets a new event reuse a number at or below a cursor. `Commit` is one transaction. Unique keys: `pushes(lead_id, lane_id, step)`, `seen_events(event_key)`, `identities(key)`, `applied_rows(source_id, row_id)`. Indexes: `outcomes(lead_id)`, `window_events(at)`. The database lives on a named Docker volume, and every CLI command runs inside the container (`docker compose exec leadscore leadscore ...`): WAL locking is not safe across the Docker Desktop VM boundary, so a binary on the host must never open the file the container is using, and the `store` check fails when it detects that.
+**SQLite specifics.** WAL mode with a busy timeout, so `leadscore serve` can write events during a run. The lease is a row in `State`, not a file lock. Events use `INTEGER PRIMARY KEY AUTOINCREMENT`, so deleting processed rows never lets a new event reuse a number at or below a cursor. `Commit` is one transaction. Unique keys: `pushes(lead_id, lane_id, step)`, `seen_events(event_key)`, `identities(key)`, `applied_rows(source_id, row_id)`. Indexes: `outcomes(lead_id)`, `window_events(at)`. The database lives on a named Docker volume, and every CLI command runs inside the container (`docker compose exec leadscore leadscore ...`): WAL locking is not safe across the Docker Desktop VM boundary, so a host binary must never open the container's file; the `store` check fails if one does.
 
 **Store and setup pairs.** Both stores are built in. Cloud Run keeps no files, so the hosted path uses Sheets: `run` and `doctor` refuse a SQLite store or CSV paths when Cloud Run's `CLOUD_RUN_JOB` or `K_SERVICE` variable is set. Every other difference follows the store type. The Docker paths use SQLite by default and may use Sheets. A SQLite install can also write `Ranked` and `Health` to a Google Sheet as an optional read-only view for the team.
 
@@ -400,7 +400,7 @@ The engine loads every table except `Log` (which is only appended and trimmed) a
 
 ### 6.7 Events and detectors
 
-- **The receiver stores raw requests:** `(seq, received_at, kind, body)`, after the secret check. The secret is removed from the body before it is stored, so anyone who can read the store cannot recover it. The run parses stored requests with core's parsers, in the same binary.
+- **The receiver stores raw requests:** `(seq, received_at, kind, body)`, after the secret check. The secret is stripped from the body first, so reading the store cannot reveal it. The run parses stored requests with core's parsers, in the same binary.
 - **Progress by sequence, not time:** each run reads events above its saved cursor (positions per monthly tab on Sheets, the rowid on SQLite), up to what is present at start. Reading by sequence means an event committed late with an early timestamp is never skipped. Events from other sources (CSV or Sheet event rows) use each source's own cursor.
 - **De-duplication keys:** a visit is person key (core's `sourceID()`) plus event name plus the vendor's `visited_at`; with no usable `visited_at` (the visit is then timed at receipt), person key plus event name plus page plus the UTC day the request was received, so a redelivery the same day is one event and a repeat visit on another day still counts (accepted limits: no-time visits by one person to one page on one day collapse into one, and a retry across UTC midnight counts twice); a `visited_at` later than the received time is stored as the received time but keyed as sent, so a retry keys the same; a company-only visit is employer domain plus event name plus time. A reply event uses core's `eventKey()`, which identifies a stage change, so reply counts mean stage changes; a polled reply uses message id plus label (with no message id, person key, contact id first, plus label plus time, the received time when the reply has none, so two people's opt-outs never collapse). An event row from a CSV or Sheet source uses source id plus person key plus event name plus event time. Parsed keys go to `Seen events` in the same commit as the cursor.
 - **Events for people not yet known.** A reply, sent or unsubscribe event, or an identified website visit (as core does), whose person matches no lead creates a lead in phase 1, under the reserved source id `receiver`, so an opt-out that arrives before that person's CSV row is never lost; the later row merges into it.
@@ -416,7 +416,7 @@ The Apollo company lookup (copied, with Retry-After handling) fills facts for do
 ### 6.9 Run order
 
 1. **Start.** Cloud Scheduler starts the Cloud Run job (Google Cloud), or the timer in `serve` starts a run (Docker). Read `leadscore.yml` and the rubric fresh: hosted, from one Secret Manager secret that holds both, so a run never pairs a new rubric with old settings; on Docker, from disk, so an edit applies on the next run with no restart (except `schedule`, which `serve` reads at start). A file that fails to load fails that run. Take the lease (owner run id, expiry the deadline plus the save budget plus a 30-second margin); an expired lease is taken over and logged; a live one means skip, logged; the next run that holds the lease flags repeated skips in `Health`.
-2. Load the tables; check the schema version. The in-run `doctor` checks (contracts section 10) run after step 5, once this run's rows are merged and folded, so the rubric check sees this run's columns; a rubric field no input carries fails the run before scoring.
+2. Load the tables; check the schema version. The in-run `doctor` checks (contracts section 10) run after step 5, once this run's rows are merged and folded, so the rubric check sees this run's columns.
 3. Fetch sources, merge input rows, and parse events above the saved cursors, up to what is present at start. With `replies: polling`, poll Apollo here when the last poll is older than the polling interval, so polled replies go through the same parse, de-duplication and phase 1 commit as every other event.
 4. Enrich within budget.
 5. Fold events and overrides into statuses (section 6.12).
@@ -516,7 +516,7 @@ pushes_enabled: false
 schedule: 15m
 ```
 
-Inside a container, secrets come only from environment variables (`APOLLO_API_KEY`, `HUBSPOT_TOKEN`, `LEADSCORE_RECEIVER_SECRET`, optional `LEADSCORE_RECEIVER_SECRET_PREVIOUS`); hosted, Cloud Run fills them from Google Secret Manager, and a local command on a hosted install with an empty variable reads the key from Secret Manager as the run account (contracts section 3). **Hosted configuration:** `leadscore.yml` and the rubric are kept together as one Secret Manager secret (format in contracts section 3), mounted into the job and the service as a file; each execution reads the latest version, so a rule change or turning pushes on is `leadscore config push`, with no redeploy, and a run always sees a matched pair. Each run records the rubric version it used in `Health`, and `doctor` compares it with the local file, so the dry run a person reviewed is the rubric that runs. Google access uses Google's standard credential loading, always requesting the Sheets scope explicitly: hosted, the job and the service run as their own service accounts the Sheet is shared with, so no key file exists; on Docker, a service-account key file or a keyless configuration, through the same code path.
+Inside a container, secrets come only from environment variables (`APOLLO_API_KEY`, `HUBSPOT_TOKEN`, `LEADSCORE_RECEIVER_SECRET`, optional `LEADSCORE_RECEIVER_SECRET_PREVIOUS`); hosted, Cloud Run fills them from Google Secret Manager, and a local command on a hosted install with an empty variable reads the key from Secret Manager as the run account (contracts section 3). **Hosted configuration:** `leadscore.yml` and the rubric are kept together as one Secret Manager secret (format in contracts section 3), mounted into the job and the service as a file; each execution reads the latest version, so a rule change or turning pushes on is `leadscore config push`, with no redeploy. Each run records the rubric version it used in `Health`, and `doctor` compares it with the local file, so the dry run a person reviewed is the rubric that runs. Google access uses standard credential loading, always requesting the Sheets scope: hosted, the job and the service run as their own service accounts the Sheet is shared with, so no key file exists; on Docker, a service-account key file or a keyless configuration, through the same code path.
 
 **Run result.** Healthy is a run that finished, or skipped because another run held the lease. Unhealthy is a vendor unreachable or unauthorized, a step became `failed`, a receiver past its silence threshold, a commit too large, the deadline hit, or a failed in-run `doctor` check. Each run writes its result, last-success time and rubric version to `Health`, and keeps every open problem (failed or long-pending pushes, unresolved namesakes, conflicting or unknown override values, silent receivers, pushes to receiver-only leads) until it is resolved.
 
@@ -528,7 +528,7 @@ Inside a container, secrets come only from environment variables (`APOLLO_API_KE
 
 `doctor` prints one pass or fail line per check, with a suggested fix. The full check list is contracts section 10. The checks that need only store and vendor access also run inside every run and make it unhealthy when they fail.
 
-The README is the ordered setup runbook an agent follows end to end, with each step marked as something the agent runs or something a person must do (pasting a key, approving billing). It says up front that Google Cloud is the path for non-technical teams and the Docker paths are for technical users.
+The README (see section 3) marks each step as run by the agent or done by a person (pasting a key, approving billing). It says up front that Google Cloud suits non-technical teams and Docker technical users.
 
 Both runbooks, step by step, and the upgrade and rollback steps are contracts section 9. On both paths, runs start with pushes off, so the team sees ranked results and reviews a dry run before anything is sent.
 
@@ -599,12 +599,12 @@ This is a public repo, not a production service, so there is no per-org rollout 
 1. Run the check-before-building calls; adjust the design if any fails.
 2. Build all slices in the private working repo; the suite is green in CI. CI also builds the multi-architecture image and pushes it to a private Artifact Registry in our test project, which every pre-release deploy (S14b, S16, S18) uses; the setup script takes the image reference.
 3. Dogfood with our ICP on our data, on Google Cloud (Sheets) and then Docker (SQLite); parity holds.
-4. Carve through the company's open-source process: one scrubbed commit, licence, credits, reviewer panel, private staging, then publish when the plan's gates close. Switch the copied `logredact` functions to the published module if it is published by then; otherwise keep the copy with its notice.
+4. Carve through the company's open-source process: one scrubbed commit, licence, credits, reviewer panel, private staging, then publish when the plan's gates close. Switch `logredact` as section 5 says.
 5. Tag `v0.1.0`, the plan's first version; our repo's release workflow publishes binaries for macOS, Linux and Windows and a multi-architecture (amd64 and arm64) container image to `ghcr.io/tetriz-ai/leadscore`, tagged by version, as the plan's other repos ship; announce on LinkedIn. Cloud Run cannot pull from GHCR directly, so the setup script creates an Artifact Registry remote repository that proxies it (contracts section 9).
 
 **Readiness:** `doctor`, `Health`, the run summary and the Log; the README and `SKILL.md` are the runbook. **Rollback:** deploy the previous tag; an older version runs on a store a newer minor version extended.
 
-Feature flags and god-scripts do not apply: behaviour is switched per install in `leadscore.yml`, and there are no operator jobs against a shared database.
+God-scripts do not apply: behaviour is switched per install in `leadscore.yml`, and there are no operator jobs against a shared database.
 
 ## 10. Open Questions & Risks
 
@@ -661,9 +661,9 @@ Choices that follow directly from these rows (event sequencing, atomic commits, 
 | 23 | Ranked vs export | Same; separate | `Ranked` is every verdict; export lanes add a lead once and are uncounted, and each run refreshes listed leads' status (row 80) | CSV-only teams would otherwise get 100 per run | author, from review | decided |
 | 24 | Old events | Keep forever; copy to an archive spreadsheet; delete when processed | Delete a monthly tab (or SQLite rows) once fully processed and older than 90 days | Nothing reads them later; less setup; raw prospect data is not kept forever | author, from review | decided |
 | 25 | Re-scoring | Changed only; every lead | Every lead every run, changes logged | Windows expire without input | author, from review | decided |
-| 26 | Store shape | Query-level; load and save | Load, in-memory run, two-phase save | Removes most Sheets transaction risk | author, from review | decided |
+| 26 | Store shape | Query-level; load and save | Load, in-memory run, two-phase save ([ADR-0002][adr2]) | Removes most Sheets transaction risk | author, from review | decided |
 | 27 | Google sign-in | Keyless; key; both | Hosted: the Cloud Run service identity, no key; self-hosted: key or keyless through standard credential loading | One code path; hosted needs no secret for Google at all | author | decided |
-| 30 | Push idempotency | Reconcile by lookup; find-or-create | Step ledger plus find-or-create, enforced by `sinktest` | Lookup marks pre-existing or half-done steps as done | author, from review | decided |
+| 30 | Push idempotency | Reconcile by lookup; find-or-create | Step ledger plus find-or-create, enforced by `sinktest` ([ADR-0003](../adr/0003-a-ledger-with-intent-and-called-markers-for-at-most-once-vendor-calls.md)) | Lookup marks pre-existing or half-done steps as done | author, from review | decided |
 | 32 | Lead ids | Email key; minted id with aliases | UUIDv7; identity table keeps every key; on a person's `same_as` merge the older id survives and the other becomes an alias | Leads without email exist; pushes must survive merges | author | decided |
 | 33 | Reply-label map | Two labels; all eight | All eight; `out_of_office` no outcome; team override | Every label defined | author, from review | decided |
 | 34 | Status rules | New; core's guards plus manual | Contracts section 7 | Core's guards plus the manual layer | author, from review | decided |
@@ -685,7 +685,7 @@ Choices that follow directly from these rows (event sequencing, atomic commits, 
 | 58 | Hosted secrets | Plain Cloud Run settings; Secret Manager | Secret Manager | Costs nothing extra and keeps keys out of sight of project viewers | author | decided |
 | 59 | Hosted failure alerts | Cloud Monitoring email; health line in the Sheet | A `Health` tab: each run's result plus a formula that warns when the last success is older than three intervals | No extra API or channel; works even when no run happens; accepted: nobody gets an email | author | decided |
 | 60 | Container image | Copy into each team's registry; one public image | One public image on GHCR, deployed through an Artifact Registry proxy (row 82) | One image for everyone | author | decided |
-| 61 | Hosted concurrency | Many instances; one instance with a write queue | The receiver service at most one instance with one write queue; one task per job execution, no retries; per-tab cursors keep a briefly doubled receiver safe | Removes most write races and quota contention; the target volume needs no scaling out | author | decided |
+| 61 | Hosted concurrency | Many instances; one instance with a write queue | The receiver service at most one instance with one write queue that stores each event before answering ([ADR-0001](../adr/0001-store-a-webhook-before-acknowledging-it.md)); one task per job execution, no retries; per-tab cursors keep a briefly doubled receiver safe | Removes most write races and quota contention; the target volume needs no scaling out | author | decided |
 | 62 | Hosted configuration | Bake into the image; Sheet tab; Secret Manager | `leadscore.yml` and the rubric as one Secret Manager secret mounted into the job and the service, read fresh each run; `leadscore config push` uploads both together | No per-team image; a rule change needs no redeploy; the run records which rubric it used | author, from review | decided |
 | 63 | Apollo as a lead source | Separate Apollo people source; events plus CSV | Apollo's workflow events, plus CSV exports for contacts who never engaged | The events carry every engaged contact; a separate source would clash with the Apollo-held rule | author | decided |
 | 69 | Apollo plan | Support free plans; assume paid | Teams are assumed to be on a paid Apollo plan (workflows and API); CSV is the fallback | Workflows and the API need it; stated in the README prerequisites | author | decided |
@@ -696,14 +696,16 @@ Choices that follow directly from these rows (event sequencing, atomic commits, 
 | 74 | Laptop webhooks | Backstop polling; document the limit | The README says a tunnel only receives webhooks while the laptop is awake | Keeps receiver and polling exclusive (row 47); row 73 still keeps unsubscribed people out | author | decided |
 | 75 | Docker run health | Sheet view by default; failure alerts; health URL | `/healthz` with a compose health check, one log line per run, `leadscore status`; no alerting in v1 on any path | `serve` has no per-run exit code; accepted: nobody is told unless they look or point a monitor at `/healthz` | author, from review | decided |
 | 76 | Who the Docker paths serve | Writable Sheet view; Sheets by default; technical users | Technical users; non-technical teams use Google Cloud with Sheets; SQLite commands run through `docker compose exec` | Overrides live in one place, and the simple path needs no service account | author, from review | decided |
-| 77 | Run lock on Sheets | Advisory lease in a tab, one scheduler per spreadsheet; block manual pushing runs; Cloud Storage file | A Cloud Storage file written with a generation precondition | Sheets has no compare-and-swap, so overlapping runs could push the same leads twice; accepted: one more bucket in setup | author | decided |
-| 79 | Forged receiver events | Confirm replies with Apollo before non-cold pushes; warn only | The README warns teams to keep the receiver secret private; no extra check | Keeps setup and runs simple; accepted: a leaked secret can trigger a deal lane until it is rotated | author | decided |
+| 77 | Run lock on Sheets | Advisory lease in a tab, one scheduler per spreadsheet; block manual pushing runs; Cloud Storage file | A Cloud Storage file written with a generation precondition ([ADR-0002][adr2]) | Sheets has no compare-and-swap, so overlapping runs could push the same leads twice; accepted: one more bucket in setup | author | decided |
+| 79 | Forged receiver events | Confirm replies with Apollo before non-cold pushes; warn only | The README warns teams to keep the receiver secret private; no extra check | Keeps setup and runs simple; accepted: a leaked secret can trigger a deal lane until it is rotated; a deliberate exception to company webhook-auth ADR-0791 (points 1 and 5) | author | decided |
 | 80 | Opt-outs on export lists | Rewrite each list every run; append with a status column | Append each lead once, and refresh `status` and `do_not_contact` on every listed lead each run | Teams keep a stable list and can still filter out anyone who opted out since | author | decided |
 | 81 | Dogfood pushes | Pushes on; pause core's pushes; pushes off | Pushes off on both paths; dogfood compares verdicts with core's | Core already pushes to our Apollo and HubSpot, so pushes on risks contacting people twice | author | decided |
 | 82 | Release defaults | Our own; the plan's | MIT, `v0.1.0` and GHCR under `tetriz-ai`, as the plan sets and its other repos ship; no Docker Hub account exists | Licence, version and registry follow the company; Cloud Run reaches GHCR through an Artifact Registry proxy the setup script creates, which costs one step | author | decided |
 | 83 | Pre-release infrastructure | Defer; fix now | GitHub Actions on the private repo, a `leadscore-dev` Google Cloud project in `asia-south1` with an Artifact Registry repo `leadscore`, keyless sign-in from CI; all CI settings, so swapping is one change | Not load-bearing; one project serves CI images, live checks and dogfood | author | decided |
 | 84 | Opt-out lookups for export-only leads | Run HubSpot and Apollo lookups for export rows; document | Document: export rows reflect receiver, polling and Overrides opt-outs; lookups run only for push candidates | CSV-only teams rarely connect either tool, and per-lead Apollo lookups for every listed lead cost calls | author | decided |
 | 85 | Exports and earlier contact | Keep rule 3 (an export never counts as the cold push); mark contacted leads | `do_not_contact` is `yes` for anyone already contacted by a cold push or an Apollo send | A team sending from an export list and also running cold lanes would otherwise reach one person twice | author | decided |
+
+[adr2]: ../adr/0002-batch-job-on-a-store-without-transactions-saves-in-two-phases-under-a-cas-lease.md
 
 ## Task Breakdown
 
