@@ -23,7 +23,7 @@ func readFile(t *testing.T, name string) string {
 }
 
 // section returns the README text from heading to the next heading of the
-// same level.
+// same level or higher, skipping lines inside code blocks.
 func section(t *testing.T, doc, heading string) string {
 	t.Helper()
 	i := strings.Index(doc, "\n"+heading+"\n")
@@ -31,9 +31,17 @@ func section(t *testing.T, doc, heading string) string {
 		t.Fatalf("README has no %q", heading)
 	}
 	rest := doc[i+len(heading)+2:]
-	level := heading[:strings.Index(heading, " ")+1]
-	if j := strings.Index(rest, "\n"+level); j >= 0 {
-		rest = rest[:j]
+	level := strings.Index(heading, " ")
+	at, inCode := 0, false
+	for _, line := range strings.SplitAfter(rest, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			inCode = !inCode
+		}
+		n := strings.Index(line, " ")
+		if !inCode && n > 0 && n <= level && strings.Trim(line[:n], "#") == "" {
+			return rest[:at]
+		}
+		at += len(line)
 	}
 	return rest
 }
@@ -77,7 +85,7 @@ func TestReadmeDuties(t *testing.T) {
 	}
 
 	// The Google Cloud steps in the runbook's order.
-	gcp := section(t, readme, "## Path 2: Google Cloud")
+	gcp := section(t, readme, "### Path 2: Google Cloud")
 	order := []string{"setup/gcp.sh accounts", "setup/gcp.sh bucket", "leadscore setup sheet", "setup/gcp.sh secrets",
 		"leadscore config push", "setup/gcp.sh deploy <image>", "setup/apollo/", "setup/gcp.sh schedule",
 		"leadscore doctor", "leadscore run --dry-run", "pushes_enabled: true"}
@@ -90,8 +98,11 @@ func TestReadmeDuties(t *testing.T) {
 		}
 		at += i
 	}
+	if !strings.Contains(gcp, "setup/gcp.sh redeploy --finish-rotation") || strings.Contains(gcp, "### Path 3") {
+		t.Error("Path 2 must run from its heading to Path 3, rotation commands included")
+	}
 	// The Docker steps in the runbook's order.
-	docker := section(t, readme, "## Path 3: Docker (a laptop or a server)")
+	docker := section(t, readme, "### Path 3: Docker (a laptop or a server)")
 	order = []string{"compose.yaml", ".env", "rules check", "Caddy", "docker compose up -d", "setup hubspot",
 		"leadscore doctor", "ranked --csv", "run --dry-run", "pushes_enabled: true"}
 	at = 0
@@ -155,7 +166,7 @@ func TestExampleFiles(t *testing.T) {
 // not be run there.
 func TestReadmeSheetsOnDockerListsItsSteps(t *testing.T) {
 	readme := readFile(t, "README.md")
-	sec := strings.Join(strings.Fields(section(t, readme, "### A Google Sheet on Docker")), " ")
+	sec := strings.Join(strings.Fields(section(t, readme, "#### A Google Sheet on Docker")), " ")
 	for _, want := range []string{"enable the Google Sheets and Google Drive APIs", "Create one service account and a JSON key",
 		"store.credentials: sa-key.json", "leadscore setup sheet --view", "leadscore setup sheet` (creates the spreadsheet",
 		"Create a Cloud Storage bucket for the run lease", "Do not run `setup/gcp.sh`",
