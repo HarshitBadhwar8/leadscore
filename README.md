@@ -468,7 +468,7 @@ every run.
 
 - `leadscore status`: the last run's result and every open problem, each with
   its fix.
-- `leadscore doctor`: one line per check (contracts section 10), each
+- `leadscore doctor`: one line per check (`docs/reference.md`), each
   problem with its fix; exits 0 when nothing fails (warnings allowed) and 1
   otherwise. It only reads: it never writes the store or takes the lease.
 - Google Cloud: the `Health` tab's cell `H1` reads `STALE` (in red) when no
@@ -536,7 +536,7 @@ Your ideal customer is one YAML file, the rubric: which columns matter, how
 to label each company and person (tier, priority, ...), how to score them,
 and where each lead goes. Start from `examples/rubric.yml` (Apollo and
 HubSpot lanes) or `examples/rubric.csv-only.yml` (lists only); the full
-format is section 2 of `docs/design/oss-outbound-engine-contracts.md`. Check
+format is in [`docs/reference.md`](docs/reference.md#the-rubric). Check
 a rubric with `leadscore rules check rubric.yml`, which lists every problem
 with its line. `SKILL.md` has the loop for changing it safely.
 
@@ -652,7 +652,7 @@ secret" under Path 2.
 | `cmd/leadscore/` | the CLI binary |
 | `internal/api` | the public types (re-exported by the root), the built-in header aliases |
 | `internal/config` | loading `leadscore.yml`, `config get`, `config set-hosting` |
-| `internal/check` | the `doctor` check framework and the checks (contracts section 10) |
+| `internal/check` | the `doctor` check framework and the checks |
 | `internal/cli` | the commands, `doctor` among them |
 | `internal/model` | the in-memory model of the store's tables |
 | `internal/store/codec` | maps the model to table writes; loads a store and checks its schema version |
@@ -679,8 +679,9 @@ secret" under Path 2.
 | `setup/apollo/` | the Apollo workflow templates the receiver accepts |
 | `setup/gcp.sh` | the Google Cloud setup script, one subcommand per runbook step |
 | `SKILL.md` | for agents running an install: the rule-change loop and one troubleshooting entry per doctor check |
+| `docs/reference.md` | the exact formats: rubric, `leadscore.yml`, store tables, receiver, doctor checks, hosting, plug-in interfaces |
 | `docs/postgres-store.md` | how to write a Postgres store as a plug-in |
-| `docs/design/` | the RFC, the contracts (the source of truth for every shape) and the task breakdown |
+| `docs/design/` | the design notes behind it (not shipped in releases) |
 
 ### Build and test
 

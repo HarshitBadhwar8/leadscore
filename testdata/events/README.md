@@ -1,7 +1,7 @@
 # Provisional event bodies
 
 These Apollo workflow bodies are **provisional**. They are built from the shapes
-in earlier working code's parser tests and contracts section 5.1, with made-up people and
+in earlier working code's parser tests and docs/reference.md ("Receiver"), with made-up people and
 example domains, not from real Apollo captures. Each file carries
 `"provisional": true` (an unknown field the parsers ignore).
 
@@ -20,7 +20,7 @@ says which in a `confirmed_from` field (also ignored by the parsers):
   Still open: the account block's `domain`, `website_url` and `name`,
   `contact.id`, and `visited_at` (its values here are made up).
 
-When S0 saves real bodies of each kind here, replace these files, drop the
+Once real bodies of each kind are captured, replace these files, drop the
 `provisional` field, and update the expectations in
 `adapters/apollo/golden_test.go`.
 

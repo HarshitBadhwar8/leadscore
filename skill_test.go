@@ -10,37 +10,39 @@ import (
 	"github.com/HarshitBadhwar8/leadscore/internal/cli"
 )
 
-// c10Checks reads the check names from the contracts doc's section 10 table,
-// in its order.
-func c10Checks(t *testing.T) []string {
+// referenceChecks reads the check names from the "Doctor checks" table in
+// docs/reference.md, in its order.
+func referenceChecks(t *testing.T) []string {
 	t.Helper()
-	src, err := os.ReadFile("docs/design/oss-outbound-engine-contracts.md")
+	src, err := os.ReadFile("docs/reference.md")
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := string(src)
-	start := strings.Index(s, "## 10. Doctor checks")
-	end := strings.Index(s, "## 11. ")
-	if start < 0 || end < start {
-		t.Fatal("contracts section 10 not found")
+	_, section, ok := strings.Cut(s, "\n## Doctor checks\n")
+	if ok {
+		section, _, ok = strings.Cut(section, "\n## ")
+	}
+	if !ok {
+		t.Fatal(`docs/reference.md has no "## Doctor checks" section followed by another section`)
 	}
 	row := regexp.MustCompile("(?m)^\\| `([a-z-]+)`")
 	var out []string
-	for _, m := range row.FindAllStringSubmatch(s[start:end], -1) {
+	for _, m := range row.FindAllStringSubmatch(section, -1) {
 		out = append(out, m[1])
 	}
 	if len(out) < 10 {
-		t.Fatalf("read only %d rows from section 10", len(out))
+		t.Fatalf("read only %d rows from the doctor checks table", len(out))
 	}
 	return out
 }
 
-// Every section 10 row has a troubleshooting entry in SKILL.md and a doctor
-// test (an entry in internal/cli's doctorRows), and doctor prints the rows in
-// the table's order. A row added to the contracts fails here until both
-// exist.
+// Every row of the reference's doctor checks table has a troubleshooting
+// entry in SKILL.md and a doctor test (an entry in internal/cli's
+// doctorRows), and doctor prints the rows in the table's order. A row added
+// to the reference fails here until both exist.
 func TestEveryDoctorRowHasATestAndASkillEntry(t *testing.T) {
-	rows := c10Checks(t)
+	rows := referenceChecks(t)
 	skill, err := os.ReadFile("SKILL.md")
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +61,7 @@ func TestEveryDoctorRowHasATestAndASkillEntry(t *testing.T) {
 		}
 	}
 	if !slices.Equal(rows, cli.DoctorOrder) {
-		t.Errorf("doctor's order %v differs from section 10's %v", cli.DoctorOrder, rows)
+		t.Errorf("doctor's order %v differs from docs/reference.md's %v", cli.DoctorOrder, rows)
 	}
 }
 

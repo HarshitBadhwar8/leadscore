@@ -1,6 +1,6 @@
-# leadscore.yml for Docker on your own machine (contracts section 9.2). Copy it
+# leadscore.yml for Docker on your own machine (docs/reference.md, "Docker"). Copy it
 # into the folder holding compose.yaml and your rubric, as leadscore.yml.
-# Every key is in the contracts doc, section 3.
+# Every key is in docs/reference.md, "leadscore.yml".
 version: 1
 
 # The rubric file, beside this one.
