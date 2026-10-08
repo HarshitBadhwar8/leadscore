@@ -3,7 +3,7 @@
 # Docker (the paths below are the compose file's mounts) or as a plain
 # binary (see the README, "Path 1: CSV only"). Copy it as leadscore.yml,
 # beside examples/rubric.csv-only.yml copied as rubric.yml.
-# Every key is in the contracts doc, section 3.
+# Every key is in docs/reference.md, "leadscore.yml".
 version: 1
 
 # The rubric file, beside this one.

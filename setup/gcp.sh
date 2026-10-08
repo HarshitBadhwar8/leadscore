@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# setup/gcp.sh sets leadscore up on Google Cloud (contracts section 9.1): one
+# setup/gcp.sh sets leadscore up on Google Cloud (docs/reference.md, "Google Cloud"): one
 # subcommand per runbook step. Run it from the folder holding leadscore.yml,
 # on macOS, Linux or Google Cloud Shell, with gcloud installed and logged in
 # as a person who may create service accounts, secrets, Cloud Run services and
@@ -35,7 +35,7 @@ LEADSCORE=${LEADSCORE:-leadscore}
 DRY_RUN=${LEADSCORE_GCP_DRY_RUN:-}
 CONFIG=
 
-# Fixed names (contracts section 3, `hosting`).
+# Fixed names (docs/reference.md, "Google Cloud").
 SERVICE=leadscore-receiver
 JOB=leadscore-run
 SCHEDULER_JOB=leadscore-schedule
@@ -50,7 +50,7 @@ RECEIVER_SECRET_PREVIOUS=receiver-secret-previous
 DEFAULT_REGION=asia-south1
 DEFAULT_RUN_ACCOUNT=leadscore-run
 DEFAULT_RECEIVER_ACCOUNT=leadscore-receiver
-# The save budget after the deadline (contracts section 11), in seconds.
+# The save budget after the deadline (docs/reference.md, "Fixed values"), in seconds.
 SAVE_BUDGET_SECONDS=90
 # The key variables and the secrets holding them (internal/hosting KeySecrets).
 KEY_VARIABLES="APOLLO_API_KEY HUBSPOT_TOKEN"
@@ -139,7 +139,7 @@ duration_seconds() {
   echo "$total"
 }
 
-# cron_for prints `schedule` as Cloud Scheduler cron (contracts section 3), the
+# cron_for prints `schedule` as Cloud Scheduler cron (docs/reference.md, "Google Cloud"), the
 # same conversion as hosting.Cron in Go; a test holds the two equal.
 cron_for() {
   local secs m h
@@ -273,7 +273,7 @@ step_bucket() {
   load_hosting
   [[ $(cfg store.type) == sheets ]] || die "the lease bucket is for the Sheets store, and store.type is $(cfg store.type); Google Cloud needs store.type: sheets"
   local bucket
-  # Defaults to <project>-leadscore-lease (contracts section 3).
+  # Defaults to <project>-leadscore-lease (docs/reference.md, "leadscore.yml").
   bucket=$(cfg store.lease_bucket)
   [[ -n $bucket ]] || die "store.lease_bucket is empty; set it to a bucket name of your own"
   if gc storage buckets describe "gs://$bucket" --project "$PROJECT" >/dev/null 2>&1; then
@@ -315,7 +315,7 @@ step_secrets() {
     ensure_secret "$s"
   done
 
-  # Contracts section 9, the role table.
+  # docs/reference.md, "Google Cloud", the role table.
   for s in apollo-api-key hubspot-token "$CONFIG_SECRET" "$CONFIG_VERSION_SECRET"; do
     grant_secret "$s" "$RUN_SA" roles/secretmanager.secretAccessor
   done
@@ -348,8 +348,8 @@ step_secrets() {
   if has_version "$RECEIVER_SECRET"; then
     say "$RECEIVER_SECRET already holds a secret"
   else
-    # Generated here and never printed: it works like a password (contracts
-    # section 5.1, "Keep the secret private").
+    # Generated here and never printed: it works like a password (docs/reference.md,
+    # "Keep the secret private").
     value=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
     run_with_secret "$value" gc secrets versions add "$RECEIVER_SECRET" --project "$PROJECT" --data-file=-
     say "generated the receiver secret; paste it only into the Apollo workflows, reading it with:"
@@ -365,7 +365,7 @@ step_deploy() {
   check_timing
 
   # The bundle each run reads, and its version number, which runs record:
-  # both are read at :latest when an execution starts (S0 confirms), so a
+  # both are read at :latest when an execution starts (unconfirmed), so a
   # config push needs no redeploy.
   if ! has_version "$CONFIG_SECRET" || ! has_version "$CONFIG_VERSION_SECRET"; then
     die "$CONFIG_SECRET or $CONFIG_VERSION_SECRET has no version yet; run leadscore config push first"
@@ -375,7 +375,7 @@ step_deploy() {
   case $image in
     ghcr.io/*)
       # Cloud Run cannot pull from ghcr.io; a remote repository proxies it
-      # (contracts section 9). S0 confirms the proxy works for ghcr.io.
+      # (docs/reference.md, "Google Cloud"); that the proxy works for ghcr.io is unconfirmed.
       if gc artifacts repositories describe "$PROXY_REPO" --location "$REGION" --project "$PROJECT" >/dev/null 2>&1; then
         say "repository $PROXY_REPO exists"
       else
@@ -391,12 +391,12 @@ step_deploy() {
   esac
 
   # The receiver: its own account, at most one instance, no sign-in check
-  # (Apollo cannot sign in; S0 confirms --no-invoker-iam-check works under
-  # common organization policies), the receiver secrets and the bundle. The
+  # (Apollo cannot sign in; that --no-invoker-iam-check works under common
+  # organization policies is unconfirmed), the receiver secrets and the bundle. The
   # previous secret is attached while it has an enabled version, until
-  # --finish-rotation detaches it (contracts section 5.1). Detach before
-  # disabling: S0 confirms a disabled version attached at :latest stops a new
-  # instance from starting.
+  # --finish-rotation detaches it (docs/reference.md, "Google Cloud"). Detach before
+  # disabling: a disabled version attached at :latest is expected to stop a
+  # new instance from starting (unconfirmed).
   local recv_secrets="LEADSCORE_RECEIVER_SECRET=$RECEIVER_SECRET:latest"
   has_version "$RECEIVER_SECRET" || say "warning: $RECEIVER_SECRET has no version, so every webhook gets 401; run setup/gcp.sh secrets"
   if [[ -n $finish_rotation ]]; then
@@ -450,8 +450,8 @@ step_schedule() {
   ensure_service_account "$sched_sa" "leadscore scheduler"
   run gc run jobs add-iam-policy-binding "$JOB" --project "$PROJECT" --region "$REGION" \
     --member "serviceAccount:$sched_sa" --role roles/run.invoker --quiet
-  # Cloud Scheduler calls the job's :run endpoint as its own account (S0
-  # confirms), in the Cloud Run region (S0 confirms Scheduler is offered there).
+  # Cloud Scheduler calls the job's :run endpoint as its own account, in
+  # the Cloud Run region (both unconfirmed).
   uri="https://run.googleapis.com/v2/projects/$PROJECT/locations/$REGION/jobs/$JOB:run"
   local verb=create
   if gc scheduler jobs describe "$SCHEDULER_JOB" --location "$REGION" --project "$PROJECT" >/dev/null 2>&1; then

@@ -59,8 +59,8 @@ that goes quiet is noticed.
 
 ## What still needs checking
 
-These templates follow the body formats in the design (contracts section
-5.1). Already known from a real Apollo account: a workflow can send a custom
+These templates follow the body formats in `docs/reference.md`
+("Receiver"). Already known from a real Apollo account: a workflow can send a custom
 header (a fixed value; it cannot compute a signature, which leadscore does not
 need). The variable catalogue seen on 2026-08-19 lists no contact id (another
 token is not ruled out), so the reply templates leave it out and leadscore
