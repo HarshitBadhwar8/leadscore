@@ -5,7 +5,7 @@ set -eu
 # shellcheck source=scripts/example-setup.sh
 . "$(dirname "$0")/../../scripts/example-setup.sh"
 
-mkdir try
+mkdir -p try
 cp examples/leads.csv try/leads.csv
 cp examples/rubric.csv-only.yml try/rubric.yml
 cd try
