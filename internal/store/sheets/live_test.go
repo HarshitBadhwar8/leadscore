@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
+	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,6 +35,13 @@ var (
 // exactly, and that Health!H1 reads "ok" after a fresh last_success_at. It
 // signs in with Google's standard credentials, or with the service-account key
 // file LEADSCORE_LIVE_SHEETS names, and deletes the spreadsheet at the end.
+//
+// Service accounts have no Drive storage, so they cannot create a
+// spreadsheet. As in `setup sheet`, a person's gcloud login creates it and
+// shares it with the signed-in account: the active login, or the account
+// LEADSCORE_LIVE_SHEETS_OWNER names (it needs
+// `gcloud auth login --enable-gdrive-access`). Its access token lasts about
+// an hour, so the delete at the end works only if the check ends within it.
 func TestLiveSheets(t *testing.T) {
 	v := os.Getenv("LEADSCORE_LIVE_SHEETS")
 	if v == "" {
@@ -47,7 +57,37 @@ func TestLiveSheets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	liveCheck(ctx, t, svc, liveFull, true)
+	args := []string{"auth", "print-access-token"}
+	if a := os.Getenv("LEADSCORE_LIVE_SHEETS_OWNER"); a != "" {
+		args = append(args, a)
+	}
+	out, err := exec.CommandContext(ctx, "gcloud", args...).Output()
+	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			err = fmt.Errorf("%w: %s", err, strings.TrimSpace(string(ee.Stderr)))
+		}
+		t.Fatalf("the person's gcloud login, to create the spreadsheet: %v", err)
+	}
+	token := strings.TrimSpace(string(out))
+	if token == "" {
+		t.Fatal("gcloud printed no access token; run `gcloud auth login --enable-gdrive-access`")
+	}
+	owner, err := sheets.Connect(ctx, api.Config{"_http_client": &http.Client{
+		Transport: bearer{token: token}, Timeout: time.Minute}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	liveCheck(ctx, t, svc, owner, liveFull, true)
+}
+
+// bearer signs requests with a fixed access token.
+type bearer struct{ token string }
+
+func (b bearer) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	r.Header.Set("Authorization", "Bearer "+b.token)
+	return http.DefaultTransport.RoundTrip(r)
 }
 
 // The live check's own code, run small against the fakes so it is known to
@@ -58,32 +98,43 @@ func TestLiveCheckOnFakes(t *testing.T) {
 	defer func(old int) { sheets.MaxCommitBytes = old }(sheets.MaxCommitBytes)
 	sheets.MaxCommitBytes = 20_000
 	f.Sheets.SetCaller("live@p.iam.gserviceaccount.com")
-	liveCheck(t.Context(), t, mustConnect(t, f), liveSize{leads: 40, days: 70, perDay: 6}, false)
+	svc := mustConnect(t, f)
+	liveCheck(t.Context(), t, svc, svc, liveSize{leads: 40, days: 70, perDay: 6}, false)
 	if n := f.Sheets.Calls("batchUpdate"); n < 20 {
 		t.Errorf("only %d batchUpdates: the save did not split", n)
 	}
 }
 
-// liveCheck runs the check; formulas says the backend evaluates formulas (the
-// fake does not).
-func liveCheck(ctx context.Context, t *testing.T, svc *sheets.Services, size liveSize, formulas bool) {
+// liveCheck runs the check as svc, on a spreadsheet owner creates and shares
+// with svc's account; formulas says the backend evaluates formulas (the fake
+// does not).
+func liveCheck(ctx context.Context, t *testing.T, svc, owner *sheets.Services, size liveSize, formulas bool) {
 	liveLeads, liveEventDays, liveEventsDay := size.leads, size.days, size.perDay
 	about, err := svc.Drive.About.Get().Fields("user(emailAddress)").Context(ctx).Do()
 	if err != nil || about.User == nil || about.User.EmailAddress == "" {
 		t.Fatalf("who is signed in: %v", err)
 	}
 	me := about.User.EmailAddress
-	id, err := sheets.Create(ctx, svc, sheets.Template{Title: "leadscore live check " + time.Now().UTC().Format(time.RFC3339),
+	id, err := sheets.Create(ctx, owner, sheets.Template{Title: "leadscore live check " + time.Now().UTC().Format(time.RFC3339),
 		Accounts: sheets.Accounts{Run: me, Receiver: me}, Now: time.Now()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("scratch spreadsheet https://docs.google.com/spreadsheets/d/%s", id)
 	t.Cleanup(func() {
-		if err := svc.Drive.Files.Delete(id).SupportsAllDrives(true).Do(); err != nil {
+		if err := owner.Drive.Files.Delete(id).SupportsAllDrives(true).Do(); err != nil {
 			t.Logf("deleting the scratch spreadsheet: %v", err)
 		}
 	})
+	ownerAbout, err := owner.Drive.About.Get().Fields("user(emailAddress)").Context(ctx).Do()
+	if err != nil || ownerAbout.User == nil {
+		t.Fatalf("who owns the spreadsheet: %v", err)
+	}
+	if !strings.EqualFold(ownerAbout.User.EmailAddress, me) {
+		if err := sheets.Share(ctx, owner, id, sheets.Accounts{Run: me}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	s := sheets.New(svc, id, "")
 
 	// Raw text stays text: formulas, leading zeros, apostrophes, numbers.
