@@ -38,7 +38,7 @@ Use a throwaway account or project, never one a real install uses.
 | Format | `gofmt -l .` prints nothing |
 | Lint | `golangci-lint run` with golangci-lint v2.14.0 |
 | Shell | `shellcheck setup/gcp.sh scripts/*.sh testdata/gcloud/gcloud testdata/compose/smoke.sh` with shellcheck 0.11.0 |
-| Dockerfile | `hadolint --ignore DL3018 Dockerfile` |
+| Dockerfile | `hadolint --ignore DL3018 --ignore DL3066 Dockerfile` |
 | Vulnerabilities | `go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...` on Go 1.27.x |
 | Third-party licenses | `go install github.com/google/go-licenses/v2@v2.0.1`, then `scripts/third-party-licenses.sh --check` |
 | Docker | `docker build -t leadscore:ci .`, then `testdata/compose/smoke.sh leadscore:ci`: `docker compose up`, a webhook, and timer runs |

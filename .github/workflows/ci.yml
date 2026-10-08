@@ -62,9 +62,11 @@ jobs:
       - uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
         with:
           dockerfile: Dockerfile
-          # The base image is pinned by digest. Pinned apk versions break the
-          # build each time Alpine replaces a patch release.
-          ignore: DL3018
+          # DL3018: the base image is pinned by digest. Pinned apk versions
+          # break the build each time Alpine replaces a patch release.
+          # DL3066: the image creates the user `leadscore` itself, with the
+          # fixed id 10001; internal/receiver/docker_test.go pins the name.
+          ignore: DL3018,DL3066
 
   vulncheck:
     name: Vulnerability check

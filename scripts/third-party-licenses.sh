@@ -20,6 +20,15 @@ for os in linux darwin windows; do
   chmod -R u+w "$out/$os" "$out/merged"
   cp -R "$out/$os/." "$out/merged/"
 done
+# go-licenses files golang.org/x/sys under its packages (unix, windows) on
+# some machines and under the module on others. Keep one copy, at the module.
+sys="$out/merged/golang.org/x/sys"
+for d in "$sys"/*/; do
+  if [ -f "$d/LICENSE" ]; then
+    mv "$d/LICENSE" "$sys/LICENSE"
+    rmdir "$d" 2>/dev/null || true
+  fi
+done
 mkdir -p "$out/merged/go"
 # Some packaged toolchains keep LICENSE beside GOROOT rather than in it.
 for f in "$GOROOT/LICENSE" "$GOROOT/../LICENSE"; do

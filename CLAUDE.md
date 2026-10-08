@@ -33,7 +33,7 @@ The other checks CI runs, each as CONTRIBUTING.md lists it:
 | Format | `gofmt -l .` prints nothing |
 | Lint | `golangci-lint run`, from `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0` |
 | Shell | `shellcheck setup/gcp.sh scripts/*.sh testdata/gcloud/gcloud testdata/compose/smoke.sh`, shellcheck 0.11.0 |
-| Dockerfile | `hadolint --ignore DL3018 Dockerfile` |
+| Dockerfile | `hadolint --ignore DL3018 --ignore DL3066 Dockerfile` |
 | Vulnerabilities | `go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...` on Go 1.27.x |
 | Licenses | `go install github.com/google/go-licenses/v2@v2.0.1`, then `scripts/third-party-licenses.sh --check` |
 | Docker | `docker build -t leadscore:ci .`, then `testdata/compose/smoke.sh leadscore:ci` |

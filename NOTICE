@@ -67,10 +67,8 @@ license text is under third_party/licenses/, at the path given.
   third_party/licenses/golang.org/x/net/LICENSE
 - golang.org/x/oauth2 v0.36.0, BSD-3-Clause, https://golang.org/x/oauth2
   third_party/licenses/golang.org/x/oauth2/LICENSE
-- golang.org/x/sys/unix v0.47.0, BSD-3-Clause, https://golang.org/x/sys
-  third_party/licenses/golang.org/x/sys/unix/LICENSE
-- golang.org/x/sys/windows v0.47.0, BSD-3-Clause, https://golang.org/x/sys
-  third_party/licenses/golang.org/x/sys/windows/LICENSE
+- golang.org/x/sys v0.47.0, BSD-3-Clause, https://golang.org/x/sys
+  third_party/licenses/golang.org/x/sys/LICENSE
 - golang.org/x/text v0.41.0, BSD-3-Clause, https://golang.org/x/text
   third_party/licenses/golang.org/x/text/LICENSE
 - google.golang.org/api v0.298.0, BSD-3-Clause, https://google.golang.org/api
