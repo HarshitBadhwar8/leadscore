@@ -451,7 +451,7 @@ succeeded in three intervals, or the store cannot be read. Without the timer
   `{"__not_json": true, "raw": "<first 16KB>"}`.
 - **Shutdown.** On SIGTERM `serve` lets a running run save, stores every
   request it accepted, and exits.
-- **Image.** The container runs as the non-root user `leadscore`.
+- **Image.** The container runs as a non-root user (uid 10001) on a distroless base with no shell; `/data` and `/out` are owner-only.
   `leadscore healthz` calls the local `/healthz` and exits 0 on 200.
 
 **Body formats** come from the templates in `setup/apollo/`. Event names:

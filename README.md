@@ -268,8 +268,8 @@ one command's flags. `leadscore version` prints the version.
   Then it scores every lead and saves `Ranked` and `Health`. It exits 1 when
   the run failed or finished unhealthy.
 - With `--dry-run` it prints one line per lead whose verdict, status or
-  planned lane would change, then totals, and ends with a `dry run:` summary
-  line. It takes no lease, writes nothing and spends nothing. On a first
+  planned lane would change, then totals, and ends with a summary
+  line starting `dry run` (it says nothing was saved or pushed). It takes no lease, writes nothing and spends nothing. On a first
   install its lead ids are temporary, so after a run look leads up by email
   (`leadscore explain <email>`) or take ids from `leadscore ranked`.
 - `leadscore serve [--every [interval]]` is the receiver for Apollo webhooks

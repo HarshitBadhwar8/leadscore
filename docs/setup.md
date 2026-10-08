@@ -94,7 +94,7 @@ CSV files in, scored lists out. No vendor accounts.
      `export LEADSCORE_RECEIVER_SECRET=$(openssl rand -hex 32)`. A new
      terminal needs the line again, which is fine, since nothing uses the
      value. Then run `leadscore run --dry-run` to see what a run would do,
-     writing nothing. It ends with a `dry run:` summary line. On a first
+     writing nothing. It ends with a summary line starting `dry run` (it says nothing was saved or pushed). On a first
      install the lead ids it prints are temporary, because no run has saved
      the leads yet. Then run `leadscore run`. From then on, look a lead up by
      email with `leadscore explain <email>`, or take its id from
@@ -211,7 +211,7 @@ print what it would change without changing it.
 12. **[agent]** Run `leadscore doctor` until it prints `0 failed`. Warnings
     are fine, but read each one. Then open the spreadsheet's `Ranked` tab.
 13. **[agent]** Run `leadscore run --dry-run` and show the result to a person.
-    It names leads by id and ends with a `dry run:` summary line. Look a lead
+    It names leads by id and ends with a summary line starting `dry run` (it says nothing was saved or pushed). Look a lead
     up by email with `leadscore explain <email>`, or take its id from
     `leadscore ranked`. **[person]** Approve it, or change the rubric and
     repeat.
@@ -362,7 +362,7 @@ Steps:
    `docker compose cp leadscore:/out/<lane>.csv .`.
 8. **[agent]** Run `docker compose exec leadscore leadscore run --dry-run`
    and show the result to a person. It names leads by id and ends with a
-   `dry run:` summary line. Look a lead up by email with
+   summary line starting `dry run` (nothing was saved or pushed). Look a lead up by email with
    `docker compose exec leadscore leadscore explain <email>`, or take its id
    from `ranked`. **[person]** Approve it, or change the rubric and repeat.
 9. **[agent]** Only after that approval: set `pushes_enabled: true` in

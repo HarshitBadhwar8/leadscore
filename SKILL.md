@@ -48,8 +48,8 @@ the installed version.
 1. Edit the rubric (or `leadscore.yml`).
 2. `leadscore rules check rubric.yml` until it prints no errors.
 3. `leadscore run --dry-run`: one line per lead whose verdict, status or
-   planned lane would change, then totals, and a last `dry run:` summary
-   line. It writes and spends nothing. On a first install its lead ids are
+   planned lane would change, then totals, and a last summary
+   line starting `dry run` (it says nothing was saved or pushed). It writes and spends nothing. On a first install its lead ids are
    temporary; after a run, look leads up by email
    (`leadscore explain <email>`) or take ids from `leadscore ranked`.
 4. Show a person the changes and get a yes. If a change looks wrong,
